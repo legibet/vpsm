@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 
 	"vpsm/internal/model"
+	"vpsm/internal/sshutil"
 )
 
 type HostItem = model.Host
@@ -15,14 +17,23 @@ type Options struct {
 	Hosts          []model.Host
 	ToggleFavorite func(alias string) error
 	RefreshHosts   func() ([]HostItem, string, error)
+	CreateHost     func(input CreateHostInput) error
 	InitialStatus  string
 	InitialQuery   string
 }
 
+type uiMode int
+
+const (
+	modeBrowse uiMode = iota
+	modeAdd
+)
+
 type hostsLoadedMsg struct {
-	hosts  []model.Host
-	status string
-	err    error
+	hosts       []model.Host
+	status      string
+	selectAlias string
+	err         error
 }
 
 type tuiModel struct {
@@ -36,8 +47,12 @@ type tuiModel struct {
 	selectedHost   string
 	quitting       bool
 	status         string
+	mode           uiMode
+	addForm        addForm
+	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
+	createHost     func(input CreateHostInput) error
 }
 
 func Run(options Options) (string, error) {
@@ -45,8 +60,10 @@ func Run(options Options) (string, error) {
 		hosts:          options.Hosts,
 		query:          options.InitialQuery,
 		status:         options.InitialStatus,
+		styles:         newStyles(),
 		toggleFavorite: options.ToggleFavorite,
 		refreshHosts:   options.RefreshHosts,
+		createHost:     options.CreateHost,
 	}
 	m.applyFilter()
 
@@ -73,71 +90,101 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.mode == modeAdd {
+			m.addForm.setWidth(m.formWidth())
+		}
 		return m, nil
 	case hostsLoadedMsg:
 		if msg.err != nil {
+			if m.mode == modeAdd {
+				m.addForm.errorText = msg.err.Error()
+				return m, nil
+			}
 			m.status = "Error: " + msg.err.Error()
 			return m, nil
 		}
-		selectedAlias := m.currentAlias()
-		m.hosts = msg.hosts
+
+		selectedAlias := msg.selectAlias
+		if selectedAlias == "" {
+			selectedAlias = m.currentAlias()
+		}
+
+		if msg.hosts != nil {
+			m.hosts = msg.hosts
+		}
 		m.status = msg.status
+		m.mode = modeBrowse
+		m.addForm = addForm{}
 		m.applyFilter()
 		m.selectAlias(selectedAlias)
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.mode == modeAdd {
+			return m.updateAddMode(msg)
+		}
 		if m.searchMode {
 			return m.updateSearch(msg)
 		}
+		return m.updateBrowseMode(msg)
+	}
 
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.quitting = true
-			return m, tea.Quit
-		case "/":
-			m.searchMode = true
-			m.status = ""
-			return m, nil
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.filtered)-1 {
-				m.cursor++
-			}
-		case "home", "g":
-			m.cursor = 0
-		case "end", "G":
-			if len(m.filtered) > 0 {
-				m.cursor = len(m.filtered) - 1
-			}
-		case "pgup":
-			m.cursor -= m.pageStep()
-			if m.cursor < 0 {
-				m.cursor = 0
-			}
-		case "pgdown":
-			m.cursor += m.pageStep()
-			if m.cursor >= len(m.filtered) {
-				m.cursor = len(m.filtered) - 1
-			}
-		case "f":
-			if m.toggleFavorite != nil && len(m.filtered) > 0 {
-				alias := m.currentAlias()
-				return m, toggleFavoriteCmd(alias, m.toggleFavorite, m.refreshHosts)
-			}
-		case "r":
-			if m.refreshHosts != nil {
-				return m, refreshHostsCmd(m.refreshHosts)
-			}
-		case "enter":
-			if len(m.filtered) == 0 {
-				return m, nil
-			}
-			m.selectedHost = m.filtered[m.cursor].Alias
-			return m, tea.Quit
+	return m, nil
+}
+
+func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		m.quitting = true
+		return m, tea.Quit
+	case "/":
+		m.searchMode = true
+		m.status = ""
+		return m, nil
+	case "n":
+		m.mode = modeAdd
+		m.addForm = newAddForm()
+		m.addForm.setWidth(m.formWidth())
+		m.status = ""
+		return m, m.addForm.init()
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
 		}
+	case "down", "j":
+		if m.cursor < len(m.filtered)-1 {
+			m.cursor++
+		}
+	case "home", "g":
+		m.cursor = 0
+	case "end", "G":
+		if len(m.filtered) > 0 {
+			m.cursor = len(m.filtered) - 1
+		}
+	case "pgup":
+		m.cursor -= m.pageStep()
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+	case "pgdown":
+		m.cursor += m.pageStep()
+		if m.cursor >= len(m.filtered) {
+			m.cursor = len(m.filtered) - 1
+		}
+	case "f":
+		if m.toggleFavorite != nil && len(m.filtered) > 0 {
+			alias := m.currentAlias()
+			return m, toggleFavoriteCmd(alias, m.toggleFavorite, m.refreshHosts)
+		}
+	case "r":
+		if m.refreshHosts != nil {
+			return m, refreshHostsCmd(m.refreshHosts, m.currentAlias())
+		}
+	case "enter":
+		if len(m.filtered) == 0 {
+			return m, nil
+		}
+		m.selectedHost = m.filtered[m.cursor].Alias
+		return m, tea.Quit
 	}
 
 	return m, nil
@@ -149,15 +196,16 @@ func (m tuiModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.searchMode = false
 	case "backspace":
 		if len(m.query) > 0 {
-			m.query = m.query[:len(m.query)-1]
+			runes := []rune(m.query)
+			m.query = string(runes[:len(runes)-1])
 			m.applyFilter()
 		}
 	case "ctrl+u":
 		m.query = ""
 		m.applyFilter()
 	default:
-		if printableKey(msg.String()) {
-			m.query += msg.String()
+		if text := msg.Key().Text; strings.TrimSpace(text) != "" || text == " " {
+			m.query += text
 			m.applyFilter()
 		}
 	}
@@ -165,8 +213,25 @@ func (m tuiModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func printableKey(key string) bool {
-	return len(key) == 1 && key[0] >= 32 && key[0] <= 126
+func (m tuiModel) updateAddMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	cmd, action := m.addForm.update(msg)
+	switch action {
+	case addFormCancel:
+		m.mode = modeBrowse
+		m.addForm = addForm{}
+		m.status = "Add canceled"
+		return m, nil
+	case addFormSave:
+		input, err := m.addForm.values()
+		if err != nil {
+			m.addForm.errorText = err.Error()
+			return m, nil
+		}
+		m.addForm.errorText = ""
+		return m, createHostCmd(input, m.createHost, m.refreshHosts)
+	default:
+		return m, cmd
+	}
 }
 
 func (m *tuiModel) applyFilter() {
@@ -216,17 +281,17 @@ func (m tuiModel) currentAlias() string {
 }
 
 func (m tuiModel) pageStep() int {
-	step := m.height - 14
-	if step < 5 {
-		step = 5
+	step := (m.bodyHeight() - 4) / 3
+	if step < 3 {
+		step = 3
 	}
 	return step
 }
 
-func refreshHostsCmd(refresh func() ([]HostItem, string, error)) tea.Cmd {
+func refreshHostsCmd(refresh func() ([]HostItem, string, error), selectAlias string) tea.Cmd {
 	return func() tea.Msg {
 		items, status, err := refresh()
-		return hostsLoadedMsg{hosts: items, status: status, err: err}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: selectAlias, err: err}
 	}
 }
 
@@ -237,7 +302,7 @@ func toggleFavoriteCmd(alias string, toggle func(string) error, refresh func() (
 		}
 
 		if refresh == nil {
-			return hostsLoadedMsg{status: "Favorite toggled for " + alias}
+			return hostsLoadedMsg{status: "Favorite toggled for " + alias, selectAlias: alias}
 		}
 
 		items, status, err := refresh()
@@ -249,7 +314,32 @@ func toggleFavoriteCmd(alias string, toggle func(string) error, refresh func() (
 		} else {
 			status = "Favorite toggled for " + alias + "; " + status
 		}
-		return hostsLoadedMsg{hosts: items, status: status}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
+	}
+}
+
+func createHostCmd(input CreateHostInput, create func(CreateHostInput) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		if create == nil {
+			return hostsLoadedMsg{err: fmt.Errorf("create host action is unavailable")}
+		}
+		if err := create(input); err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		status := "Added " + input.Alias
+		if refresh == nil {
+			return hostsLoadedMsg{status: status, selectAlias: input.Alias}
+		}
+
+		items, refreshStatus, err := refresh()
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+		if strings.TrimSpace(refreshStatus) != "" {
+			status = status + "; " + refreshStatus
+		}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: input.Alias}
 	}
 }
 
@@ -260,56 +350,134 @@ func (m tuiModel) View() tea.View {
 		return view
 	}
 
-	var builder strings.Builder
-	builder.WriteString("vpsm - Local-first VPS manager\n")
-	builder.WriteString("Search: ")
-	if m.searchMode {
-		builder.WriteString("[")
-		builder.WriteString(m.query)
-		builder.WriteString("_]")
+	width := m.viewWidth()
+	bodyHeight := m.bodyHeight()
+	leftWidth, rightWidth := m.bodyWidths(width)
+
+	header := m.renderHeader(width)
+	listPanel := m.renderListPanel(leftWidth, bodyHeight)
+	var sidePanel string
+	if m.mode == modeAdd {
+		sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
 	} else {
-		builder.WriteString(m.query)
+		sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
 	}
-	builder.WriteString("\n")
-	if strings.TrimSpace(m.status) != "" {
-		builder.WriteString("Status: " + m.status + "\n")
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, sidePanel)
+	if width < 96 {
+		body = lipgloss.JoinVertical(lipgloss.Left, listPanel, sidePanel)
 	}
-	builder.WriteString("\n")
+
+	status := m.styles.statusBar.Width(width).Render(m.status)
+	footer := m.styles.footerBar.Width(width).Render(m.footerText())
+	view := tea.NewView(m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer)))
+	view.AltScreen = true
+	return view
+}
+
+func (m tuiModel) renderHeader(width int) string {
+	query := "all"
+	if strings.TrimSpace(m.query) != "" {
+		query = m.query
+	}
+	modeLabel := "browse"
+	if m.mode == modeAdd {
+		modeLabel = "add"
+	} else if m.searchMode {
+		modeLabel = "search"
+	}
+
+	title := lipgloss.JoinVertical(lipgloss.Left,
+		m.styles.title.Render("vpsm"),
+		m.styles.subtitle.Render("local-first VPS cockpit"),
+	)
+	badges := lipgloss.JoinHorizontal(lipgloss.Left,
+		m.styles.badge.Render(fmt.Sprintf("%d hosts", len(m.hosts))),
+		m.styles.badge.Render(fmt.Sprintf("%d shown", len(m.filtered))),
+		m.styles.badge.Render("mode: "+modeLabel),
+		m.styles.badge.Render("query: "+query),
+	)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, title, badges)
+	return m.styles.headBar.Width(width).Render(content)
+}
+
+func (m tuiModel) renderListPanel(width int, height int) string {
+	rows := []string{
+		m.styles.sectionTitle.Render("Inventory"),
+		m.styles.sectionMeta.Render("Use / to search, n to add, enter to connect"),
+	}
 
 	if len(m.filtered) == 0 {
-		builder.WriteString("No hosts found. Add entries to ~/.ssh/config and run import-ssh.\n")
-		builder.WriteString("\nKeys: / search  r refresh  q quit\n")
-		view := tea.NewView(builder.String())
-		view.AltScreen = true
-		return view
+		rows = append(rows, m.styles.muted.Render("No hosts match the current filter."))
+		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
 	for _, host := range m.visibleHosts() {
-		cursor := " "
-		if host.Alias == m.filtered[m.cursor].Alias {
-			cursor = ">"
-		}
+		rows = append(rows, m.renderListItem(host, width))
+	}
 
-		builder.WriteString(cursor + host.SummaryLine() + "\n")
+	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+func (m tuiModel) renderListItem(host model.Host, width int) string {
+	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
+	primaryStyle := m.styles.alias
+	metaStyle := m.styles.meta
+	itemStyle := m.styles.listItem
+	if selected {
+		primaryStyle = m.styles.aliasActive
+		metaStyle = m.styles.metaActive
+		itemStyle = m.styles.listItemActive
+	}
+
+	star := "•"
+	if host.Favorite {
+		star = "★"
+	}
+	primary := primaryStyle.Render(star + " " + host.Alias)
+	meta := metaStyle.Render(listMeta(host))
+
+	content := lipgloss.JoinVertical(lipgloss.Left, primary, meta)
+	return itemStyle.Width(width - 6).Render(content)
+}
+
+func (m tuiModel) renderDetailsPanel(width int, height int) string {
+	rows := []string{
+		m.styles.sectionTitle.Render("Details"),
+		m.styles.sectionMeta.Render("Selected host and connection preview"),
+	}
+
+	if len(m.filtered) == 0 {
+		rows = append(rows, m.styles.muted.Render("Nothing selected."))
+		return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
 	selected := m.filtered[m.cursor]
-	builder.WriteString("\n")
-	builder.WriteString("Alias:    " + selected.Alias + "\n")
-	builder.WriteString("Target:   " + selected.TargetName() + "\n")
-	builder.WriteString("User:     " + firstNonEmpty(selected.User, "-") + "\n")
-	builder.WriteString(fmt.Sprintf("Port:     %d\n", selected.Port))
-	builder.WriteString("Provider: " + firstNonEmpty(selected.Provider, "-") + "\n")
-	builder.WriteString("Region:   " + firstNonEmpty(selected.Region, "-") + "\n")
-	builder.WriteString("Source:   " + selected.SourceLabel() + "\n")
-	builder.WriteString("Last:     " + selected.LastConnectedLabel() + "\n")
-	builder.WriteString("Tags:     " + selected.TagsLabel() + "\n")
-	builder.WriteString("Note:     " + firstNonEmpty(selected.Note, "-") + "\n")
-	builder.WriteString("\nKeys: j/k move  pgup/pgdn page  f favorite  r refresh  enter ssh  / search  q quit\n")
+	rows = append(rows,
+		m.detailRow("Alias", selected.Alias),
+		m.detailRow("Target", selected.TargetName()),
+		m.detailRow("User", firstNonEmpty(selected.User, "-")),
+		m.detailRow("Port", fmt.Sprintf("%d", selected.Port)),
+		m.detailRow("Provider", firstNonEmpty(selected.Provider, "-")),
+		m.detailRow("Region", firstNonEmpty(selected.Region, "-")),
+		m.detailRow("Tags", selected.TagsLabel()),
+		m.detailRow("Source", selected.SourceLabel()),
+		m.detailRow("Connect", connectionMode(selected)),
+		m.detailRow("Last", selected.LastConnectedLabel()),
+		m.detailRow("Preview", connectionPreview(selected)),
+	)
+	rows = append(rows, m.styles.sectionMeta.Render("Note"))
+	rows = append(rows, m.styles.value.Render(firstNonEmpty(selected.Note, "-")))
 
-	view := tea.NewView(builder.String())
-	view.AltScreen = true
-	return view
+	return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+func (m tuiModel) detailRow(label string, value string) string {
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		m.styles.label.Render(label),
+		m.styles.value.Render(value),
+	)
 }
 
 func (m tuiModel) visibleHosts() []model.Host {
@@ -317,25 +485,101 @@ func (m tuiModel) visibleHosts() []model.Host {
 		return nil
 	}
 
-	listHeight := m.height - 14
-	if listHeight < 8 {
-		listHeight = 8
+	rowsPerPage := (m.bodyHeight() - 4) / 3
+	if rowsPerPage < 4 {
+		rowsPerPage = 4
 	}
-	if listHeight >= len(m.filtered) {
+	if rowsPerPage >= len(m.filtered) {
 		return m.filtered
 	}
 
-	start := m.cursor - listHeight/2
+	start := m.cursor - rowsPerPage/2
 	if start < 0 {
 		start = 0
 	}
-	end := start + listHeight
+	end := start + rowsPerPage
 	if end > len(m.filtered) {
 		end = len(m.filtered)
-		start = end - listHeight
+		start = end - rowsPerPage
 	}
 
 	return m.filtered[start:end]
+}
+
+func (m tuiModel) bodyWidths(width int) (int, int) {
+	if width < 96 {
+		return width, width
+	}
+
+	left := width * 45 / 100
+	if left < 38 {
+		left = 38
+	}
+	right := width - left - 1
+	if right < 32 {
+		right = 32
+		left = width - right - 1
+	}
+
+	return left, right
+}
+
+func (m tuiModel) viewWidth() int {
+	if m.width <= 0 {
+		return 110
+	}
+	if m.width <= 4 {
+		return m.width
+	}
+	return m.width - 4
+}
+
+func (m tuiModel) bodyHeight() int {
+	if m.height <= 0 {
+		return 24
+	}
+	h := m.height - 9
+	if h < 16 {
+		h = 16
+	}
+	return h
+}
+
+func (m tuiModel) formWidth() int {
+	width := m.viewWidth()
+	_, right := m.bodyWidths(width)
+	if width < 96 {
+		right = width
+	}
+	return right - 6
+}
+
+func (m tuiModel) footerText() string {
+	if m.mode == modeAdd {
+		return "Tab/Shift+Tab move • Enter next • Ctrl+S save • Esc cancel"
+	}
+	return "j/k move • pgup/pgdn page • / search • n new • f favorite • r refresh • enter connect • q quit"
+}
+
+func listMeta(host model.Host) string {
+	left := firstNonEmpty(host.User, "-") + " @ " + host.TargetName()
+	right := firstNonEmpty(host.Region, "-") + " · " + firstNonEmpty(host.Provider, host.SourceLabel())
+	return left + "  |  " + right
+}
+
+func connectionMode(host model.Host) string {
+	if sshutil.CanUseAlias(host) {
+		return "ssh-config alias"
+	}
+	return "direct target"
+}
+
+func connectionPreview(host model.Host) string {
+	args, err := sshutil.BuildArgs(host)
+	if err != nil {
+		return err.Error()
+	}
+	return "ssh " + strings.Join(args, " ")
 }
 
 func firstNonEmpty(values ...string) string {

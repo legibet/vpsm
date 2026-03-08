@@ -5,13 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"text/tabwriter"
 
 	"vpsm/internal/cmdutil"
 	"vpsm/internal/config"
+	"vpsm/internal/model"
 	"vpsm/internal/sshconfig"
+	"vpsm/internal/sshutil"
 	"vpsm/internal/store"
 	"vpsm/internal/ui"
 )
@@ -53,6 +54,8 @@ func run(args []string) error {
 			return errors.New("usage: vpsm show <alias>")
 		}
 		return runShow(st, args[1])
+	case "add":
+		return runAdd(st, args[1:])
 	case "set":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm set <alias> [--provider ...] [--region ...] [--tags ...] [--note ...]")
@@ -122,6 +125,19 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 
 			return items, fmt.Sprintf("Refreshed %d host(s) from SSH config", count), nil
 		},
+		CreateHost: func(input ui.CreateHostInput) error {
+			_, err := st.CreateHost(store.NewHost{
+				Alias:    input.Alias,
+				HostName: input.HostName,
+				User:     input.User,
+				Port:     input.Port,
+				Provider: input.Provider,
+				Region:   input.Region,
+				Tags:     input.Tags,
+				Note:     input.Note,
+			})
+			return err
+		},
 	})
 	if err != nil {
 		return err
@@ -175,6 +191,8 @@ func runShow(st *store.Store, alias string) error {
 		{"Tags", host.TagsLabel()},
 		{"Note", firstNonEmpty(host.Note, "-")},
 		{"Source", host.SourceLabel()},
+		{"Connect", connectionMode(host)},
+		{"Preview", connectionPreview(host)},
 		{"Last Connected", host.LastConnectedLabel()},
 	}
 
@@ -183,6 +201,53 @@ func runShow(st *store.Store, alias string) error {
 	}
 
 	return tw.Flush()
+}
+
+func runAdd(st *store.Store, args []string) error {
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var alias string
+	var hostName string
+	var user string
+	var port int
+	var provider string
+	var region string
+	var tags string
+	var note string
+	var favorite bool
+
+	fs.StringVar(&alias, "alias", "", "Host alias")
+	fs.StringVar(&hostName, "host", "", "Host or IP")
+	fs.StringVar(&user, "user", "", "SSH user")
+	fs.IntVar(&port, "port", 22, "SSH port")
+	fs.StringVar(&provider, "provider", "", "Provider label")
+	fs.StringVar(&region, "region", "", "Region label")
+	fs.StringVar(&tags, "tags", "", "Comma-separated tags")
+	fs.StringVar(&note, "note", "", "Freeform note")
+	fs.BoolVar(&favorite, "favorite", false, "Mark as favorite")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	host, err := st.CreateHost(store.NewHost{
+		Alias:    alias,
+		HostName: hostName,
+		User:     user,
+		Port:     port,
+		Provider: provider,
+		Region:   region,
+		Tags:     cmdutil.SplitCSV(tags),
+		Note:     note,
+		Favorite: favorite,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Added %s\n", host.Alias)
+	return runShow(st, host.Alias)
 }
 
 func runSet(st *store.Store, alias string, args []string) error {
@@ -279,11 +344,15 @@ func syncSSHConfig(st *store.Store, sshConfigPath string) (int, error) {
 }
 
 func connectHost(st *store.Store, alias string) error {
-	if _, err := st.GetHost(alias); err != nil {
+	host, err := st.GetHost(alias)
+	if err != nil {
 		return fmt.Errorf("host %q not found in local database: %w", alias, err)
 	}
 
-	cmd := exec.Command("ssh", alias)
+	cmd, err := sshutil.BuildCommand(host)
+	if err != nil {
+		return err
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -299,6 +368,21 @@ func connectHost(st *store.Store, alias string) error {
 	return nil
 }
 
+func connectionMode(host model.Host) string {
+	if sshutil.CanUseAlias(host) {
+		return "ssh-config alias"
+	}
+	return "direct target"
+}
+
+func connectionPreview(host model.Host) string {
+	args, err := sshutil.BuildArgs(host)
+	if err != nil {
+		return err.Error()
+	}
+	return "ssh " + strings.Join(args, " ")
+}
+
 func printHelp() {
 	fmt.Println(strings.TrimSpace(`
 vpsm - Local-first VPS manager
@@ -308,6 +392,7 @@ Usage:
   vpsm tui                    Open the TUI
   vpsm list                   Print imported hosts
   vpsm show <alias>           Show one host
+  vpsm add --alias ...        Add a manual host
   vpsm set <alias>            Update provider/region/tags/note metadata
   vpsm favorite <alias>       Toggle favorite state
   vpsm favorite <alias> on    Mark as favorite
