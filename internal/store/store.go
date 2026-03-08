@@ -118,7 +118,7 @@ func (s *Store) ListHosts() ([]model.Host, error) {
 			created_at,
 			updated_at
 		FROM hosts
-		ORDER BY favorite DESC, lower(alias) ASC
+		ORDER BY favorite DESC, last_connected_at DESC, lower(alias) ASC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("query hosts: %w", err)

@@ -9,6 +9,17 @@ import (
 	"vpsm/internal/model"
 )
 
+type HostItem = model.Host
+
+type Options struct {
+	Hosts           []model.Host
+	ToggleFavorite  func(alias string) error
+	RefreshHosts    func() ([]HostItem, string, error)
+	InitialStatus   string
+	InitialQuery    string
+	EnableShortcuts bool
+}
+
 type tuiModel struct {
 	hosts        []model.Host
 	filtered     []model.Host
@@ -19,10 +30,15 @@ type tuiModel struct {
 	height       int
 	selectedHost string
 	quitting     bool
+	status       string
 }
 
-func Run(hosts []model.Host) (string, error) {
-	m := tuiModel{hosts: hosts}
+func Run(options Options) (string, error) {
+	m := tuiModel{
+		hosts:  options.Hosts,
+		query:  options.InitialQuery,
+		status: options.InitialStatus,
+	}
 	m.applyFilter()
 
 	program := tea.NewProgram(m)
@@ -68,6 +84,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
+			}
+		case "home", "g":
+			m.cursor = 0
+		case "end", "G":
+			if len(m.filtered) > 0 {
+				m.cursor = len(m.filtered) - 1
 			}
 		case "enter":
 			if len(m.filtered) == 0 {
@@ -147,7 +169,11 @@ func (m tuiModel) View() tea.View {
 	} else {
 		builder.WriteString(m.query)
 	}
-	builder.WriteString("\n\n")
+	builder.WriteString("\n")
+	if strings.TrimSpace(m.status) != "" {
+		builder.WriteString("Status: " + m.status + "\n")
+	}
+	builder.WriteString("\n")
 
 	if len(m.filtered) == 0 {
 		builder.WriteString("No hosts found. Add entries to ~/.ssh/config and run import-ssh.\n")
@@ -157,25 +183,13 @@ func (m tuiModel) View() tea.View {
 		return view
 	}
 
-	for i, host := range m.filtered {
+	for _, host := range m.visibleHosts() {
 		cursor := " "
-		if i == m.cursor {
+		if host.Alias == m.filtered[m.cursor].Alias {
 			cursor = ">"
 		}
 
-		favorite := " "
-		if host.Favorite {
-			favorite = "*"
-		}
-
-		builder.WriteString(fmt.Sprintf("%s%s %-20s %-24s %-10s %s\n",
-			cursor,
-			favorite,
-			host.Alias,
-			host.TargetName(),
-			firstNonEmpty(host.Region, "-"),
-			firstNonEmpty(host.Provider, host.SourceLabel()),
-		))
+		builder.WriteString(cursor + host.SummaryLine() + "\n")
 	}
 
 	selected := m.filtered[m.cursor]
@@ -184,14 +198,43 @@ func (m tuiModel) View() tea.View {
 	builder.WriteString("Target:   " + selected.TargetName() + "\n")
 	builder.WriteString("User:     " + firstNonEmpty(selected.User, "-") + "\n")
 	builder.WriteString(fmt.Sprintf("Port:     %d\n", selected.Port))
+	builder.WriteString("Provider: " + firstNonEmpty(selected.Provider, "-") + "\n")
+	builder.WriteString("Region:   " + firstNonEmpty(selected.Region, "-") + "\n")
 	builder.WriteString("Source:   " + selected.SourceLabel() + "\n")
-	builder.WriteString("Tags:     " + firstNonEmpty(strings.Join(selected.Tags, ", "), "-") + "\n")
+	builder.WriteString("Last:     " + selected.LastConnectedLabel() + "\n")
+	builder.WriteString("Tags:     " + selected.TagsLabel() + "\n")
 	builder.WriteString("Note:     " + firstNonEmpty(selected.Note, "-") + "\n")
 	builder.WriteString("\nKeys: j/k move  enter ssh  / search  q quit\n")
 
 	view := tea.NewView(builder.String())
 	view.AltScreen = true
 	return view
+}
+
+func (m tuiModel) visibleHosts() []model.Host {
+	if len(m.filtered) == 0 {
+		return nil
+	}
+
+	listHeight := m.height - 13
+	if listHeight < 8 {
+		listHeight = 8
+	}
+	if listHeight >= len(m.filtered) {
+		return m.filtered
+	}
+
+	start := m.cursor - listHeight/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + listHeight
+	if end > len(m.filtered) {
+		end = len(m.filtered)
+		start = end - listHeight
+	}
+
+	return m.filtered[start:end]
 }
 
 func firstNonEmpty(values ...string) string {

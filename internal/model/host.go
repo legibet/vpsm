@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -53,4 +54,38 @@ func (h Host) SourceLabel() string {
 	}
 
 	return h.Source
+}
+
+func (h Host) LastConnectedLabel() string {
+	if h.LastConnectedAt == nil {
+		return "never"
+	}
+
+	return h.LastConnectedAt.Local().Format(time.DateTime)
+}
+
+func (h Host) TagsLabel() string {
+	if len(h.Tags) == 0 {
+		return "-"
+	}
+
+	return strings.Join(h.Tags, ", ")
+}
+
+func (h Host) SummaryLine() string {
+	star := " "
+	if h.Favorite {
+		star = "*"
+	}
+
+	return fmt.Sprintf("%s %-20s %-24s %-10s %s", star, h.Alias, h.TargetName(), firstNonEmpty(h.Region, "-"), firstNonEmpty(h.Provider, h.SourceLabel()))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
