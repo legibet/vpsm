@@ -8,9 +8,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"golang.org/x/term"
+
 	"vpsm/internal/cmdutil"
 	"vpsm/internal/config"
 	"vpsm/internal/model"
+	"vpsm/internal/secret"
 	"vpsm/internal/sshconfig"
 	"vpsm/internal/sshutil"
 	"vpsm/internal/store"
@@ -58,9 +61,19 @@ func run(args []string) error {
 		return runAdd(st, args[1:])
 	case "set":
 		if len(args) < 2 {
-			return errors.New("usage: vpsm set <alias> [--provider ...] [--region ...] [--tags ...] [--note ...]")
+			return errors.New("usage: vpsm set <alias> [--identity-file ...] [--auth-mode ...] [--tags ...] [--note ...] [--provider ...] [--region ...]")
 		}
 		return runSet(st, args[1], args[2:])
+	case "set-password":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm set-password <alias> [--value ...]")
+		}
+		return runSetPassword(st, args[1], args[2:])
+	case "clear-password":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm clear-password <alias>")
+		}
+		return runClearPassword(st, args[1])
 	case "favorite":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm favorite <alias> [on|off|toggle]")
@@ -91,7 +104,7 @@ func run(args []string) error {
 }
 
 func runTUI(st *store.Store, sshConfigPath string) error {
-	hosts, err := st.ListHosts()
+	hosts, err := listHostsForDisplay(st)
 	if err != nil {
 		return err
 	}
@@ -113,7 +126,7 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 				return nil, "", err
 			}
 
-			hosts, err := st.ListHosts()
+			hosts, err := listHostsForDisplay(st)
 			if err != nil {
 				return nil, "", err
 			}
@@ -127,16 +140,38 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
 			_, err := st.CreateHost(store.NewHost{
-				Alias:    input.Alias,
-				HostName: input.HostName,
-				User:     input.User,
-				Port:     input.Port,
-				Provider: input.Provider,
-				Region:   input.Region,
-				Tags:     input.Tags,
-				Note:     input.Note,
+				Alias:        input.Alias,
+				HostName:     input.HostName,
+				User:         input.User,
+				Port:         input.Port,
+				IdentityFile: input.IdentityFile,
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(input.Password) != "" {
+				if err := secret.SetPassword(input.Alias, input.Password); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		UpdateAuth: func(input ui.UpdateAuthInput) error {
+			patch := store.HostPatch{IdentityFile: &input.IdentityFile}
+			if _, err := st.UpdateHost(input.Alias, patch); err != nil {
+				return err
+			}
+			if input.ClearPassword {
+				if err := secret.DeletePassword(input.Alias); err != nil {
+					return err
+				}
+			}
+			if strings.TrimSpace(input.Password) != "" {
+				if err := secret.SetPassword(input.Alias, input.Password); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	})
 	if err != nil {
@@ -151,7 +186,7 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 }
 
 func runList(st *store.Store) error {
-	hosts, err := st.ListHosts()
+	hosts, err := listHostsForDisplay(st)
 	if err != nil {
 		return err
 	}
@@ -162,19 +197,19 @@ func runList(st *store.Store) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "FAV\tALIAS\tTARGET\tREGION\tSOURCE\tLAST CONNECTED")
+	_, _ = fmt.Fprintln(tw, "FAV\tALIAS\tTARGET\tAUTH\tSOURCE\tLAST CONNECTED")
 	for _, host := range hosts {
 		favorite := ""
 		if host.Favorite {
 			favorite = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", favorite, host.Alias, host.TargetName(), firstNonEmpty(host.Region, "-"), host.SourceLabel(), host.LastConnectedLabel())
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", favorite, host.Alias, host.TargetName(), compactAuthLabel(host), host.SourceLabel(), host.LastConnectedLabel())
 	}
 	return tw.Flush()
 }
 
 func runShow(st *store.Store, alias string) error {
-	host, err := st.GetHost(alias)
+	host, err := getHostForDisplay(st, alias)
 	if err != nil {
 		return err
 	}
@@ -185,13 +220,12 @@ func runShow(st *store.Store, alias string) error {
 		{"Target", host.TargetName()},
 		{"User", firstNonEmpty(host.User, "-")},
 		{"Port", fmt.Sprintf("%d", host.Port)},
-		{"Provider", firstNonEmpty(host.Provider, "-")},
-		{"Region", firstNonEmpty(host.Region, "-")},
+		{"Route", connectionMode(host)},
+		{"Auth", host.AuthMethodsLabel()},
+		{"Identity File", host.IdentityFileLabel()},
+		{"Password Stored", host.PasswordStoredLabel()},
 		{"Favorite", fmt.Sprintf("%t", host.Favorite)},
-		{"Tags", host.TagsLabel()},
-		{"Note", firstNonEmpty(host.Note, "-")},
 		{"Source", host.SourceLabel()},
-		{"Connect", connectionMode(host)},
 		{"Preview", connectionPreview(host)},
 		{"Last Connected", host.LastConnectedLabel()},
 	}
@@ -216,11 +250,15 @@ func runAdd(st *store.Store, args []string) error {
 	var tags string
 	var note string
 	var favorite bool
+	var authMode string
+	var identityFile string
 
 	fs.StringVar(&alias, "alias", "", "Host alias")
 	fs.StringVar(&hostName, "host", "", "Host or IP")
 	fs.StringVar(&user, "user", "", "SSH user")
 	fs.IntVar(&port, "port", 22, "SSH port")
+	fs.StringVar(&authMode, "auth-mode", "", "Auth mode: default, key, password")
+	fs.StringVar(&identityFile, "identity-file", "", "SSH private key path")
 	fs.StringVar(&provider, "provider", "", "Provider label")
 	fs.StringVar(&region, "region", "", "Region label")
 	fs.StringVar(&tags, "tags", "", "Comma-separated tags")
@@ -232,15 +270,17 @@ func runAdd(st *store.Store, args []string) error {
 	}
 
 	host, err := st.CreateHost(store.NewHost{
-		Alias:    alias,
-		HostName: hostName,
-		User:     user,
-		Port:     port,
-		Provider: provider,
-		Region:   region,
-		Tags:     cmdutil.SplitCSV(tags),
-		Note:     note,
-		Favorite: favorite,
+		Alias:        alias,
+		HostName:     hostName,
+		User:         user,
+		Port:         port,
+		AuthMode:     authMode,
+		IdentityFile: identityFile,
+		Provider:     provider,
+		Region:       region,
+		Tags:         cmdutil.SplitCSV(tags),
+		Note:         note,
+		Favorite:     favorite,
 	})
 	if err != nil {
 		return err
@@ -258,11 +298,15 @@ func runSet(st *store.Store, alias string, args []string) error {
 	var region cmdutil.OptionalString
 	var tags cmdutil.OptionalString
 	var note cmdutil.OptionalString
+	var authMode cmdutil.OptionalString
+	var identityFile cmdutil.OptionalString
 
 	fs.Var(&provider, "provider", "Provider label")
 	fs.Var(&region, "region", "Region label")
 	fs.Var(&tags, "tags", "Comma-separated tags")
 	fs.Var(&note, "note", "Freeform note")
+	fs.Var(&authMode, "auth-mode", "Auth mode: default, key, password")
+	fs.Var(&identityFile, "identity-file", "SSH private key path")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -291,9 +335,19 @@ func runSet(st *store.Store, alias string, args []string) error {
 		patch.Note = &value
 		changed++
 	}
+	if authMode.IsSet() {
+		value := authMode.Value()
+		patch.AuthMode = &value
+		changed++
+	}
+	if identityFile.IsSet() {
+		value := identityFile.Value()
+		patch.IdentityFile = &value
+		changed++
+	}
 
 	if changed == 0 {
-		return errors.New("no metadata changes requested")
+		return errors.New("no changes requested")
 	}
 
 	if _, err := st.UpdateHost(alias, patch); err != nil {
@@ -301,6 +355,50 @@ func runSet(st *store.Store, alias string, args []string) error {
 	}
 
 	fmt.Printf("Updated %s\n", alias)
+	return runShow(st, alias)
+}
+
+func runSetPassword(st *store.Store, alias string, args []string) error {
+	if _, err := st.GetHost(alias); err != nil {
+		return fmt.Errorf("host %q not found in local database: %w", alias, err)
+	}
+
+	fs := flag.NewFlagSet("set-password", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var value string
+	fs.StringVar(&value, "value", "", "Password value")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	password := value
+	if password == "" {
+		var err error
+		password, err = promptPassword(alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := secret.SetPassword(alias, password); err != nil {
+		return err
+	}
+
+	fmt.Printf("Stored password for %s\n", alias)
+	return runShow(st, alias)
+}
+
+func runClearPassword(st *store.Store, alias string) error {
+	if _, err := st.GetHost(alias); err != nil {
+		return fmt.Errorf("host %q not found in local database: %w", alias, err)
+	}
+
+	if err := secret.DeletePassword(alias); err != nil {
+		return err
+	}
+
+	fmt.Printf("Cleared password for %s\n", alias)
 	return runShow(st, alias)
 }
 
@@ -344,12 +442,20 @@ func syncSSHConfig(st *store.Store, sshConfigPath string) (int, error) {
 }
 
 func connectHost(st *store.Store, alias string) error {
-	host, err := st.GetHost(alias)
+	host, err := getHostForDisplay(st, alias)
 	if err != nil {
 		return fmt.Errorf("host %q not found in local database: %w", alias, err)
 	}
 
-	cmd, err := sshutil.BuildCommand(host)
+	password, passwordStored, err := secret.GetPasswordIfExists(alias)
+	if err != nil {
+		return err
+	}
+	if passwordStored && !sshutil.CanAutoFillPassword() {
+		fmt.Fprintln(os.Stderr, "Note: stored password found, but sshpass is not installed; OpenSSH will prompt if password fallback is needed.")
+	}
+
+	cmd, err := sshutil.BuildCommandWithPassword(host, password)
 	if err != nil {
 		return err
 	}
@@ -369,6 +475,15 @@ func connectHost(st *store.Store, alias string) error {
 }
 
 func connectionMode(host model.Host) string {
+	if strings.EqualFold(strings.TrimSpace(host.AuthMode), "password") {
+		return "password via sshpass"
+	}
+	if strings.TrimSpace(host.IdentityFile) != "" {
+		if sshutil.CanUseAlias(host) {
+			return "ssh-config alias + key"
+		}
+		return "direct target + key"
+	}
 	if sshutil.CanUseAlias(host) {
 		return "ssh-config alias"
 	}
@@ -393,7 +508,9 @@ Usage:
   vpsm list                   Print imported hosts
   vpsm show <alias>           Show one host
   vpsm add --alias ...        Add a manual host
-  vpsm set <alias>            Update provider/region/tags/note metadata
+  vpsm set <alias>            Update host auth and optional metadata
+  vpsm set-password <alias>   Store an SSH password in the system keychain
+  vpsm clear-password <alias> Delete a stored SSH password
   vpsm favorite <alias>       Toggle favorite state
   vpsm favorite <alias> on    Mark as favorite
   vpsm favorite <alias> off   Remove favorite mark
@@ -401,6 +518,70 @@ Usage:
   vpsm ssh <alias>            Connect with system ssh
   vpsm help                   Show this help
 `))
+}
+
+func listHostsForDisplay(st *store.Store) ([]model.Host, error) {
+	hosts, err := st.ListHosts()
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range hosts {
+		hydratePasswordStatus(&hosts[i])
+	}
+
+	return hosts, nil
+}
+
+func getHostForDisplay(st *store.Store, alias string) (model.Host, error) {
+	host, err := st.GetHost(alias)
+	if err != nil {
+		return model.Host{}, err
+	}
+
+	hydratePasswordStatus(&host)
+	return host, nil
+}
+
+func hydratePasswordStatus(host *model.Host) {
+	ok, err := secret.HasPassword(host.Alias)
+	if err == nil {
+		host.PasswordStored = ok
+	}
+}
+
+func compactAuthLabel(host model.Host) string {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(host.IdentityFile) != "" {
+		parts = append(parts, "key")
+	}
+	if host.PasswordStored {
+		parts = append(parts, "password")
+	}
+	if len(parts) == 0 {
+		return "default"
+	}
+	return strings.Join(parts, "+")
+}
+
+func promptPassword(alias string) (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "", errors.New("password prompt requires a terminal; use --value for non-interactive input")
+	}
+
+	fmt.Fprintf(os.Stderr, "Password for %s: ", alias)
+	value, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", fmt.Errorf("read password: %w", err)
+	}
+
+	password := string(value)
+	if password == "" {
+		return "", errors.New("password is required")
+	}
+
+	return password, nil
 }
 
 func firstNonEmpty(values ...string) string {

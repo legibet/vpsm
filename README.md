@@ -2,7 +2,7 @@
 
 `vpsm` is a local-first VPS manager for people who keep a lot of SSH hosts.
 
-It does not replace your terminal or SSH client. It builds a small local host database from `~/.ssh/config`, lets you search and label hosts, and launches your system `ssh` when you connect.
+It does not replace your terminal or SSH client. It builds a small local host database from `~/.ssh/config`, lets you search hosts quickly, edit connection settings, and launch your system `ssh` when you connect.
 
 ## What works today
 
@@ -10,8 +10,11 @@ It does not replace your terminal or SSH client. It builds a small local host da
 - browse hosts in a keyboard-first TUI
 - fuzzy search hosts in the TUI
 - add manual hosts from the CLI or the TUI
+- edit key path and stored password directly in the TUI
+- store a key path in the local database
+- store an SSH password in the system keychain
 - launch your system OpenSSH with either a safe alias or a direct target fallback
-- store local metadata: `provider`, `region`, `tags`, `note`, `favorite`
+- try system defaults, then key file, then stored password fallback when available
 - refresh the local host database from the TUI
 
 ## Requirements
@@ -19,6 +22,7 @@ It does not replace your terminal or SSH client. It builds a small local host da
 - Go `1.25+`
 - a real terminal for the TUI
 - OpenSSH available in `PATH`
+- `sshpass` in `PATH` if you want one-shot password auth launch
 
 ## Build
 
@@ -31,17 +35,25 @@ go build -o vpsm .
 ```bash
 ./vpsm import-ssh
 ./vpsm list
-./vpsm add --alias hk-lab --host 203.0.113.10 --user root --port 22
+./vpsm add --alias hk-lab --host 203.0.113.10 --user root --port 22 --identity-file ~/.ssh/id_ed25519
 ./vpsm
 ```
+
+Inside the TUI:
+
+- press `n` to add a server
+- press `e` on a selected host to edit key path or password
+- press `enter` to connect
 
 ## Common commands
 
 ```bash
 ./vpsm list
 ./vpsm show my-host
-./vpsm add --alias my-box --host 198.51.100.10 --user ubuntu --port 2201
-./vpsm set my-host --provider hetzner --region fsn1 --tags prod,db --note "postgres primary"
+./vpsm add --alias my-box --host 198.51.100.10 --user ubuntu --port 2201 --identity-file ~/.ssh/id_ed25519
+./vpsm set my-host --identity-file ~/.ssh/id_ed25519
+./vpsm set-password my-host
+./vpsm clear-password my-host
 ./vpsm favorite my-host on
 ./vpsm ssh my-host
 ```
@@ -52,6 +64,7 @@ go build -o vpsm .
 - `pgup` / `pgdn`: page
 - `/`: search
 - `n`: add a new server
+- `e`: edit key path / password for the selected host
 - `f`: toggle favorite
 - `r`: refresh from `~/.ssh/config`
 - `enter`: connect with `ssh`
@@ -60,12 +73,14 @@ go build -o vpsm .
 ## Data
 
 - SSH source: `~/.ssh/config`
-- Local metadata DB: OS config directory under `vpsm`
+- Local DB: OS config directory under `vpsm`
 - On macOS: `~/Library/Application Support/vpsm/vpsm.db`
 
 ## Notes
 
 - `vpsm` auto-syncs from `~/.ssh/config` on startup.
-- metadata stays local and is stored separately from your SSH config.
-- private keys are not copied into the app database.
+- connection settings stay local and are stored separately from your SSH config.
+- private keys are not copied into the app database; only the path is stored.
+- passwords are stored in the system keychain, not in SQLite.
+- if a stored password exists, `vpsm` will try password fallback after the usual SSH methods; `sshpass` enables automatic password fill, otherwise OpenSSH can still prompt interactively.
 - if an imported alias contains non-ASCII characters, `vpsm` falls back to a direct `user@host` SSH target instead of calling `ssh <alias>`.

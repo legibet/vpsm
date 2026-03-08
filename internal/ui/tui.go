@@ -18,6 +18,7 @@ type Options struct {
 	ToggleFavorite func(alias string) error
 	RefreshHosts   func() ([]HostItem, string, error)
 	CreateHost     func(input CreateHostInput) error
+	UpdateAuth     func(input UpdateAuthInput) error
 	InitialStatus  string
 	InitialQuery   string
 }
@@ -27,6 +28,7 @@ type uiMode int
 const (
 	modeBrowse uiMode = iota
 	modeAdd
+	modeAuth
 )
 
 type hostsLoadedMsg struct {
@@ -49,10 +51,12 @@ type tuiModel struct {
 	status         string
 	mode           uiMode
 	addForm        addForm
+	authForm       authForm
 	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
 	createHost     func(input CreateHostInput) error
+	updateAuth     func(input UpdateAuthInput) error
 }
 
 func Run(options Options) (string, error) {
@@ -64,6 +68,7 @@ func Run(options Options) (string, error) {
 		toggleFavorite: options.ToggleFavorite,
 		refreshHosts:   options.RefreshHosts,
 		createHost:     options.CreateHost,
+		updateAuth:     options.UpdateAuth,
 	}
 	m.applyFilter()
 
@@ -93,11 +98,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeAdd {
 			m.addForm.setWidth(m.formWidth())
 		}
+		if m.mode == modeAuth {
+			m.authForm.setWidth(m.formWidth())
+		}
 		return m, nil
 	case hostsLoadedMsg:
 		if msg.err != nil {
 			if m.mode == modeAdd {
 				m.addForm.errorText = msg.err.Error()
+				return m, nil
+			}
+			if m.mode == modeAuth {
+				m.authForm.errorText = msg.err.Error()
 				return m, nil
 			}
 			m.status = "Error: " + msg.err.Error()
@@ -115,12 +127,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = msg.status
 		m.mode = modeBrowse
 		m.addForm = addForm{}
+		m.authForm = authForm{}
 		m.applyFilter()
 		m.selectAlias(selectedAlias)
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.mode == modeAdd {
 			return m.updateAddMode(msg)
+		}
+		if m.mode == modeAuth {
+			return m.updateAuthMode(msg)
 		}
 		if m.searchMode {
 			return m.updateSearch(msg)
@@ -146,6 +162,15 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.addForm.setWidth(m.formWidth())
 		m.status = ""
 		return m, m.addForm.init()
+	case "e":
+		if len(m.filtered) == 0 || m.updateAuth == nil {
+			return m, nil
+		}
+		m.mode = modeAuth
+		m.authForm = newAuthForm(m.filtered[m.cursor])
+		m.authForm.setWidth(m.formWidth())
+		m.status = ""
+		return m, m.authForm.init()
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -229,6 +254,21 @@ func (m tuiModel) updateAddMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.addForm.errorText = ""
 		return m, createHostCmd(input, m.createHost, m.refreshHosts)
+	default:
+		return m, cmd
+	}
+}
+
+func (m tuiModel) updateAuthMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	cmd, action := m.authForm.update(msg)
+	switch action {
+	case authFormCancel:
+		m.mode = modeBrowse
+		m.authForm = authForm{}
+		m.status = "Edit canceled"
+		return m, nil
+	case authFormSave:
+		return m, updateAuthCmd(m.authForm.values(), m.updateAuth, m.refreshHosts)
 	default:
 		return m, cmd
 	}
@@ -359,6 +399,8 @@ func (m tuiModel) View() tea.View {
 	var sidePanel string
 	if m.mode == modeAdd {
 		sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
+	} else if m.mode == modeAuth {
+		sidePanel = m.authForm.view(m.styles, rightWidth, bodyHeight)
 	} else {
 		sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
 	}
@@ -370,7 +412,11 @@ func (m tuiModel) View() tea.View {
 
 	status := m.styles.statusBar.Width(width).Render(m.status)
 	footer := m.styles.footerBar.Width(width).Render(m.footerText())
-	view := tea.NewView(m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer)))
+	content := m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer))
+	if m.width > 0 && m.height > 0 {
+		content = m.styles.canvas.Width(m.width).Height(m.height).Render(content)
+	}
+	view := tea.NewView(content)
 	view.AltScreen = true
 	return view
 }
@@ -387,25 +433,18 @@ func (m tuiModel) renderHeader(width int) string {
 		modeLabel = "search"
 	}
 
-	title := lipgloss.JoinVertical(lipgloss.Left,
+	content := lipgloss.JoinVertical(lipgloss.Left,
 		m.styles.title.Render("vpsm"),
-		m.styles.subtitle.Render("local-first VPS cockpit"),
+		m.styles.subtitle.Render("local-first VPS manager"),
+		m.styles.sectionMeta.Render(fmt.Sprintf("hosts: %d | shown: %d | mode: %s | query: %s", len(m.hosts), len(m.filtered), modeLabel, query)),
 	)
-	badges := lipgloss.JoinHorizontal(lipgloss.Left,
-		m.styles.badge.Render(fmt.Sprintf("%d hosts", len(m.hosts))),
-		m.styles.badge.Render(fmt.Sprintf("%d shown", len(m.filtered))),
-		m.styles.badge.Render("mode: "+modeLabel),
-		m.styles.badge.Render("query: "+query),
-	)
-
-	content := lipgloss.JoinVertical(lipgloss.Left, title, badges)
 	return m.styles.headBar.Width(width).Render(content)
 }
 
 func (m tuiModel) renderListPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Inventory"),
-		m.styles.sectionMeta.Render("Use / to search, n to add, enter to connect"),
+		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit auth, enter to connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -431,11 +470,15 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 		itemStyle = m.styles.listItemActive
 	}
 
-	star := "•"
-	if host.Favorite {
-		star = "★"
+	selectMark := " "
+	if selected {
+		selectMark = ">"
 	}
-	primary := primaryStyle.Render(star + " " + host.Alias)
+	star := " "
+	if host.Favorite {
+		star = "*"
+	}
+	primary := primaryStyle.Render(selectMark + star + " " + host.Alias)
 	meta := metaStyle.Render(listMeta(host))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, primary, meta)
@@ -445,7 +488,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Details"),
-		m.styles.sectionMeta.Render("Selected host and connection preview"),
+		m.styles.sectionMeta.Render("Selected host and connection settings"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -459,16 +502,14 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
 		m.detailRow("Port", fmt.Sprintf("%d", selected.Port)),
-		m.detailRow("Provider", firstNonEmpty(selected.Provider, "-")),
-		m.detailRow("Region", firstNonEmpty(selected.Region, "-")),
-		m.detailRow("Tags", selected.TagsLabel()),
+		m.detailRow("Route", connectionMode(selected)),
+		m.detailRow("Auth", selected.AuthMethodsLabel()),
+		m.detailRow("Identity", selected.IdentityFileLabel()),
+		m.detailRow("Password", selected.PasswordStoredLabel()),
 		m.detailRow("Source", selected.SourceLabel()),
-		m.detailRow("Connect", connectionMode(selected)),
 		m.detailRow("Last", selected.LastConnectedLabel()),
 		m.detailRow("Preview", connectionPreview(selected)),
 	)
-	rows = append(rows, m.styles.sectionMeta.Render("Note"))
-	rows = append(rows, m.styles.value.Render(firstNonEmpty(selected.Note, "-")))
 
 	return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
@@ -556,15 +597,32 @@ func (m tuiModel) formWidth() int {
 
 func (m tuiModel) footerText() string {
 	if m.mode == modeAdd {
-		return "Tab/Shift+Tab move • Enter next • Ctrl+S save • Esc cancel"
+		return "tab/shift+tab move | enter next | ctrl+s save | esc cancel"
 	}
-	return "j/k move • pgup/pgdn page • / search • n new • f favorite • r refresh • enter connect • q quit"
+	if m.mode == modeAuth {
+		return "tab/shift+tab move | enter next | ctrl+s save | ctrl+x clear password | esc cancel"
+	}
+	return "j/k move | pgup/pgdn page | / search | n new | e auth | f favorite | r refresh | enter connect | q quit"
 }
 
 func listMeta(host model.Host) string {
 	left := firstNonEmpty(host.User, "-") + " @ " + host.TargetName()
-	right := firstNonEmpty(host.Region, "-") + " · " + firstNonEmpty(host.Provider, host.SourceLabel())
+	right := compactAuthLabel(host)
 	return left + "  |  " + right
+}
+
+func compactAuthLabel(host model.Host) string {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(host.IdentityFile) != "" {
+		parts = append(parts, "key")
+	}
+	if host.PasswordStored {
+		parts = append(parts, "password")
+	}
+	if len(parts) == 0 {
+		return "default auth"
+	}
+	return strings.Join(parts, " + ")
 }
 
 func connectionMode(host model.Host) string {
@@ -572,6 +630,31 @@ func connectionMode(host model.Host) string {
 		return "ssh-config alias"
 	}
 	return "direct target"
+}
+
+func updateAuthCmd(input UpdateAuthInput, update func(UpdateAuthInput) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		if update == nil {
+			return hostsLoadedMsg{err: fmt.Errorf("update auth action is unavailable")}
+		}
+		if err := update(input); err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		status := "Updated auth for " + input.Alias
+		if refresh == nil {
+			return hostsLoadedMsg{status: status, selectAlias: input.Alias}
+		}
+
+		items, refreshStatus, err := refresh()
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+		if strings.TrimSpace(refreshStatus) != "" {
+			status = status + "; " + refreshStatus
+		}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: input.Alias}
+	}
 }
 
 func connectionPreview(host model.Host) string {

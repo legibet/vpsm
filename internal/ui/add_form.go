@@ -11,14 +11,12 @@ import (
 )
 
 type CreateHostInput struct {
-	Alias    string
-	HostName string
-	User     string
-	Port     int
-	Provider string
-	Region   string
-	Tags     []string
-	Note     string
+	Alias        string
+	HostName     string
+	User         string
+	Port         int
+	IdentityFile string
+	Password     string
 }
 
 type addFormAction int
@@ -34,10 +32,8 @@ const (
 	fieldHostName
 	fieldUser
 	fieldPort
-	fieldProvider
-	fieldRegion
-	fieldTags
-	fieldNote
+	fieldIdentityFile
+	fieldPassword
 	fieldCount
 )
 
@@ -54,14 +50,11 @@ func newAddForm() addForm {
 	inputs[fieldHostName] = newTextInput("203.0.113.10", 48)
 	inputs[fieldUser] = newTextInput("root", 24)
 	inputs[fieldPort] = newTextInput("22", 8)
-	inputs[fieldProvider] = newTextInput("hetzner", 24)
-	inputs[fieldRegion] = newTextInput("fsn1", 24)
-	inputs[fieldTags] = newTextInput("prod,web", 48)
-	inputs[fieldNote] = newTextInput("web entry node", 64)
+	inputs[fieldIdentityFile] = newTextInput("~/.ssh/id_ed25519", 48)
+	inputs[fieldPassword] = newPasswordInput("optional, saved to system keychain", 48)
 	inputs[fieldPort].SetValue("22")
 
-	form := addForm{inputs: inputs}
-	return form
+	return addForm{inputs: inputs}
 }
 
 func newTextInput(placeholder string, width int) textinput.Model {
@@ -70,6 +63,13 @@ func newTextInput(placeholder string, width int) textinput.Model {
 	input.Placeholder = placeholder
 	input.CharLimit = 256
 	input.SetWidth(width)
+	return input
+}
+
+func newPasswordInput(placeholder string, width int) textinput.Model {
+	input := newTextInput(placeholder, width)
+	input.EchoMode = textinput.EchoPassword
+	input.EchoCharacter = '*'
 	return input
 }
 
@@ -165,14 +165,12 @@ func (f *addForm) values() (CreateHostInput, error) {
 	}
 
 	return CreateHostInput{
-		Alias:    alias,
-		HostName: hostName,
-		User:     strings.TrimSpace(f.inputs[fieldUser].Value()),
-		Port:     port,
-		Provider: strings.TrimSpace(f.inputs[fieldProvider].Value()),
-		Region:   strings.TrimSpace(f.inputs[fieldRegion].Value()),
-		Tags:     splitCSV(f.inputs[fieldTags].Value()),
-		Note:     strings.TrimSpace(f.inputs[fieldNote].Value()),
+		Alias:        alias,
+		HostName:     hostName,
+		User:         strings.TrimSpace(f.inputs[fieldUser].Value()),
+		Port:         port,
+		IdentityFile: strings.TrimSpace(f.inputs[fieldIdentityFile].Value()),
+		Password:     f.inputs[fieldPassword].Value(),
 	}, nil
 }
 
@@ -182,21 +180,23 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 		contentWidth = 24
 	}
 
-	rows := make([]string, 0, len(f.inputs)+3)
-	rows = append(rows, styles.sectionTitle.Render("New Server"))
-	rows = append(rows, styles.sectionMeta.Render("Fields marked with * are required"))
+	rows := []string{
+		styles.sectionTitle.Render("New Server"),
+		styles.sectionMeta.Render("Required: alias and host. Password is optional."),
+	}
 
-	labels := []string{"* Alias", "* Host / IP", "User", "Port", "Provider", "Region", "Tags", "Note"}
+	labels := []string{"* Alias", "* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
 		labelStyle := styles.formLabel
+		inputStyle := styles.inputBox
 		if i == f.focusIndex {
 			labelStyle = styles.formLabelActive
+			inputStyle = styles.inputBoxActive
 		}
 
-		inputView := f.inputs[i].View()
 		rows = append(rows, lipgloss.JoinVertical(lipgloss.Left,
 			labelStyle.Render(labels[i]),
-			styles.inputBox.Width(contentWidth).Render(inputView),
+			inputStyle.Width(contentWidth).Render(f.inputs[i].View()),
 		))
 	}
 
@@ -208,17 +208,4 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return styles.panelActive.Width(width).Height(height).Render(body)
-}
-
-func splitCSV(raw string) []string {
-	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed == "" {
-			continue
-		}
-		result = append(result, trimmed)
-	}
-	return result
 }

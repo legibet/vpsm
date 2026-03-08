@@ -3,6 +3,7 @@ package ui
 import lipgloss "charm.land/lipgloss/v2"
 
 type styleSet struct {
+	canvas          lipgloss.Style
 	app             lipgloss.Style
 	headBar         lipgloss.Style
 	title           lipgloss.Style
@@ -27,30 +28,30 @@ type styleSet struct {
 	formLabel       lipgloss.Style
 	formLabelActive lipgloss.Style
 	inputBox        lipgloss.Style
+	inputBoxActive  lipgloss.Style
 }
 
 func newStyles() styleSet {
-	accent := lipgloss.Color("37")
-	warm := lipgloss.Color("208")
+	accent := lipgloss.Color("75")
+	warm := lipgloss.Color("214")
 	text := lipgloss.Color("252")
-	muted := lipgloss.Color("245")
-	border := lipgloss.Color("240")
-	panelBg := lipgloss.Color("235")
-	selectedBg := lipgloss.Color("236")
+	muted := lipgloss.Color("244")
+	border := lipgloss.Color("241")
 	errorColor := lipgloss.Color("203")
 
 	basePanel := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
+		UnsetBackground().
+		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(border).
-		Background(panelBg).
-		Padding(1, 2)
+		Padding(1, 1)
 
 	return styleSet{
-		app:          lipgloss.NewStyle().Padding(1, 2),
-		headBar:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1),
+		canvas:       lipgloss.NewStyle().UnsetBackground().Foreground(text),
+		app:          lipgloss.NewStyle().UnsetBackground().Padding(0, 1),
+		headBar:      lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
 		title:        lipgloss.NewStyle().Bold(true).Foreground(text),
 		subtitle:     lipgloss.NewStyle().Foreground(muted),
-		badge:        lipgloss.NewStyle().Foreground(accent).BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1),
+		badge:        lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
 		panel:        basePanel,
 		panelActive:  basePanel.Copy().BorderForeground(accent),
 		sectionTitle: lipgloss.NewStyle().Bold(true).Foreground(text),
@@ -58,14 +59,14 @@ func newStyles() styleSet {
 		listItem: lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderForeground(border).
-			Padding(0, 1).
-			MarginBottom(1),
+			UnsetBackground().
+			Padding(0, 1),
 		listItemActive: lipgloss.NewStyle().
 			BorderLeft(true).
 			BorderForeground(accent).
-			Background(selectedBg).
+			UnsetBackground().
 			Padding(0, 1).
-			MarginBottom(1),
+			Bold(true),
 		alias:           lipgloss.NewStyle().Bold(true).Foreground(text),
 		aliasActive:     lipgloss.NewStyle().Bold(true).Foreground(accent),
 		meta:            lipgloss.NewStyle().Foreground(muted),
@@ -73,11 +74,12 @@ func newStyles() styleSet {
 		label:           lipgloss.NewStyle().Foreground(muted).Width(14),
 		value:           lipgloss.NewStyle().Foreground(text),
 		muted:           lipgloss.NewStyle().Foreground(muted),
-		statusBar:       lipgloss.NewStyle().Foreground(warm).Padding(0, 1),
-		footerBar:       lipgloss.NewStyle().Foreground(muted).Padding(0, 1),
+		statusBar:       lipgloss.NewStyle().UnsetBackground().Foreground(warm).Padding(0, 1),
+		footerBar:       lipgloss.NewStyle().UnsetBackground().Foreground(muted).Padding(0, 1),
 		errorText:       lipgloss.NewStyle().Foreground(errorColor).Bold(true),
 		formLabel:       lipgloss.NewStyle().Foreground(muted),
 		formLabelActive: lipgloss.NewStyle().Foreground(accent).Bold(true),
-		inputBox:        lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1),
+		inputBox:        lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
+		inputBoxActive:  lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
 	}
 }
