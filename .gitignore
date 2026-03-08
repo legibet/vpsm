@@ -1,0 +1,6 @@
+/.DS_Store
+/vpsm
+/debug.log
+/tmp/
+/*.db
+/*.sqlite
