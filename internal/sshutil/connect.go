@@ -72,7 +72,7 @@ func BuildArgs(host model.Host) ([]string, error) {
 }
 
 func CanUseAlias(host model.Host) bool {
-	if host.SourceLabel() != "ssh-config" {
+	if !host.IsConfigBacked() {
 		return false
 	}
 

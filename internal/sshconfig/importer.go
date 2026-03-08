@@ -12,11 +12,12 @@ import (
 )
 
 type ImportedHost struct {
-	Alias    string
-	HostName string
-	User     string
-	Port     int
-	Source   string
+	Alias        string
+	HostName     string
+	User         string
+	Port         int
+	IdentityFile string
+	Source       string
 }
 
 type parser struct {
@@ -25,11 +26,12 @@ type parser struct {
 }
 
 type hostBlock struct {
-	aliases  []string
-	hostName string
-	user     string
-	port     int
-	source   string
+	aliases      []string
+	hostName     string
+	user         string
+	port         int
+	identityFile string
+	source       string
 }
 
 func ParsePath(path string) ([]ImportedHost, error) {
@@ -87,13 +89,17 @@ func (p *parser) parseFile(path string) error {
 			if skipAlias(alias) {
 				continue
 			}
+			if _, exists := p.hosts[alias]; exists {
+				continue
+			}
 
 			host := ImportedHost{
-				Alias:    alias,
-				HostName: firstNonEmpty(current.hostName, alias),
-				User:     current.user,
-				Port:     defaultPort(current.port),
-				Source:   current.source,
+				Alias:        alias,
+				HostName:     firstNonEmpty(current.hostName, alias),
+				User:         current.user,
+				Port:         defaultPort(current.port),
+				IdentityFile: current.identityFile,
+				Source:       current.source,
 			}
 
 			p.hosts[alias] = host
@@ -149,6 +155,10 @@ func (p *parser) parseFile(path string) error {
 			port, err := strconv.Atoi(firstValue(value))
 			if err == nil {
 				current.port = port
+			}
+		case "identityfile":
+			if len(current.aliases) > 0 && current.identityFile == "" {
+				current.identityFile = firstValue(value)
 			}
 		}
 	}

@@ -12,6 +12,7 @@ type Host struct {
 	User            string
 	Port            int
 	Source          string
+	Managed         bool
 	AuthMode        string
 	IdentityFile    string
 	PasswordStored  bool
@@ -47,8 +48,8 @@ func (h Host) TargetName() string {
 }
 
 func (h Host) SourceLabel() string {
-	if h.Source == "manual-override" {
-		return "manual override"
+	if h.Managed {
+		return "vpsm-managed"
 	}
 	if h.IsImported() {
 		return "ssh-config"
@@ -61,9 +62,16 @@ func (h Host) SourceLabel() string {
 	return h.Source
 }
 
-func (h Host) IsImported() bool {
+func (h Host) IsConfigBacked() bool {
+	if h.Managed {
+		return true
+	}
 	source := strings.TrimSpace(h.Source)
 	return source != "" && source != "manual" && source != "manual-override"
+}
+
+func (h Host) IsImported() bool {
+	return h.IsConfigBacked() && !h.Managed
 }
 
 func (h Host) LastConnectedLabel() string {

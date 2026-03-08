@@ -241,6 +241,10 @@ func (s *Store) DeleteHost(alias string) error {
 }
 
 func (s *Store) ToggleFavorite(alias string) (model.Host, error) {
+	if err := s.EnsureHost(alias); err != nil {
+		return model.Host{}, err
+	}
+
 	host, err := s.GetHost(alias)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

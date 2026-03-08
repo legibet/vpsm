@@ -17,11 +17,11 @@ func TestParsePathReadsHostBlocksAndIncludes(t *testing.T) {
 	}
 
 	includePath := filepath.Join(includeDir, "servers.conf")
-	if err := os.WriteFile(includePath, []byte("Host db-1\n  HostName 10.0.0.12\n  User root\n"), 0o644); err != nil {
+	if err := os.WriteFile(includePath, []byte("Host db-1\n  HostName 10.0.0.12\n  User root\n  IdentityFile ~/.ssh/id_db\n"), 0o644); err != nil {
 		t.Fatalf("write include file: %v", err)
 	}
 
-	content := "Host web-1 web-*\n  HostName 10.0.0.11\n  User ubuntu\n  Port 2201\n\nInclude conf.d/*.conf\n"
+	content := "Host web-1 web-*\n  HostName 10.0.0.11\n  User ubuntu\n  Port 2201\n\nInclude conf.d/*.conf\n\nHost web-1\n  HostName 10.0.0.99\n"
 	if err := os.WriteFile(mainPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write main file: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestParsePathReadsHostBlocksAndIncludes(t *testing.T) {
 		t.Fatalf("expected 2 hosts, got %d", len(hosts))
 	}
 
-	if hosts[0].Alias != "db-1" || hosts[0].HostName != "10.0.0.12" || hosts[0].Port != 22 {
+	if hosts[0].Alias != "db-1" || hosts[0].HostName != "10.0.0.12" || hosts[0].Port != 22 || hosts[0].IdentityFile != "~/.ssh/id_db" {
 		t.Fatalf("unexpected first host: %+v", hosts[0])
 	}
 

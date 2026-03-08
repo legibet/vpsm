@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"vpsm/internal/model"
@@ -185,6 +186,10 @@ func (s *Store) GetHost(alias string) (model.Host, error) {
 }
 
 func (s *Store) MarkConnected(alias string) error {
+	if err := s.EnsureHost(alias); err != nil {
+		return err
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := s.db.Exec(`
 		UPDATE hosts
@@ -192,6 +197,24 @@ func (s *Store) MarkConnected(alias string) error {
 		WHERE alias = ?
 	`, now, now, alias); err != nil {
 		return fmt.Errorf("mark host connected: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) EnsureHost(alias string) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return fmt.Errorf("alias is required")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.Exec(`
+		INSERT INTO hosts (alias, created_at, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(alias) DO NOTHING
+	`, alias, now, now); err != nil {
+		return fmt.Errorf("ensure host %q: %w", alias, err)
 	}
 
 	return nil

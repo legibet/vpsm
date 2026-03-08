@@ -9,9 +9,10 @@ import (
 const AppName = "vpsm"
 
 type Paths struct {
-	AppDir        string
-	DatabasePath  string
-	SSHConfigPath string
+	AppDir            string
+	DatabasePath      string
+	SSHConfigPath     string
+	ManagedConfigPath string
 }
 
 func ResolvePaths() (Paths, error) {
@@ -28,9 +29,10 @@ func ResolvePaths() (Paths, error) {
 	appDir := filepath.Join(configDir, AppName)
 
 	return Paths{
-		AppDir:        appDir,
-		DatabasePath:  filepath.Join(appDir, "vpsm.db"),
-		SSHConfigPath: filepath.Join(homeDir, ".ssh", "config"),
+		AppDir:            appDir,
+		DatabasePath:      filepath.Join(appDir, "vpsm.db"),
+		SSHConfigPath:     filepath.Join(homeDir, ".ssh", "config"),
+		ManagedConfigPath: filepath.Join(homeDir, ".ssh", "vpsm.conf"),
 	}, nil
 }
 
