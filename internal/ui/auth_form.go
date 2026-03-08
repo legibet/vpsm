@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	textinput "charm.land/bubbles/v2/textinput"
@@ -10,28 +12,34 @@ import (
 	"vpsm/internal/model"
 )
 
-type UpdateAuthInput struct {
+type UpdateHostInput struct {
 	Alias         string
+	HostName      string
+	User          string
+	Port          int
 	IdentityFile  string
 	Password      string
 	ClearPassword bool
 }
 
-type authFormAction int
+type editFormAction int
 
 const (
-	authFormNone authFormAction = iota
-	authFormSave
-	authFormCancel
+	editFormNone editFormAction = iota
+	editFormSave
+	editFormCancel
 )
 
 const (
-	authFieldIdentity = iota
-	authFieldPassword
-	authFieldCount
+	editFieldHostName = iota
+	editFieldUser
+	editFieldPort
+	editFieldIdentity
+	editFieldPassword
+	editFieldCount
 )
 
-type authForm struct {
+type editForm struct {
 	alias          string
 	passwordStored bool
 	clearPassword  bool
@@ -40,24 +48,30 @@ type authForm struct {
 	errorText      string
 }
 
-func newAuthForm(host model.Host) authForm {
-	inputs := make([]textinput.Model, authFieldCount)
-	inputs[authFieldIdentity] = newTextInput("~/.ssh/id_ed25519", 48)
-	inputs[authFieldIdentity].SetValue(host.IdentityFile)
-	inputs[authFieldPassword] = newPasswordInput("leave blank to keep current password", 48)
+func newEditForm(host model.Host) editForm {
+	inputs := make([]textinput.Model, editFieldCount)
+	inputs[editFieldHostName] = newTextInput("203.0.113.10", 48)
+	inputs[editFieldHostName].SetValue(host.HostName)
+	inputs[editFieldUser] = newTextInput("root", 24)
+	inputs[editFieldUser].SetValue(host.User)
+	inputs[editFieldPort] = newTextInput("22", 8)
+	inputs[editFieldPort].SetValue(strconv.Itoa(max(host.Port, 22)))
+	inputs[editFieldIdentity] = newTextInput("~/.ssh/id_ed25519", 48)
+	inputs[editFieldIdentity].SetValue(host.IdentityFile)
+	inputs[editFieldPassword] = newPasswordInput("leave blank to keep current password", 48)
 
-	return authForm{
+	return editForm{
 		alias:          host.Alias,
 		passwordStored: host.PasswordStored,
 		inputs:         inputs,
 	}
 }
 
-func (f *authForm) init() tea.Cmd {
+func (f *editForm) init() tea.Cmd {
 	return f.setFocus(0)
 }
 
-func (f *authForm) setWidth(width int) {
+func (f *editForm) setWidth(width int) {
 	if width < 16 {
 		width = 16
 	}
@@ -65,24 +79,27 @@ func (f *authForm) setWidth(width int) {
 	for i := range f.inputs {
 		f.inputs[i].SetWidth(width)
 	}
+	if width > 8 {
+		f.inputs[editFieldPort].SetWidth(8)
+	}
 }
 
-func (f *authForm) update(msg tea.Msg) (tea.Cmd, authFormAction) {
+func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		switch keyMsg.String() {
 		case "esc":
-			return nil, authFormCancel
+			return nil, editFormCancel
 		case "ctrl+s":
-			return nil, authFormSave
+			return nil, editFormSave
 		case "ctrl+x":
 			if !f.passwordStored && !f.clearPassword {
-				return nil, authFormNone
+				return nil, editFormNone
 			}
 			f.clearPassword = !f.clearPassword
 			if f.clearPassword {
-				f.inputs[authFieldPassword].SetValue("")
+				f.inputs[editFieldPassword].SetValue("")
 			}
-			return nil, authFormNone
+			return nil, editFormNone
 		case "tab", "shift+tab", "up", "down", "enter":
 			return f.handleFocusKey(keyMsg.String())
 		}
@@ -90,29 +107,29 @@ func (f *authForm) update(msg tea.Msg) (tea.Cmd, authFormAction) {
 
 	var cmd tea.Cmd
 	f.inputs[f.focusIndex], cmd = f.inputs[f.focusIndex].Update(msg)
-	if strings.TrimSpace(f.inputs[authFieldPassword].Value()) != "" {
+	if strings.TrimSpace(f.inputs[editFieldPassword].Value()) != "" {
 		f.clearPassword = false
 	}
-	return cmd, authFormNone
+	return cmd, editFormNone
 }
 
-func (f *authForm) handleFocusKey(key string) (tea.Cmd, authFormAction) {
+func (f *editForm) handleFocusKey(key string) (tea.Cmd, editFormAction) {
 	switch key {
 	case "up", "shift+tab":
-		return f.setFocus(f.focusIndex - 1), authFormNone
+		return f.setFocus(f.focusIndex - 1), editFormNone
 	case "down", "tab":
-		return f.setFocus(f.focusIndex + 1), authFormNone
+		return f.setFocus(f.focusIndex + 1), editFormNone
 	case "enter":
 		if f.focusIndex == len(f.inputs)-1 {
-			return nil, authFormSave
+			return nil, editFormSave
 		}
-		return f.setFocus(f.focusIndex + 1), authFormNone
+		return f.setFocus(f.focusIndex + 1), editFormNone
 	default:
-		return nil, authFormNone
+		return nil, editFormNone
 	}
 }
 
-func (f *authForm) setFocus(index int) tea.Cmd {
+func (f *editForm) setFocus(index int) tea.Cmd {
 	if index < 0 {
 		index = len(f.inputs) - 1
 	}
@@ -133,17 +150,35 @@ func (f *authForm) setFocus(index int) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (f *authForm) values() UpdateAuthInput {
-	return UpdateAuthInput{
-		Alias:         f.alias,
-		IdentityFile:  strings.TrimSpace(f.inputs[authFieldIdentity].Value()),
-		Password:      f.inputs[authFieldPassword].Value(),
-		ClearPassword: f.clearPassword,
+func (f *editForm) values() (UpdateHostInput, error) {
+	hostName := strings.TrimSpace(f.inputs[editFieldHostName].Value())
+	if hostName == "" {
+		return UpdateHostInput{}, fmt.Errorf("host is required")
 	}
+
+	port := 22
+	portValue := strings.TrimSpace(f.inputs[editFieldPort].Value())
+	if portValue != "" {
+		parsed, err := strconv.Atoi(portValue)
+		if err != nil || parsed <= 0 {
+			return UpdateHostInput{}, fmt.Errorf("port must be a positive number")
+		}
+		port = parsed
+	}
+
+	return UpdateHostInput{
+		Alias:         f.alias,
+		HostName:      hostName,
+		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
+		Port:          port,
+		IdentityFile:  strings.TrimSpace(f.inputs[editFieldIdentity].Value()),
+		Password:      f.inputs[editFieldPassword].Value(),
+		ClearPassword: f.clearPassword,
+	}, nil
 }
 
-func (f authForm) passwordStatusText() string {
-	passwordValue := strings.TrimSpace(f.inputs[authFieldPassword].Value())
+func (f editForm) passwordStatusText() string {
+	passwordValue := strings.TrimSpace(f.inputs[editFieldPassword].Value())
 	if passwordValue != "" {
 		return "Password: will replace stored password on save"
 	}
@@ -156,19 +191,19 @@ func (f authForm) passwordStatusText() string {
 	return "Password: not stored"
 }
 
-func (f authForm) view(styles styleSet, width int, height int) string {
+func (f editForm) view(styles styleSet, width int, height int) string {
 	contentWidth := width - 6
 	if contentWidth < 24 {
 		contentWidth = 24
 	}
 
 	rows := []string{
-		styles.sectionTitle.Render("Connection Settings"),
-		styles.sectionMeta.Render("Edit key path or stored password for the selected host."),
+		styles.sectionTitle.Render("Edit Server"),
+		styles.sectionMeta.Render("Update host, user, port, key path, or stored password."),
 		styles.value.Render(f.alias),
 	}
 
-	labels := []string{"Identity file", "Password"}
+	labels := []string{"* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
@@ -184,7 +219,7 @@ func (f authForm) view(styles styleSet, width int, height int) string {
 	}
 
 	rows = append(rows, styles.sectionMeta.Render(f.passwordStatusText()))
-	rows = append(rows, styles.sectionMeta.Render("Ctrl+X toggles password clear when a password is already stored."))
+	rows = append(rows, styles.sectionMeta.Render("Ctrl+X clears the stored password on save."))
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))
@@ -194,4 +229,11 @@ func (f authForm) view(styles styleSet, width int, height int) string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return styles.panelActive.Width(width).Height(height).Render(body)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

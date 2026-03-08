@@ -18,7 +18,8 @@ type Options struct {
 	ToggleFavorite func(alias string) error
 	RefreshHosts   func() ([]HostItem, string, error)
 	CreateHost     func(input CreateHostInput) error
-	UpdateAuth     func(input UpdateAuthInput) error
+	UpdateHost     func(input UpdateHostInput) error
+	DeleteHost     func(alias string) error
 	InitialStatus  string
 	InitialQuery   string
 }
@@ -28,7 +29,8 @@ type uiMode int
 const (
 	modeBrowse uiMode = iota
 	modeAdd
-	modeAuth
+	modeEdit
+	modeDeleteConfirm
 )
 
 type hostsLoadedMsg struct {
@@ -51,12 +53,14 @@ type tuiModel struct {
 	status         string
 	mode           uiMode
 	addForm        addForm
-	authForm       authForm
+	editForm       editForm
+	deleteAlias    string
 	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
 	createHost     func(input CreateHostInput) error
-	updateAuth     func(input UpdateAuthInput) error
+	updateHost     func(input UpdateHostInput) error
+	deleteHost     func(alias string) error
 }
 
 func Run(options Options) (string, error) {
@@ -68,7 +72,8 @@ func Run(options Options) (string, error) {
 		toggleFavorite: options.ToggleFavorite,
 		refreshHosts:   options.RefreshHosts,
 		createHost:     options.CreateHost,
-		updateAuth:     options.UpdateAuth,
+		updateHost:     options.UpdateHost,
+		deleteHost:     options.DeleteHost,
 	}
 	m.applyFilter()
 
@@ -98,8 +103,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeAdd {
 			m.addForm.setWidth(m.formWidth())
 		}
-		if m.mode == modeAuth {
-			m.authForm.setWidth(m.formWidth())
+		if m.mode == modeEdit {
+			m.editForm.setWidth(m.formWidth())
 		}
 		return m, nil
 	case hostsLoadedMsg:
@@ -108,8 +113,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addForm.errorText = msg.err.Error()
 				return m, nil
 			}
-			if m.mode == modeAuth {
-				m.authForm.errorText = msg.err.Error()
+			if m.mode == modeEdit {
+				m.editForm.errorText = msg.err.Error()
 				return m, nil
 			}
 			m.status = "Error: " + msg.err.Error()
@@ -127,7 +132,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = msg.status
 		m.mode = modeBrowse
 		m.addForm = addForm{}
-		m.authForm = authForm{}
+		m.editForm = editForm{}
+		m.deleteAlias = ""
 		m.applyFilter()
 		m.selectAlias(selectedAlias)
 		return m, nil
@@ -136,8 +142,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.mode == modeAdd {
 		return m.updateAddMode(msg)
 	}
-	if m.mode == modeAuth {
-		return m.updateAuthMode(msg)
+	if m.mode == modeEdit {
+		return m.updateEditMode(msg)
+	}
+	if m.mode == modeDeleteConfirm {
+		return m.updateDeleteConfirmMode(msg)
 	}
 
 	keyMsg, ok := msg.(tea.KeyPressMsg)
@@ -166,14 +175,22 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		return m, m.addForm.init()
 	case "e":
-		if len(m.filtered) == 0 || m.updateAuth == nil {
+		if len(m.filtered) == 0 || m.updateHost == nil {
 			return m, nil
 		}
-		m.mode = modeAuth
-		m.authForm = newAuthForm(m.filtered[m.cursor])
-		m.authForm.setWidth(m.formWidth())
+		m.mode = modeEdit
+		m.editForm = newEditForm(m.filtered[m.cursor])
+		m.editForm.setWidth(m.formWidth())
 		m.status = ""
-		return m, m.authForm.init()
+		return m, m.editForm.init()
+	case "d":
+		if len(m.filtered) == 0 || m.deleteHost == nil {
+			return m, nil
+		}
+		m.mode = modeDeleteConfirm
+		m.deleteAlias = m.currentAlias()
+		m.status = ""
+		return m, nil
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -262,18 +279,44 @@ func (m tuiModel) updateAddMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m tuiModel) updateAuthMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	cmd, action := m.authForm.update(msg)
+func (m tuiModel) updateEditMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd, action := m.editForm.update(msg)
 	switch action {
-	case authFormCancel:
+	case editFormCancel:
 		m.mode = modeBrowse
-		m.authForm = authForm{}
+		m.editForm = editForm{}
 		m.status = "Edit canceled"
 		return m, nil
-	case authFormSave:
-		return m, updateAuthCmd(m.authForm.values(), m.updateAuth, m.refreshHosts)
+	case editFormSave:
+		input, err := m.editForm.values()
+		if err != nil {
+			m.editForm.errorText = err.Error()
+			return m, nil
+		}
+		m.editForm.errorText = ""
+		return m, updateHostCmd(input, m.updateHost, m.refreshHosts)
 	default:
 		return m, cmd
+	}
+}
+
+func (m tuiModel) updateDeleteConfirmMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch keyMsg.String() {
+	case "esc", "q":
+		m.mode = modeBrowse
+		m.deleteAlias = ""
+		m.status = "Delete canceled"
+		return m, nil
+	case "enter", "d":
+		alias := m.deleteAlias
+		return m, deleteHostCmd(alias, m.deleteHost, m.refreshHosts)
+	default:
+		return m, nil
 	}
 }
 
@@ -402,8 +445,10 @@ func (m tuiModel) View() tea.View {
 	var sidePanel string
 	if m.mode == modeAdd {
 		sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
-	} else if m.mode == modeAuth {
-		sidePanel = m.authForm.view(m.styles, rightWidth, bodyHeight)
+	} else if m.mode == modeEdit {
+		sidePanel = m.editForm.view(m.styles, rightWidth, bodyHeight)
+	} else if m.mode == modeDeleteConfirm {
+		sidePanel = m.renderDeleteConfirmPanel(rightWidth, bodyHeight)
 	} else {
 		sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
 	}
@@ -432,6 +477,10 @@ func (m tuiModel) renderHeader(width int) string {
 	modeLabel := "browse"
 	if m.mode == modeAdd {
 		modeLabel = "add"
+	} else if m.mode == modeEdit {
+		modeLabel = "edit"
+	} else if m.mode == modeDeleteConfirm {
+		modeLabel = "delete"
 	} else if m.searchMode {
 		modeLabel = "search"
 	}
@@ -447,7 +496,7 @@ func (m tuiModel) renderHeader(width int) string {
 func (m tuiModel) renderListPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Inventory"),
-		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit auth, enter to connect"),
+		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit, d to delete, enter to connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -515,6 +564,31 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	)
 
 	return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
+	rows := []string{
+		m.styles.sectionTitle.Render("Delete Server"),
+		m.styles.sectionMeta.Render("This removes the host from the local list."),
+	}
+
+	if len(m.filtered) == 0 {
+		rows = append(rows, m.styles.muted.Render("Nothing selected."))
+		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+	}
+
+	selected := m.filtered[m.cursor]
+	rows = append(rows,
+		m.detailRow("Alias", selected.Alias),
+		m.detailRow("Target", selected.TargetName()),
+		m.detailRow("Source", selected.SourceLabel()),
+	)
+	if selected.IsImported() || selected.SourceLabel() == "manual override" {
+		rows = append(rows, m.styles.sectionMeta.Render("Deleting this entry hides it from future SSH config refreshes."))
+	}
+	rows = append(rows, m.styles.errorText.Render("Press Enter or d to delete. Esc cancels."))
+
+	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 func (m tuiModel) detailRow(label string, value string) string {
@@ -602,10 +676,13 @@ func (m tuiModel) footerText() string {
 	if m.mode == modeAdd {
 		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
 	}
-	if m.mode == modeAuth {
+	if m.mode == modeEdit {
 		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear password | esc cancel"
 	}
-	return "j/k move | pgup/pgdn page | / search | n new | e auth | f favorite | r refresh | enter connect | q quit"
+	if m.mode == modeDeleteConfirm {
+		return "enter or d delete | esc cancel"
+	}
+	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete | f favorite | r refresh | enter connect | q quit"
 }
 
 func listMeta(host model.Host) string {
@@ -623,7 +700,7 @@ func compactAuthLabel(host model.Host) string {
 		parts = append(parts, "password")
 	}
 	if len(parts) == 0 {
-		return "default auth"
+		return "default"
 	}
 	return strings.Join(parts, " + ")
 }
@@ -635,16 +712,16 @@ func connectionMode(host model.Host) string {
 	return "direct target"
 }
 
-func updateAuthCmd(input UpdateAuthInput, update func(UpdateAuthInput) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+func updateHostCmd(input UpdateHostInput, update func(UpdateHostInput) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
 	return func() tea.Msg {
 		if update == nil {
-			return hostsLoadedMsg{err: fmt.Errorf("update auth action is unavailable")}
+			return hostsLoadedMsg{err: fmt.Errorf("update host action is unavailable")}
 		}
 		if err := update(input); err != nil {
 			return hostsLoadedMsg{err: err}
 		}
 
-		status := "Updated auth for " + input.Alias
+		status := "Updated " + input.Alias
 		if refresh == nil {
 			return hostsLoadedMsg{status: status, selectAlias: input.Alias}
 		}
@@ -657,6 +734,31 @@ func updateAuthCmd(input UpdateAuthInput, update func(UpdateAuthInput) error, re
 			status = status + "; " + refreshStatus
 		}
 		return hostsLoadedMsg{hosts: items, status: status, selectAlias: input.Alias}
+	}
+}
+
+func deleteHostCmd(alias string, remove func(string) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		if remove == nil {
+			return hostsLoadedMsg{err: fmt.Errorf("delete host action is unavailable")}
+		}
+		if err := remove(alias); err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		status := "Deleted " + alias
+		if refresh == nil {
+			return hostsLoadedMsg{status: status}
+		}
+
+		items, refreshStatus, err := refresh()
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+		if strings.TrimSpace(refreshStatus) != "" {
+			status = status + "; " + refreshStatus
+		}
+		return hostsLoadedMsg{hosts: items, status: status}
 	}
 }
 

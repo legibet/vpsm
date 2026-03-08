@@ -24,17 +24,17 @@ func TestUpdateForwardsPasteToAddForm(t *testing.T) {
 	}
 }
 
-func TestUpdateForwardsPasteToAuthForm(t *testing.T) {
+func TestUpdateForwardsPasteToEditForm(t *testing.T) {
 	t.Parallel()
 
 	m := tuiModel{
-		mode:     modeAuth,
-		authForm: newAuthForm(model.Host{Alias: "demo"}),
+		mode:     modeEdit,
+		editForm: newEditForm(model.Host{Alias: "demo", Port: 22}),
 	}
-	_ = m.authForm.setFocus(authFieldPassword)
+	_ = m.editForm.setFocus(editFieldPassword)
 
 	updated, _ := m.Update(tea.PasteMsg{Content: "secret-pass"})
-	got := updated.(tuiModel).authForm.inputs[authFieldPassword].Value()
+	got := updated.(tuiModel).editForm.inputs[editFieldPassword].Value()
 	if got != "secret-pass" {
 		t.Fatalf("expected pasted password, got %q", got)
 	}

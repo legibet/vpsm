@@ -74,6 +74,11 @@ func run(args []string) error {
 			return errors.New("usage: vpsm clear-password <alias>")
 		}
 		return runClearPassword(st, args[1])
+	case "delete":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm delete <alias>")
+		}
+		return runDelete(st, args[1])
 	case "favorite":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm favorite <alias> [on|off|toggle]")
@@ -156,8 +161,22 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 			}
 			return nil
 		},
-		UpdateAuth: func(input ui.UpdateAuthInput) error {
-			patch := store.HostPatch{IdentityFile: &input.IdentityFile}
+		UpdateHost: func(input ui.UpdateHostInput) error {
+			current, err := st.GetHost(input.Alias)
+			if err != nil {
+				return err
+			}
+
+			patch := store.HostPatch{
+				HostName:     &input.HostName,
+				User:         &input.User,
+				Port:         &input.Port,
+				IdentityFile: &input.IdentityFile,
+			}
+			if current.IsImported() && hostConnectionChanged(current, input) {
+				source := "manual-override"
+				patch.Source = &source
+			}
 			if _, err := st.UpdateHost(input.Alias, patch); err != nil {
 				return err
 			}
@@ -170,6 +189,15 @@ func runTUI(st *store.Store, sshConfigPath string) error {
 				if err := secret.SetPassword(input.Alias, input.Password); err != nil {
 					return err
 				}
+			}
+			return nil
+		},
+		DeleteHost: func(alias string) error {
+			if err := st.DeleteHost(alias); err != nil {
+				return err
+			}
+			if err := secret.DeletePassword(alias); err != nil {
+				return err
 			}
 			return nil
 		},
@@ -402,6 +430,18 @@ func runClearPassword(st *store.Store, alias string) error {
 	return runShow(st, alias)
 }
 
+func runDelete(st *store.Store, alias string) error {
+	if err := st.DeleteHost(alias); err != nil {
+		return err
+	}
+	if err := secret.DeletePassword(alias); err != nil {
+		return err
+	}
+
+	fmt.Printf("Deleted %s\n", alias)
+	return nil
+}
+
 func runFavorite(st *store.Store, alias string, mode string) error {
 	var err error
 
@@ -447,12 +487,9 @@ func connectHost(st *store.Store, alias string) error {
 		return fmt.Errorf("host %q not found in local database: %w", alias, err)
 	}
 
-	password, passwordStored, err := secret.GetPasswordIfExists(alias)
+	password, _, err := secret.GetPasswordIfExists(alias)
 	if err != nil {
 		return err
-	}
-	if passwordStored && !sshutil.CanAutoFillPassword() {
-		fmt.Fprintln(os.Stderr, "Note: stored password found, but sshpass is not installed; OpenSSH will prompt if password fallback is needed.")
 	}
 
 	cmd, err := sshutil.BuildCommandWithPassword(host, password)
@@ -511,6 +548,7 @@ Usage:
   vpsm set <alias>            Update host auth and optional metadata
   vpsm set-password <alias>   Store an SSH password in the system keychain
   vpsm clear-password <alias> Delete a stored SSH password
+  vpsm delete <alias>         Delete a host from the local list
   vpsm favorite <alias>       Toggle favorite state
   vpsm favorite <alias> on    Mark as favorite
   vpsm favorite <alias> off   Remove favorite mark
@@ -562,6 +600,19 @@ func compactAuthLabel(host model.Host) string {
 		return "default"
 	}
 	return strings.Join(parts, "+")
+}
+
+func hostConnectionChanged(current model.Host, input ui.UpdateHostInput) bool {
+	if strings.TrimSpace(current.HostName) != strings.TrimSpace(input.HostName) {
+		return true
+	}
+	if strings.TrimSpace(current.User) != strings.TrimSpace(input.User) {
+		return true
+	}
+	if current.Port != input.Port {
+		return true
+	}
+	return false
 }
 
 func promptPassword(alias string) (string, error) {

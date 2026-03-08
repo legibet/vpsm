@@ -11,6 +11,8 @@ It does not replace your terminal or SSH client. It builds a small local host da
 - fuzzy search hosts in the TUI
 - add manual hosts from the CLI or the TUI
 - edit key path and stored password directly in the TUI
+- edit existing servers directly in the TUI
+- delete servers from the TUI or CLI
 - store a key path in the local database
 - store an SSH password in the system keychain
 - launch your system OpenSSH with either a safe alias or a direct target fallback
@@ -22,7 +24,6 @@ It does not replace your terminal or SSH client. It builds a small local host da
 - Go `1.25+`
 - a real terminal for the TUI
 - OpenSSH available in `PATH`
-- `sshpass` in `PATH` if you want one-shot password auth launch
 
 ## Build
 
@@ -42,7 +43,8 @@ go build -o vpsm .
 Inside the TUI:
 
 - press `n` to add a server
-- press `e` on a selected host to edit key path or password
+- press `e` on a selected host to edit host/user/port/key/password
+- press `d` on a selected host to delete it
 - press `enter` to connect
 
 ## Common commands
@@ -54,6 +56,7 @@ Inside the TUI:
 ./vpsm set my-host --identity-file ~/.ssh/id_ed25519
 ./vpsm set-password my-host
 ./vpsm clear-password my-host
+./vpsm delete my-host
 ./vpsm favorite my-host on
 ./vpsm ssh my-host
 ```
@@ -64,7 +67,8 @@ Inside the TUI:
 - `pgup` / `pgdn`: page
 - `/`: search
 - `n`: add a new server
-- `e`: edit key path / password for the selected host
+- `e`: edit the selected server
+- `d`: delete the selected server
 - `f`: toggle favorite
 - `r`: refresh from `~/.ssh/config`
 - `enter`: connect with `ssh`
@@ -82,5 +86,6 @@ Inside the TUI:
 - connection settings stay local and are stored separately from your SSH config.
 - private keys are not copied into the app database; only the path is stored.
 - passwords are stored in the system keychain, not in SQLite.
-- if a stored password exists, `vpsm` will try password fallback after the usual SSH methods; `sshpass` enables automatic password fill, otherwise OpenSSH can still prompt interactively.
+- if a stored password exists, `vpsm` will try password fallback through system `ssh` using `SSH_ASKPASS`.
+- deleting an imported SSH config host hides it from future refreshes in the local app view.
 - if an imported alias contains non-ASCII characters, `vpsm` falls back to a direct `user@host` SSH target instead of calling `ssh <alias>`.
