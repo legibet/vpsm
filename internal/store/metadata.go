@@ -12,6 +12,10 @@ import (
 )
 
 type HostPatch struct {
+	HostName     *string
+	User         *string
+	Port         *int
+	Source       *string
 	AuthMode     *string
 	IdentityFile *string
 	Provider     *string
@@ -89,6 +93,9 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 	if err != nil {
 		return model.Host{}, fmt.Errorf("create host %q: %w", alias, err)
 	}
+	if _, err := s.db.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+		return model.Host{}, fmt.Errorf("clear ignored host %q: %w", alias, err)
+	}
 
 	return s.GetHost(alias)
 }
@@ -102,8 +109,29 @@ func defaultPort(port int) int {
 }
 
 func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
-	assignments := make([]string, 0, 7)
-	args := make([]any, 0, 8)
+	assignments := make([]string, 0, 11)
+	args := make([]any, 0, 12)
+
+	if patch.HostName != nil {
+		hostName := strings.TrimSpace(*patch.HostName)
+		if hostName == "" {
+			return model.Host{}, errors.New("host is required")
+		}
+		assignments = append(assignments, "hostname = ?")
+		args = append(args, hostName)
+	}
+	if patch.User != nil {
+		assignments = append(assignments, "user_name = ?")
+		args = append(args, strings.TrimSpace(*patch.User))
+	}
+	if patch.Port != nil {
+		assignments = append(assignments, "port = ?")
+		args = append(args, defaultPort(*patch.Port))
+	}
+	if patch.Source != nil {
+		assignments = append(assignments, "source = ?")
+		args = append(args, strings.TrimSpace(*patch.Source))
+	}
 
 	if patch.AuthMode != nil || patch.IdentityFile != nil {
 		current, err := s.GetHost(alias)
@@ -168,6 +196,48 @@ func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
 	}
 
 	return s.GetHost(alias)
+}
+
+func (s *Store) DeleteHost(alias string) error {
+	host, err := s.GetHost(alias)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("host %q not found", alias)
+		}
+		return err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete host transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
+		return fmt.Errorf("delete host %q: %w", alias, err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	switch host.SourceLabel() {
+	case "ssh-config", "manual override":
+		if _, err := tx.Exec(`
+			INSERT INTO ignored_hosts (alias, created_at)
+			VALUES (?, ?)
+			ON CONFLICT(alias) DO UPDATE SET created_at = excluded.created_at
+		`, alias, now); err != nil {
+			return fmt.Errorf("ignore host %q after delete: %w", alias, err)
+		}
+	default:
+		if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+			return fmt.Errorf("clear ignored host %q: %w", alias, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete host transaction: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Store) ToggleFavorite(alias string) (model.Host, error) {

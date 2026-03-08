@@ -156,3 +156,92 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 		t.Fatalf("expected default auth mode after clearing identity file, got %q", host.AuthMode)
 	}
 }
+
+func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	imported := []sshconfig.ImportedHost{{
+		Alias:    "ssh-box",
+		HostName: "10.0.0.10",
+		User:     "root",
+		Port:     22,
+		Source:   "/tmp/config",
+	}}
+	if _, err := st.SyncImportedHosts(imported); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	if err := st.DeleteHost("ssh-box"); err != nil {
+		t.Fatalf("delete host: %v", err)
+	}
+
+	if _, err := st.SyncImportedHosts(imported); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+
+	hosts, err := st.ListHosts()
+	if err != nil {
+		t.Fatalf("list hosts: %v", err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("expected deleted imported host to stay hidden, got %+v", hosts)
+	}
+}
+
+func TestManualOverrideSurvivesImportSync(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	imported := []sshconfig.ImportedHost{{
+		Alias:    "ssh-box",
+		HostName: "10.0.0.10",
+		User:     "root",
+		Port:     22,
+		Source:   "/tmp/config",
+	}}
+	if _, err := st.SyncImportedHosts(imported); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	hostName := "198.51.100.20"
+	user := "ubuntu"
+	port := 2202
+	source := "manual-override"
+	host, err := st.UpdateHost("ssh-box", HostPatch{
+		HostName: &hostName,
+		User:     &user,
+		Port:     &port,
+		Source:   &source,
+	})
+	if err != nil {
+		t.Fatalf("update host: %v", err)
+	}
+	if host.Source != "manual-override" {
+		t.Fatalf("expected manual override source, got %q", host.Source)
+	}
+
+	if _, err := st.SyncImportedHosts(imported); err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+
+	host, err = st.GetHost("ssh-box")
+	if err != nil {
+		t.Fatalf("get host: %v", err)
+	}
+	if host.HostName != hostName || host.User != user || host.Port != port {
+		t.Fatalf("expected manual override values to persist, got %+v", host)
+	}
+}

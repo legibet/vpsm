@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,13 +28,19 @@ func BuildCommandWithPassword(host model.Host, password string) (*exec.Cmd, erro
 		return exec.Command("ssh", args...), nil
 	}
 
-	args = append([]string{"-o", "PreferredAuthentications=publickey,password,keyboard-interactive"}, args...)
-	if !CanAutoFillPassword() {
-		return exec.Command("ssh", args...), nil
+	askpassPath, err := ensureAskpassHelper()
+	if err != nil {
+		return nil, err
 	}
 
-	cmd := exec.Command("sshpass", append([]string{"-e", "ssh"}, args...)...)
-	cmd.Env = append(os.Environ(), "SSHPASS="+password)
+	args = append([]string{"-o", "PreferredAuthentications=publickey,password,keyboard-interactive"}, args...)
+	cmd := exec.Command("ssh", args...)
+	cmd.Env = append(os.Environ(),
+		"DISPLAY=vpsm:0",
+		"SSH_ASKPASS="+askpassPath,
+		"SSH_ASKPASS_REQUIRE=prefer",
+		"VPSM_SSH_PASSWORD="+password,
+	)
 	return cmd, nil
 }
 
@@ -81,6 +88,15 @@ func normalizePort(port int) int {
 }
 
 func CanAutoFillPassword() bool {
-	_, err := exec.LookPath("sshpass")
+	_, err := ensureAskpassHelper()
 	return err == nil
+}
+
+func ensureAskpassHelper() (string, error) {
+	path := filepath.Join(os.TempDir(), "vpsm-ssh-askpass.sh")
+	content := []byte("#!/bin/sh\nprintf '%s\\n' \"$VPSM_SSH_PASSWORD\"\n")
+	if err := os.WriteFile(path, content, 0o700); err != nil {
+		return "", fmt.Errorf("write ssh askpass helper: %w", err)
+	}
+	return path, nil
 }

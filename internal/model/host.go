@@ -47,7 +47,10 @@ func (h Host) TargetName() string {
 }
 
 func (h Host) SourceLabel() string {
-	if strings.Contains(h.Source, "/.ssh/") {
+	if h.Source == "manual-override" {
+		return "manual override"
+	}
+	if h.IsImported() {
 		return "ssh-config"
 	}
 
@@ -56,6 +59,11 @@ func (h Host) SourceLabel() string {
 	}
 
 	return h.Source
+}
+
+func (h Host) IsImported() bool {
+	source := strings.TrimSpace(h.Source)
+	return source != "" && source != "manual" && source != "manual-override"
 }
 
 func (h Host) LastConnectedLabel() string {

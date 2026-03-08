@@ -62,6 +62,11 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 	}
 	defer tx.Rollback()
 
+	ignored, err := loadIgnoredAliases(tx)
+	if err != nil {
+		return 0, err
+	}
+
 	statement, err := tx.Prepare(`
 		INSERT INTO hosts (
 			alias,
@@ -81,6 +86,7 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 			port = excluded.port,
 			source = excluded.source,
 			updated_at = excluded.updated_at
+		WHERE hosts.source <> 'manual' AND hosts.source <> 'manual-override'
 	`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare upsert statement: %w", err)
@@ -90,6 +96,9 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 	now := time.Now().UTC().Format(time.RFC3339)
 	count := 0
 	for _, host := range imported {
+		if _, skip := ignored[host.Alias]; skip {
+			continue
+		}
 		if _, err := statement.Exec(host.Alias, host.HostName, host.User, host.Port, host.Source, now, now); err != nil {
 			return 0, fmt.Errorf("upsert imported host %q: %w", host.Alias, err)
 		}
@@ -210,6 +219,11 @@ func (s *Store) migrate() error {
 
 		CREATE INDEX IF NOT EXISTS idx_hosts_favorite_alias
 		ON hosts (favorite DESC, alias ASC);
+
+		CREATE TABLE IF NOT EXISTS ignored_hosts (
+			alias TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL
+		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
@@ -224,6 +238,30 @@ func (s *Store) migrate() error {
 	}
 
 	return nil
+}
+
+func loadIgnoredAliases(query interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}) (map[string]struct{}, error) {
+	rows, err := query.Query(`SELECT alias FROM ignored_hosts`)
+	if err != nil {
+		return nil, fmt.Errorf("query ignored hosts: %w", err)
+	}
+	defer rows.Close()
+
+	ignored := make(map[string]struct{})
+	for rows.Next() {
+		var alias string
+		if err := rows.Scan(&alias); err != nil {
+			return nil, fmt.Errorf("scan ignored host: %w", err)
+		}
+		ignored[alias] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate ignored hosts: %w", err)
+	}
+
+	return ignored, nil
 }
 
 func (s *Store) ensureColumn(name string, definition string) error {
