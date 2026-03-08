@@ -12,6 +12,9 @@ type Host struct {
 	User            string
 	Port            int
 	Source          string
+	AuthMode        string
+	IdentityFile    string
+	PasswordStored  bool
 	Provider        string
 	Region          string
 	Tags            []string
@@ -27,8 +30,7 @@ func (h Host) SearchText() string {
 		h.Alias,
 		h.HostName,
 		h.User,
-		h.Provider,
-		h.Region,
+		h.IdentityFile,
 		h.Note,
 		strings.Join(h.Tags, " "),
 	}
@@ -78,7 +80,46 @@ func (h Host) SummaryLine() string {
 		star = "*"
 	}
 
-	return fmt.Sprintf("%s %-20s %-24s %-10s %s", star, h.Alias, h.TargetName(), firstNonEmpty(h.Region, "-"), firstNonEmpty(h.Provider, h.SourceLabel()))
+	return fmt.Sprintf("%s %-20s %-24s %s", star, h.Alias, h.TargetName(), h.AuthMethodsLabel())
+}
+
+func (h Host) AuthModeLabel() string {
+	switch strings.ToLower(strings.TrimSpace(h.AuthMode)) {
+	case "key":
+		return "key file"
+	case "password":
+		return "password"
+	default:
+		return "default"
+	}
+}
+
+func (h Host) IdentityFileLabel() string {
+	if strings.TrimSpace(h.IdentityFile) == "" {
+		return "-"
+	}
+
+	return h.IdentityFile
+}
+
+func (h Host) PasswordStoredLabel() string {
+	if h.PasswordStored {
+		return "yes"
+	}
+
+	return "no"
+}
+
+func (h Host) AuthMethodsLabel() string {
+	steps := []string{"default auth"}
+	if strings.TrimSpace(h.IdentityFile) != "" {
+		steps = append(steps, "key file")
+	}
+	if h.PasswordStored {
+		steps = append(steps, "stored password")
+	}
+
+	return strings.Join(steps, " -> ")
 }
 
 func firstNonEmpty(values ...string) string {

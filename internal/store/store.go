@@ -69,10 +69,12 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 			user_name,
 			port,
 			source,
+			auth_mode,
+			identity_file,
 			tags_json,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, '[]', ?, ?)
+		) VALUES (?, ?, ?, ?, ?, '', '', '[]', ?, ?)
 		ON CONFLICT(alias) DO UPDATE SET
 			hostname = excluded.hostname,
 			user_name = excluded.user_name,
@@ -109,6 +111,8 @@ func (s *Store) ListHosts() ([]model.Host, error) {
 			user_name,
 			port,
 			source,
+			auth_mode,
+			identity_file,
 			provider,
 			region,
 			tags_json,
@@ -149,6 +153,8 @@ func (s *Store) GetHost(alias string) (model.Host, error) {
 			user_name,
 			port,
 			source,
+			auth_mode,
+			identity_file,
 			provider,
 			region,
 			tags_json,
@@ -190,6 +196,8 @@ func (s *Store) migrate() error {
 			user_name TEXT NOT NULL DEFAULT '',
 			port INTEGER NOT NULL DEFAULT 22,
 			source TEXT NOT NULL DEFAULT '',
+			auth_mode TEXT NOT NULL DEFAULT '',
+			identity_file TEXT NOT NULL DEFAULT '',
 			provider TEXT NOT NULL DEFAULT '',
 			region TEXT NOT NULL DEFAULT '',
 			tags_json TEXT NOT NULL DEFAULT '[]',
@@ -206,6 +214,30 @@ func (s *Store) migrate() error {
 
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
+	}
+
+	if err := s.ensureColumn("auth_mode", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("identity_file", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Store) ensureColumn(name string, definition string) error {
+	row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('hosts') WHERE name = ?`, name)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return fmt.Errorf("inspect hosts column %q: %w", name, err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE hosts ADD COLUMN ` + name + ` ` + definition); err != nil {
+		return fmt.Errorf("add hosts column %q: %w", name, err)
 	}
 
 	return nil
@@ -229,6 +261,8 @@ func scanHost(row scanner) (model.Host, error) {
 		&host.User,
 		&host.Port,
 		&host.Source,
+		&host.AuthMode,
+		&host.IdentityFile,
 		&host.Provider,
 		&host.Region,
 		&tagsJSON,

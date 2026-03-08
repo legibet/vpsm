@@ -2,6 +2,7 @@ package sshutil
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -13,17 +14,37 @@ import (
 var safeAliasPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func BuildCommand(host model.Host) (*exec.Cmd, error) {
+	return BuildCommandWithPassword(host, "")
+}
+
+func BuildCommandWithPassword(host model.Host, password string) (*exec.Cmd, error) {
 	args, err := BuildArgs(host)
 	if err != nil {
 		return nil, err
 	}
 
-	return exec.Command("ssh", args...), nil
+	if strings.TrimSpace(password) == "" {
+		return exec.Command("ssh", args...), nil
+	}
+
+	args = append([]string{"-o", "PreferredAuthentications=publickey,password,keyboard-interactive"}, args...)
+	if !CanAutoFillPassword() {
+		return exec.Command("ssh", args...), nil
+	}
+
+	cmd := exec.Command("sshpass", append([]string{"-e", "ssh"}, args...)...)
+	cmd.Env = append(os.Environ(), "SSHPASS="+password)
+	return cmd, nil
 }
 
 func BuildArgs(host model.Host) ([]string, error) {
+	args := make([]string, 0, 6)
+	if identityFile := strings.TrimSpace(host.IdentityFile); identityFile != "" {
+		args = append(args, "-i", identityFile)
+	}
+
 	if CanUseAlias(host) {
-		return []string{host.Alias}, nil
+		return append(args, host.Alias), nil
 	}
 
 	target := strings.TrimSpace(host.HostName)
@@ -35,7 +56,6 @@ func BuildArgs(host model.Host) ([]string, error) {
 		target = user + "@" + target
 	}
 
-	args := make([]string, 0, 3)
 	if port := normalizePort(host.Port); port != 22 {
 		args = append(args, "-p", strconv.Itoa(port))
 	}
@@ -58,4 +78,9 @@ func normalizePort(port int) int {
 	}
 
 	return port
+}
+
+func CanAutoFillPassword() bool {
+	_, err := exec.LookPath("sshpass")
+	return err == nil
 }

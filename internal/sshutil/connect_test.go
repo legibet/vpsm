@@ -63,3 +63,24 @@ func TestBuildArgsUsesDirectTargetForManualHost(t *testing.T) {
 		t.Fatalf("unexpected args: %#v", args)
 	}
 }
+
+func TestBuildArgsIncludesIdentityFile(t *testing.T) {
+	t.Parallel()
+
+	args, err := BuildArgs(model.Host{
+		Alias:        "infra-1",
+		HostName:     "10.0.0.3",
+		User:         "root",
+		Port:         2222,
+		Source:       "manual",
+		IdentityFile: "~/.ssh/id_ed25519",
+	})
+	if err != nil {
+		t.Fatalf("build args: %v", err)
+	}
+
+	expected := []string{"-i", "~/.ssh/id_ed25519", "-p", "2222", "root@10.0.0.3"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}

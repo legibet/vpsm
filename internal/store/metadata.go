@@ -12,24 +12,28 @@ import (
 )
 
 type HostPatch struct {
-	Provider *string
-	Region   *string
-	Tags     *[]string
-	Note     *string
-	Favorite *bool
+	AuthMode     *string
+	IdentityFile *string
+	Provider     *string
+	Region       *string
+	Tags         *[]string
+	Note         *string
+	Favorite     *bool
 }
 
 type NewHost struct {
-	Alias    string
-	HostName string
-	User     string
-	Port     int
-	Source   string
-	Provider string
-	Region   string
-	Tags     []string
-	Note     string
-	Favorite bool
+	Alias        string
+	HostName     string
+	User         string
+	Port         int
+	Source       string
+	AuthMode     string
+	IdentityFile string
+	Provider     string
+	Region       string
+	Tags         []string
+	Note         string
+	Favorite     bool
 }
 
 func (s *Store) CreateHost(input NewHost) (model.Host, error) {
@@ -47,6 +51,7 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 	if source == "" {
 		source = "manual"
 	}
+	authMode := normalizeAuthMode(input.AuthMode, strings.TrimSpace(input.IdentityFile))
 
 	_, err := s.db.Exec(`
 		INSERT INTO hosts (
@@ -55,6 +60,8 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 			user_name,
 			port,
 			source,
+			auth_mode,
+			identity_file,
 			provider,
 			region,
 			tags_json,
@@ -62,13 +69,15 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 			favorite,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		alias,
 		hostName,
 		strings.TrimSpace(input.User),
 		defaultPort(input.Port),
 		source,
+		authMode,
+		strings.TrimSpace(input.IdentityFile),
 		strings.TrimSpace(input.Provider),
 		strings.TrimSpace(input.Region),
 		mustJSON(normalizeTags(input.Tags)),
@@ -93,8 +102,31 @@ func defaultPort(port int) int {
 }
 
 func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
-	assignments := make([]string, 0, 5)
-	args := make([]any, 0, 6)
+	assignments := make([]string, 0, 7)
+	args := make([]any, 0, 8)
+
+	if patch.AuthMode != nil || patch.IdentityFile != nil {
+		current, err := s.GetHost(alias)
+		if err != nil {
+			return model.Host{}, err
+		}
+
+		identityFile := strings.TrimSpace(current.IdentityFile)
+		if patch.IdentityFile != nil {
+			identityFile = strings.TrimSpace(*patch.IdentityFile)
+			assignments = append(assignments, "identity_file = ?")
+			args = append(args, identityFile)
+		}
+
+		authMode := current.AuthMode
+		if patch.AuthMode != nil {
+			authMode = *patch.AuthMode
+		} else if patch.IdentityFile != nil && identityFile == "" {
+			authMode = ""
+		}
+		assignments = append(assignments, "auth_mode = ?")
+		args = append(args, normalizeAuthMode(authMode, identityFile))
+	}
 
 	if patch.Provider != nil {
 		assignments = append(assignments, "provider = ?")
@@ -181,4 +213,19 @@ func mustJSON(tags []string) string {
 		return "[]"
 	}
 	return string(encoded)
+}
+
+func normalizeAuthMode(mode string, identityFile string) string {
+	if strings.TrimSpace(identityFile) != "" {
+		return "key"
+	}
+
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "default":
+		return ""
+	case "key", "password":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return ""
+	}
 }
