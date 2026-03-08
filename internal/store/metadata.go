@@ -19,6 +19,79 @@ type HostPatch struct {
 	Favorite *bool
 }
 
+type NewHost struct {
+	Alias    string
+	HostName string
+	User     string
+	Port     int
+	Source   string
+	Provider string
+	Region   string
+	Tags     []string
+	Note     string
+	Favorite bool
+}
+
+func (s *Store) CreateHost(input NewHost) (model.Host, error) {
+	alias := strings.TrimSpace(input.Alias)
+	hostName := strings.TrimSpace(input.HostName)
+	if alias == "" {
+		return model.Host{}, errors.New("alias is required")
+	}
+	if hostName == "" {
+		return model.Host{}, errors.New("host is required")
+	}
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	source := strings.TrimSpace(input.Source)
+	if source == "" {
+		source = "manual"
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO hosts (
+			alias,
+			hostname,
+			user_name,
+			port,
+			source,
+			provider,
+			region,
+			tags_json,
+			note,
+			favorite,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		alias,
+		hostName,
+		strings.TrimSpace(input.User),
+		defaultPort(input.Port),
+		source,
+		strings.TrimSpace(input.Provider),
+		strings.TrimSpace(input.Region),
+		mustJSON(normalizeTags(input.Tags)),
+		strings.TrimSpace(input.Note),
+		boolToInt(input.Favorite),
+		timestamp,
+		timestamp,
+	)
+	if err != nil {
+		return model.Host{}, fmt.Errorf("create host %q: %w", alias, err)
+	}
+
+	return s.GetHost(alias)
+}
+
+func defaultPort(port int) int {
+	if port <= 0 {
+		return 22
+	}
+
+	return port
+}
+
 func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
 	assignments := make([]string, 0, 5)
 	args := make([]any, 0, 6)

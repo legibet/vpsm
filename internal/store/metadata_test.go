@@ -67,3 +67,39 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 		t.Fatalf("expected favorite to be false")
 	}
 }
+
+func TestCreateHost(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	host, err := st.CreateHost(NewHost{
+		Alias:    "manual-1",
+		HostName: "203.0.113.10",
+		User:     "ubuntu",
+		Port:     2202,
+		Provider: "Oracle",
+		Region:   "tokyo",
+		Tags:     []string{"Lab", "arm", "lab"},
+		Note:     "test host",
+		Favorite: true,
+	})
+	if err != nil {
+		t.Fatalf("create host: %v", err)
+	}
+
+	if host.Source != "manual" {
+		t.Fatalf("expected source manual, got %q", host.Source)
+	}
+	if host.Port != 2202 || host.Provider != "Oracle" || host.Region != "tokyo" || !host.Favorite {
+		t.Fatalf("unexpected created host: %+v", host)
+	}
+	if len(host.Tags) != 2 || host.Tags[0] != "lab" || host.Tags[1] != "arm" {
+		t.Fatalf("unexpected created host tags: %+v", host.Tags)
+	}
+}
