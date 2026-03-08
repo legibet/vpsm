@@ -131,20 +131,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFilter()
 		m.selectAlias(selectedAlias)
 		return m, nil
-	case tea.KeyPressMsg:
-		if m.mode == modeAdd {
-			return m.updateAddMode(msg)
-		}
-		if m.mode == modeAuth {
-			return m.updateAuthMode(msg)
-		}
-		if m.searchMode {
-			return m.updateSearch(msg)
-		}
-		return m.updateBrowseMode(msg)
 	}
 
-	return m, nil
+	if m.mode == modeAdd {
+		return m.updateAddMode(msg)
+	}
+	if m.mode == modeAuth {
+		return m.updateAuthMode(msg)
+	}
+
+	keyMsg, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+	if m.searchMode {
+		return m.updateSearch(keyMsg)
+	}
+	return m.updateBrowseMode(keyMsg)
 }
 
 func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -238,7 +241,7 @@ func (m tuiModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m tuiModel) updateAddMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m tuiModel) updateAddMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd, action := m.addForm.update(msg)
 	switch action {
 	case addFormCancel:
@@ -259,7 +262,7 @@ func (m tuiModel) updateAddMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m tuiModel) updateAuthMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m tuiModel) updateAuthMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd, action := m.authForm.update(msg)
 	switch action {
 	case authFormCancel:
@@ -597,10 +600,10 @@ func (m tuiModel) formWidth() int {
 
 func (m tuiModel) footerText() string {
 	if m.mode == modeAdd {
-		return "tab/shift+tab move | enter next | ctrl+s save | esc cancel"
+		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
 	}
 	if m.mode == modeAuth {
-		return "tab/shift+tab move | enter next | ctrl+s save | ctrl+x clear password | esc cancel"
+		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear password | esc cancel"
 	}
 	return "j/k move | pgup/pgdn page | / search | n new | e auth | f favorite | r refresh | enter connect | q quit"
 }

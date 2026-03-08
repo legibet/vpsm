@@ -204,7 +204,7 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 		rows = append(rows, styles.errorText.Render(f.errorText))
 	}
 
-	rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Enter next  Ctrl+S save  Esc cancel"))
+	rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Esc cancel"))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return styles.panelActive.Width(width).Height(height).Render(body)
