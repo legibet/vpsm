@@ -9,7 +9,8 @@ It does not replace your terminal or SSH client. It builds a small local host da
 - import hosts from `~/.ssh/config`
 - browse hosts in a keyboard-first TUI
 - fuzzy search hosts in the TUI
-- launch `ssh <alias>` with your system OpenSSH
+- add manual hosts from the CLI or the TUI
+- launch your system OpenSSH with either a safe alias or a direct target fallback
 - store local metadata: `provider`, `region`, `tags`, `note`, `favorite`
 - refresh the local host database from the TUI
 
@@ -30,6 +31,7 @@ go build -o vpsm .
 ```bash
 ./vpsm import-ssh
 ./vpsm list
+./vpsm add --alias hk-lab --host 203.0.113.10 --user root --port 22
 ./vpsm
 ```
 
@@ -38,6 +40,7 @@ go build -o vpsm .
 ```bash
 ./vpsm list
 ./vpsm show my-host
+./vpsm add --alias my-box --host 198.51.100.10 --user ubuntu --port 2201
 ./vpsm set my-host --provider hetzner --region fsn1 --tags prod,db --note "postgres primary"
 ./vpsm favorite my-host on
 ./vpsm ssh my-host
@@ -48,6 +51,7 @@ go build -o vpsm .
 - `j` / `k`: move
 - `pgup` / `pgdn`: page
 - `/`: search
+- `n`: add a new server
 - `f`: toggle favorite
 - `r`: refresh from `~/.ssh/config`
 - `enter`: connect with `ssh`
@@ -64,3 +68,4 @@ go build -o vpsm .
 - `vpsm` auto-syncs from `~/.ssh/config` on startup.
 - metadata stays local and is stored separately from your SSH config.
 - private keys are not copied into the app database.
+- if an imported alias contains non-ASCII characters, `vpsm` falls back to a direct `user@host` SSH target instead of calling `ssh <alias>`.
