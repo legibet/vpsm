@@ -12,32 +12,41 @@ import (
 type HostItem = model.Host
 
 type Options struct {
-	Hosts           []model.Host
-	ToggleFavorite  func(alias string) error
-	RefreshHosts    func() ([]HostItem, string, error)
-	InitialStatus   string
-	InitialQuery    string
-	EnableShortcuts bool
+	Hosts          []model.Host
+	ToggleFavorite func(alias string) error
+	RefreshHosts   func() ([]HostItem, string, error)
+	InitialStatus  string
+	InitialQuery   string
+}
+
+type hostsLoadedMsg struct {
+	hosts  []model.Host
+	status string
+	err    error
 }
 
 type tuiModel struct {
-	hosts        []model.Host
-	filtered     []model.Host
-	cursor       int
-	query        string
-	searchMode   bool
-	width        int
-	height       int
-	selectedHost string
-	quitting     bool
-	status       string
+	hosts          []model.Host
+	filtered       []model.Host
+	cursor         int
+	query          string
+	searchMode     bool
+	width          int
+	height         int
+	selectedHost   string
+	quitting       bool
+	status         string
+	toggleFavorite func(alias string) error
+	refreshHosts   func() ([]HostItem, string, error)
 }
 
 func Run(options Options) (string, error) {
 	m := tuiModel{
-		hosts:  options.Hosts,
-		query:  options.InitialQuery,
-		status: options.InitialStatus,
+		hosts:          options.Hosts,
+		query:          options.InitialQuery,
+		status:         options.InitialStatus,
+		toggleFavorite: options.ToggleFavorite,
+		refreshHosts:   options.RefreshHosts,
 	}
 	m.applyFilter()
 
@@ -65,6 +74,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
+	case hostsLoadedMsg:
+		if msg.err != nil {
+			m.status = "Error: " + msg.err.Error()
+			return m, nil
+		}
+		selectedAlias := m.currentAlias()
+		m.hosts = msg.hosts
+		m.status = msg.status
+		m.applyFilter()
+		m.selectAlias(selectedAlias)
+		return m, nil
 	case tea.KeyPressMsg:
 		if m.searchMode {
 			return m.updateSearch(msg)
@@ -76,6 +96,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "/":
 			m.searchMode = true
+			m.status = ""
 			return m, nil
 		case "up", "k":
 			if m.cursor > 0 {
@@ -90,6 +111,25 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end", "G":
 			if len(m.filtered) > 0 {
 				m.cursor = len(m.filtered) - 1
+			}
+		case "pgup":
+			m.cursor -= m.pageStep()
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case "pgdown":
+			m.cursor += m.pageStep()
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+			}
+		case "f":
+			if m.toggleFavorite != nil && len(m.filtered) > 0 {
+				alias := m.currentAlias()
+				return m, toggleFavoriteCmd(alias, m.toggleFavorite, m.refreshHosts)
+			}
+		case "r":
+			if m.refreshHosts != nil {
+				return m, refreshHostsCmd(m.refreshHosts)
 			}
 		case "enter":
 			if len(m.filtered) == 0 {
@@ -152,6 +192,67 @@ func (m *tuiModel) applyFilter() {
 	}
 }
 
+func (m *tuiModel) selectAlias(alias string) {
+	if alias == "" {
+		if len(m.filtered) == 0 {
+			m.cursor = 0
+		}
+		return
+	}
+
+	for i, host := range m.filtered {
+		if host.Alias == alias {
+			m.cursor = i
+			return
+		}
+	}
+}
+
+func (m tuiModel) currentAlias() string {
+	if len(m.filtered) == 0 {
+		return ""
+	}
+	return m.filtered[m.cursor].Alias
+}
+
+func (m tuiModel) pageStep() int {
+	step := m.height - 14
+	if step < 5 {
+		step = 5
+	}
+	return step
+}
+
+func refreshHostsCmd(refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		items, status, err := refresh()
+		return hostsLoadedMsg{hosts: items, status: status, err: err}
+	}
+}
+
+func toggleFavoriteCmd(alias string, toggle func(string) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		if err := toggle(alias); err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		if refresh == nil {
+			return hostsLoadedMsg{status: "Favorite toggled for " + alias}
+		}
+
+		items, status, err := refresh()
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+		if strings.TrimSpace(status) == "" {
+			status = "Favorite toggled for " + alias
+		} else {
+			status = "Favorite toggled for " + alias + "; " + status
+		}
+		return hostsLoadedMsg{hosts: items, status: status}
+	}
+}
+
 func (m tuiModel) View() tea.View {
 	if m.quitting {
 		view := tea.NewView("")
@@ -177,7 +278,7 @@ func (m tuiModel) View() tea.View {
 
 	if len(m.filtered) == 0 {
 		builder.WriteString("No hosts found. Add entries to ~/.ssh/config and run import-ssh.\n")
-		builder.WriteString("\nKeys: / search  q quit\n")
+		builder.WriteString("\nKeys: / search  r refresh  q quit\n")
 		view := tea.NewView(builder.String())
 		view.AltScreen = true
 		return view
@@ -204,7 +305,7 @@ func (m tuiModel) View() tea.View {
 	builder.WriteString("Last:     " + selected.LastConnectedLabel() + "\n")
 	builder.WriteString("Tags:     " + selected.TagsLabel() + "\n")
 	builder.WriteString("Note:     " + firstNonEmpty(selected.Note, "-") + "\n")
-	builder.WriteString("\nKeys: j/k move  enter ssh  / search  q quit\n")
+	builder.WriteString("\nKeys: j/k move  pgup/pgdn page  f favorite  r refresh  enter ssh  / search  q quit\n")
 
 	view := tea.NewView(builder.String())
 	view.AltScreen = true
@@ -216,7 +317,7 @@ func (m tuiModel) visibleHosts() []model.Host {
 		return nil
 	}
 
-	listHeight := m.height - 13
+	listHeight := m.height - 14
 	if listHeight < 8 {
 		listHeight = 8
 	}
