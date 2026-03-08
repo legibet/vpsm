@@ -187,6 +187,10 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.filtered) == 0 || m.deleteHost == nil {
 			return m, nil
 		}
+		if !m.filtered[m.cursor].Managed {
+			m.status = "Delete currently works only for vpsm-managed hosts"
+			return m, nil
+		}
 		m.mode = modeDeleteConfirm
 		m.deleteAlias = m.currentAlias()
 		m.status = ""
@@ -496,7 +500,7 @@ func (m tuiModel) renderHeader(width int) string {
 func (m tuiModel) renderListPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Inventory"),
-		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit, d to delete, enter to connect"),
+		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit, d to delete managed hosts, enter to connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -583,9 +587,7 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("Source", selected.SourceLabel()),
 	)
-	if selected.IsImported() || selected.SourceLabel() == "manual override" {
-		rows = append(rows, m.styles.sectionMeta.Render("Deleting this entry hides it from future SSH config refreshes."))
-	}
+	rows = append(rows, m.styles.sectionMeta.Render("This removes the entry from vpsm-managed SSH config."))
 	rows = append(rows, m.styles.errorText.Render("Press Enter or d to delete. Esc cancels."))
 
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
@@ -682,7 +684,7 @@ func (m tuiModel) footerText() string {
 	if m.mode == modeDeleteConfirm {
 		return "enter or d delete | esc cancel"
 	}
-	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete | f favorite | r refresh | enter connect | q quit"
+	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete managed | f favorite | r refresh | enter connect | q quit"
 }
 
 func listMeta(host model.Host) string {

@@ -41,6 +41,8 @@ const (
 
 type editForm struct {
 	alias          string
+	managed        bool
+	sourceLabel    string
 	passwordStored bool
 	clearPassword  bool
 	inputs         []textinput.Model
@@ -62,6 +64,8 @@ func newEditForm(host model.Host) editForm {
 
 	return editForm{
 		alias:          host.Alias,
+		managed:        host.Managed,
+		sourceLabel:    host.SourceLabel(),
 		passwordStored: host.PasswordStored,
 		inputs:         inputs,
 	}
@@ -201,6 +205,11 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		styles.sectionTitle.Render("Edit Server"),
 		styles.sectionMeta.Render("Update host, user, port, key path, or stored password."),
 		styles.value.Render(f.alias),
+	}
+	if !f.managed {
+		rows = append(rows, styles.sectionMeta.Render("This host comes from your existing ssh config. Stage 1 only applies password changes here."))
+	} else {
+		rows = append(rows, styles.sectionMeta.Render("Source: "+f.sourceLabel))
 	}
 
 	labels := []string{"* Host / IP", "User", "Port", "Identity file", "Password"}
