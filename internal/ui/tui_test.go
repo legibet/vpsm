@@ -85,3 +85,118 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 		t.Fatalf("did not expect inventory panel after tab switch in compact view")
 	}
 }
+
+func testHosts() []model.Host {
+	return []model.Host{
+		{Alias: "prod-web", HostName: "10.0.0.1", User: "root", Port: 22},
+		{Alias: "staging-api", HostName: "10.0.0.2", User: "deploy", Port: 22},
+		{Alias: "dev-db", HostName: "10.0.0.3", User: "admin", Port: 5432},
+	}
+}
+
+func searchModel() tuiModel {
+	m := tuiModel{
+		hosts:      testHosts(),
+		searchMode: true,
+		styles:     newStyles(),
+		width:      120,
+		height:     24,
+	}
+	m.applyFilter()
+	return m
+}
+
+func TestSearchEnterConnectsSelectedHost(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	m.query = "prod"
+	m.applyFilter()
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	result := updated.(tuiModel)
+
+	if result.selectedHost != "prod-web" {
+		t.Fatalf("expected selectedHost = %q, got %q", "prod-web", result.selectedHost)
+	}
+	if cmd == nil {
+		t.Fatal("expected tea.Quit command")
+	}
+}
+
+func TestSearchEscClearsQueryAndExitsSearch(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	m.query = "prod"
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	result := updated.(tuiModel)
+
+	if result.searchMode {
+		t.Fatal("expected searchMode to be false after Esc")
+	}
+	if result.query != "" {
+		t.Fatalf("expected query cleared after Esc, got %q", result.query)
+	}
+	if len(result.filtered) != len(testHosts()) {
+		t.Fatalf("expected all hosts after Esc clear, got %d", len(result.filtered))
+	}
+}
+
+func TestSearchArrowKeysNavigate(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	if m.cursor != 0 {
+		t.Fatalf("expected initial cursor 0, got %d", m.cursor)
+	}
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	result := updated.(tuiModel)
+	if result.cursor != 1 {
+		t.Fatalf("expected cursor 1 after down, got %d", result.cursor)
+	}
+	if !result.searchMode {
+		t.Fatal("expected to stay in search mode after arrow key")
+	}
+
+	updated, _ = result.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	result = updated.(tuiModel)
+	if result.cursor != 0 {
+		t.Fatalf("expected cursor 0 after up, got %d", result.cursor)
+	}
+}
+
+func TestSearchEnterWithNoMatchesDoesNotConnect(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	m.query = "nonexistent"
+	m.applyFilter()
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	result := updated.(tuiModel)
+
+	if result.selectedHost != "" {
+		t.Fatalf("expected no selectedHost, got %q", result.selectedHost)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil command when no matches")
+	}
+}
+
+func TestSearchFooterShowsSearchHints(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	footer := m.footerText()
+
+	if !strings.Contains(footer, "enter connect") {
+		t.Fatalf("expected search footer to mention 'enter connect', got %q", footer)
+	}
+	if !strings.Contains(footer, "esc cancel") {
+		t.Fatalf("expected search footer to mention 'esc cancel', got %q", footer)
+	}
+}

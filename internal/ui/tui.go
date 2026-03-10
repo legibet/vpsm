@@ -261,8 +261,24 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "enter":
+	case "enter":
 		m.searchMode = false
+		if len(m.filtered) > 0 {
+			m.selectedHost = m.filtered[m.cursor].Alias
+			return m, tea.Quit
+		}
+	case "esc":
+		m.searchMode = false
+		m.query = ""
+		m.applyFilter()
+	case "up", "ctrl+p":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "ctrl+n":
+		if m.cursor < len(m.filtered)-1 {
+			m.cursor++
+		}
 	case "backspace":
 		if len(m.query) > 0 {
 			runes := []rune(m.query)
@@ -765,6 +781,12 @@ func (m tuiModel) footerText() string {
 	}
 	if m.mode == modeDeleteConfirm {
 		return "enter or d delete | esc cancel"
+	}
+	if m.searchMode {
+		if m.isCompactLayout() {
+			return "type to filter | up/down move | enter connect | ctrl+u clear | esc cancel"
+		}
+		return "type to filter | up/down move | enter connect | ctrl+u clear query | esc cancel search"
 	}
 	if m.isCompactLayout() {
 		return "tab pane | j/k move | / search | n/e/d/f/r | enter connect | q quit"
