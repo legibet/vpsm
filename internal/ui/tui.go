@@ -33,6 +33,15 @@ const (
 	modeDeleteConfirm
 )
 
+type browsePane int
+
+const (
+	browsePaneInventory browsePane = iota
+	browsePaneDetails
+)
+
+const compactFormLabelWidth = 13
+
 type hostsLoadedMsg struct {
 	hosts       []model.Host
 	status      string
@@ -48,6 +57,7 @@ type tuiModel struct {
 	searchMode     bool
 	width          int
 	height         int
+	browsePane     browsePane
 	selectedHost   string
 	quitting       bool
 	status         string
@@ -164,6 +174,16 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "tab", "right", "l":
+		if m.isCompactLayout() {
+			m.browsePane = browsePaneDetails
+			return m, nil
+		}
+	case "shift+tab", "left", "h":
+		if m.isCompactLayout() {
+			m.browsePane = browsePaneInventory
+			return m, nil
+		}
 	case "/":
 		m.searchMode = true
 		m.status = ""
@@ -441,29 +461,30 @@ func (m tuiModel) View() tea.View {
 	}
 
 	width := m.viewWidth()
-	bodyHeight := m.bodyHeight()
-	leftWidth, rightWidth := m.bodyWidths(width)
-
 	header := m.renderHeader(width)
-	listPanel := m.renderListPanel(leftWidth, bodyHeight)
-	var sidePanel string
-	if m.mode == modeAdd {
-		sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
-	} else if m.mode == modeEdit {
-		sidePanel = m.editForm.view(m.styles, rightWidth, bodyHeight)
-	} else if m.mode == modeDeleteConfirm {
-		sidePanel = m.renderDeleteConfirmPanel(rightWidth, bodyHeight)
+	status := m.renderStatusBar(width)
+	footer := m.renderFooterBar(width)
+	bodyHeight := m.availableBodyHeight(header, status, footer)
+
+	var body string
+	if m.isCompactLayout() {
+		body = m.renderCompactBody(width, bodyHeight)
 	} else {
-		sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
+		leftWidth, rightWidth := m.bodyWidths(width)
+		listPanel := m.renderListPanel(leftWidth, bodyHeight)
+		var sidePanel string
+		if m.mode == modeAdd {
+			sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
+		} else if m.mode == modeEdit {
+			sidePanel = m.editForm.view(m.styles, rightWidth, bodyHeight)
+		} else if m.mode == modeDeleteConfirm {
+			sidePanel = m.renderDeleteConfirmPanel(rightWidth, bodyHeight)
+		} else {
+			sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
+		}
+		body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, sidePanel)
 	}
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, sidePanel)
-	if width < 96 {
-		body = lipgloss.JoinVertical(lipgloss.Left, listPanel, sidePanel)
-	}
-
-	status := m.styles.statusBar.Width(width).Render(m.status)
-	footer := m.styles.footerBar.Width(width).Render(m.footerText())
 	content := m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer))
 	if m.width > 0 && m.height > 0 {
 		content = m.styles.canvas.Width(m.width).Height(m.height).Render(content)
@@ -489,10 +510,22 @@ func (m tuiModel) renderHeader(width int) string {
 		modeLabel = "search"
 	}
 
+	summary := fmt.Sprintf("hosts: %d | shown: %d | mode: %s | query: %s", len(m.hosts), len(m.filtered), modeLabel, query)
+	if m.isCompactLayout() && m.mode == modeBrowse {
+		summary += " | pane: " + m.browsePaneLabel()
+	}
+	if m.isCompactLayout() {
+		content := lipgloss.JoinVertical(lipgloss.Left,
+			m.styles.title.Render("vpsm"),
+			m.styles.sectionMeta.Render(summary),
+		)
+		return m.styles.headBar.Width(width).Render(content)
+	}
+
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		m.styles.title.Render("vpsm"),
 		m.styles.subtitle.Render("local-first VPS manager"),
-		m.styles.sectionMeta.Render(fmt.Sprintf("hosts: %d | shown: %d | mode: %s | query: %s", len(m.hosts), len(m.filtered), modeLabel, query)),
+		m.styles.sectionMeta.Render(summary),
 	)
 	return m.styles.headBar.Width(width).Render(content)
 }
@@ -626,6 +659,22 @@ func (m tuiModel) visibleHosts() []model.Host {
 	return m.filtered[start:end]
 }
 
+func (m tuiModel) renderCompactBody(width int, height int) string {
+	switch m.mode {
+	case modeAdd:
+		return m.addForm.view(m.styles, width, height)
+	case modeEdit:
+		return m.editForm.view(m.styles, width, height)
+	case modeDeleteConfirm:
+		return m.renderDeleteConfirmPanel(width, height)
+	default:
+		if m.browsePane == browsePaneDetails {
+			return m.renderDetailsPanel(width, height)
+		}
+		return m.renderListPanel(width, height)
+	}
+}
+
 func (m tuiModel) bodyWidths(width int) (int, int) {
 	if width < 96 {
 		return width, width
@@ -644,6 +693,31 @@ func (m tuiModel) bodyWidths(width int) (int, int) {
 	return left, right
 }
 
+func (m tuiModel) renderStatusBar(width int) string {
+	return m.styles.statusBar.Width(width).Render(m.status)
+}
+
+func (m tuiModel) renderFooterBar(width int) string {
+	return m.styles.footerBar.Width(width).Render(m.footerText())
+}
+
+func (m tuiModel) availableBodyHeight(parts ...string) int {
+	if m.height <= 0 {
+		return 24
+	}
+
+	used := 0
+	for _, part := range parts {
+		used += lipgloss.Height(part)
+	}
+
+	height := m.height - used
+	if height < 4 {
+		height = 4
+	}
+	return height
+}
+
 func (m tuiModel) viewWidth() int {
 	if m.width <= 0 {
 		return 110
@@ -655,36 +729,84 @@ func (m tuiModel) viewWidth() int {
 }
 
 func (m tuiModel) bodyHeight() int {
-	if m.height <= 0 {
-		return 24
-	}
-	h := m.height - 9
-	if h < 16 {
-		h = 16
-	}
-	return h
+	width := m.viewWidth()
+	return m.availableBodyHeight(
+		m.renderHeader(width),
+		m.renderStatusBar(width),
+		m.renderFooterBar(width),
+	)
 }
 
 func (m tuiModel) formWidth() int {
-	width := m.viewWidth()
-	_, right := m.bodyWidths(width)
-	if width < 96 {
-		right = width
+	panelWidth := m.formPanelWidth()
+	bodyHeight := m.bodyHeight()
+	if useCompactFormLayout(panelWidth, bodyHeight) {
+		return compactFormInputWidth(panelWidth)
 	}
-	return right - 6
+	width := panelWidth - 6
+	if width < 16 {
+		width = 16
+	}
+	return width
 }
 
 func (m tuiModel) footerText() string {
 	if m.mode == modeAdd {
+		if m.isCompactLayout() {
+			return "tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
+		}
 		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
 	}
 	if m.mode == modeEdit {
+		if m.isCompactLayout() {
+			return "tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear | esc cancel"
+		}
 		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear password | esc cancel"
 	}
 	if m.mode == modeDeleteConfirm {
 		return "enter or d delete | esc cancel"
 	}
+	if m.isCompactLayout() {
+		return "tab pane | j/k move | / search | n/e/d/f/r | enter connect | q quit"
+	}
 	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete managed | f favorite | r refresh | enter connect | q quit"
+}
+
+func (m tuiModel) formPanelWidth() int {
+	width := m.viewWidth()
+	if m.isCompactLayout() {
+		return width
+	}
+
+	_, right := m.bodyWidths(width)
+	return right
+}
+
+func (m tuiModel) isCompactLayout() bool {
+	return m.viewWidth() < 96
+}
+
+func (m tuiModel) browsePaneLabel() string {
+	if m.browsePane == browsePaneDetails {
+		return "details"
+	}
+	return "inventory"
+}
+
+func useCompactFormLayout(panelWidth int, panelHeight int) bool {
+	contentWidth := panelWidth - 6
+	if contentWidth < 36 {
+		return false
+	}
+	return panelWidth < 72 || panelHeight < 18
+}
+
+func compactFormInputWidth(panelWidth int) int {
+	width := panelWidth - 6 - compactFormLabelWidth - 1
+	if width < 16 {
+		width = 16
+	}
+	return width
 }
 
 func listMeta(host model.Host) string {

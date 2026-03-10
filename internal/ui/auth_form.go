@@ -200,14 +200,29 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 	if contentWidth < 24 {
 		contentWidth = 24
 	}
+	compact := useCompactFormLayout(width, height)
+	fieldWidth := contentWidth
+	if compact {
+		fieldWidth = compactFormInputWidth(width)
+	}
 
 	rows := []string{
 		styles.sectionTitle.Render("Edit Server"),
-		styles.sectionMeta.Render("Update host, user, port, key path, or stored password."),
-		styles.value.Render(f.alias),
+	}
+	if compact {
+		rows = append(rows, styles.sectionMeta.Render("Alias: "+f.alias))
+	} else {
+		rows = append(rows,
+			styles.sectionMeta.Render("Update host, user, port, key path, or stored password."),
+			styles.value.Render(f.alias),
+		)
 	}
 	if !f.managed {
-		rows = append(rows, styles.sectionMeta.Render("This host comes from your existing ssh config. Stage 1 only applies password changes here."))
+		if compact {
+			rows = append(rows, styles.sectionMeta.Render("Imported ssh config host; only password changes apply."))
+		} else {
+			rows = append(rows, styles.sectionMeta.Render("This host comes from your existing ssh config. Stage 1 only applies password changes here."))
+		}
 	} else {
 		rows = append(rows, styles.sectionMeta.Render("Source: "+f.sourceLabel))
 	}
@@ -221,20 +236,34 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 			inputStyle = styles.inputBoxActive
 		}
 
+		if compact {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				labelStyle.Copy().Width(compactFormLabelWidth).Render(labels[i]),
+				inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
+			))
+			continue
+		}
+
 		rows = append(rows, lipgloss.JoinVertical(lipgloss.Left,
 			labelStyle.Render(labels[i]),
-			inputStyle.Width(contentWidth).Render(f.inputs[i].View()),
+			inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
 		))
 	}
 
 	rows = append(rows, styles.sectionMeta.Render(f.passwordStatusText()))
-	rows = append(rows, styles.sectionMeta.Render("Ctrl+X clears the stored password on save."))
+	if !compact {
+		rows = append(rows, styles.sectionMeta.Render("Ctrl+X clears the stored password on save."))
+	}
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))
 	}
 
-	rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Ctrl+X clear password  Esc cancel"))
+	if compact {
+		rows = append(rows, styles.sectionMeta.Render("Tab move  Ctrl+S save  Ctrl+X clear  Esc cancel"))
+	} else {
+		rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Ctrl+X clear password  Esc cancel"))
+	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return styles.panelActive.Width(width).Height(height).Render(body)

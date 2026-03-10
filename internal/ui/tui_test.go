@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -37,5 +38,50 @@ func TestUpdateForwardsPasteToEditForm(t *testing.T) {
 	got := updated.(tuiModel).editForm.inputs[editFieldPassword].Value()
 	if got != "secret-pass" {
 		t.Fatalf("expected pasted password, got %q", got)
+	}
+}
+
+func TestCompactBrowseViewDefaultsToInventory(t *testing.T) {
+	t.Parallel()
+
+	m := tuiModel{
+		width:  80,
+		height: 24,
+		hosts: []model.Host{
+			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
+		},
+		styles: newStyles(),
+	}
+	m.applyFilter()
+
+	view := m.View().Content
+	if !strings.Contains(view, "Inventory") {
+		t.Fatalf("expected inventory panel in compact view")
+	}
+	if strings.Contains(view, "Details") {
+		t.Fatalf("did not expect details panel in compact inventory view")
+	}
+}
+
+func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
+	t.Parallel()
+
+	m := tuiModel{
+		width:  80,
+		height: 24,
+		hosts: []model.Host{
+			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
+		},
+		styles: newStyles(),
+	}
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := updated.(tuiModel).View().Content
+	if !strings.Contains(view, "Details") {
+		t.Fatalf("expected details panel after tab switch in compact view")
+	}
+	if strings.Contains(view, "Inventory") {
+		t.Fatalf("did not expect inventory panel after tab switch in compact view")
 	}
 }

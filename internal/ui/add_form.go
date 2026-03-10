@@ -179,10 +179,19 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 	if contentWidth < 24 {
 		contentWidth = 24
 	}
+	compact := useCompactFormLayout(width, height)
+	fieldWidth := contentWidth
+	if compact {
+		fieldWidth = compactFormInputWidth(width)
+	}
 
 	rows := []string{
 		styles.sectionTitle.Render("New Server"),
-		styles.sectionMeta.Render("Required: alias and host. Password is optional."),
+	}
+	if compact {
+		rows = append(rows, styles.sectionMeta.Render("Required: alias and host."))
+	} else {
+		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Password is optional."))
 	}
 
 	labels := []string{"* Alias", "* Host / IP", "User", "Port", "Identity file", "Password"}
@@ -194,9 +203,17 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 			inputStyle = styles.inputBoxActive
 		}
 
+		if compact {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				labelStyle.Copy().Width(compactFormLabelWidth).Render(labels[i]),
+				inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
+			))
+			continue
+		}
+
 		rows = append(rows, lipgloss.JoinVertical(lipgloss.Left,
 			labelStyle.Render(labels[i]),
-			inputStyle.Width(contentWidth).Render(f.inputs[i].View()),
+			inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
 		))
 	}
 
@@ -204,7 +221,11 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 		rows = append(rows, styles.errorText.Render(f.errorText))
 	}
 
-	rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Esc cancel"))
+	if compact {
+		rows = append(rows, styles.sectionMeta.Render("Tab move  Ctrl+S save  Esc cancel"))
+	} else {
+		rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Esc cancel"))
+	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return styles.panelActive.Width(width).Height(height).Render(body)
