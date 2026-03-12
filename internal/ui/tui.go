@@ -40,7 +40,10 @@ const (
 	browsePaneDetails
 )
 
-const compactFormLabelWidth = 13
+const (
+	compactFormLabelWidth = 13
+	listPrefixWidth       = 3
+)
 
 type hostsLoadedMsg struct {
 	hosts       []model.Host
@@ -205,10 +208,6 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.editForm.init()
 	case "d":
 		if len(m.filtered) == 0 || m.deleteHost == nil {
-			return m, nil
-		}
-		if !m.filtered[m.cursor].Managed {
-			m.status = "Delete currently works only for vpsm-managed hosts"
 			return m, nil
 		}
 		m.mode = modeDeleteConfirm
@@ -548,8 +547,8 @@ func (m tuiModel) renderHeader(width int) string {
 
 func (m tuiModel) renderListPanel(width int, height int) string {
 	rows := []string{
-		m.styles.sectionTitle.Render("Inventory"),
-		m.styles.sectionMeta.Render("Use / to search, n to add, e to edit, d to delete managed hosts, enter to connect"),
+		m.styles.sectionTitle.Render("Servers"),
+		m.styles.sectionMeta.Render("/ search  n add  e edit  d delete  enter connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -575,16 +574,9 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 		itemStyle = m.styles.listItemActive
 	}
 
-	selectMark := " "
-	if selected {
-		selectMark = ">"
-	}
-	star := " "
-	if host.Favorite {
-		star = "*"
-	}
-	primary := primaryStyle.Render(selectMark + star + " " + host.Alias)
-	meta := metaStyle.Render(listMeta(host))
+	prefix := listPrefix(selected, host.Favorite)
+	primary := primaryStyle.Render(prefix + host.Alias)
+	meta := metaStyle.Copy().PaddingLeft(listPrefixWidth).Render(listMeta(host))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, primary, meta)
 	return itemStyle.Width(width - 6).Render(content)
@@ -791,7 +783,7 @@ func (m tuiModel) footerText() string {
 	if m.isCompactLayout() {
 		return "tab pane | j/k move | / search | n/e/d/f/r | enter connect | q quit"
 	}
-	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete managed | f favorite | r refresh | enter connect | q quit"
+	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete | f favorite | r refresh | enter connect | q quit"
 }
 
 func (m tuiModel) formPanelWidth() int {
@@ -832,23 +824,35 @@ func compactFormInputWidth(panelWidth int) int {
 }
 
 func listMeta(host model.Host) string {
-	left := firstNonEmpty(host.User, "-") + " @ " + host.TargetName()
-	right := compactAuthLabel(host)
-	return left + "  |  " + right
+	return listTargetLabel(host)
 }
 
-func compactAuthLabel(host model.Host) string {
-	parts := make([]string, 0, 2)
-	if strings.TrimSpace(host.IdentityFile) != "" {
-		parts = append(parts, "key")
+func listPrefix(selected bool, favorite bool) string {
+	selectMark := " "
+	if selected {
+		selectMark = ">"
 	}
-	if host.PasswordStored {
-		parts = append(parts, "password")
+
+	star := " "
+	if favorite {
+		star = "*"
 	}
-	if len(parts) == 0 {
-		return "default"
+
+	return selectMark + star + " "
+}
+
+func listTargetLabel(host model.Host) string {
+	target := host.TargetName()
+	if host.Port > 0 && host.Port != 22 {
+		target = fmt.Sprintf("%s:%d", target, host.Port)
 	}
-	return strings.Join(parts, " + ")
+
+	user := strings.TrimSpace(host.User)
+	if user == "" {
+		return target
+	}
+
+	return user + " @ " + target
 }
 
 func connectionMode(host model.Host) string {

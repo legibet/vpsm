@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"vpsm/internal/model"
 )
@@ -41,7 +42,7 @@ func TestUpdateForwardsPasteToEditForm(t *testing.T) {
 	}
 }
 
-func TestCompactBrowseViewDefaultsToInventory(t *testing.T) {
+func TestCompactBrowseViewDefaultsToServers(t *testing.T) {
 	t.Parallel()
 
 	m := tuiModel{
@@ -55,8 +56,8 @@ func TestCompactBrowseViewDefaultsToInventory(t *testing.T) {
 	m.applyFilter()
 
 	view := m.View().Content
-	if !strings.Contains(view, "Inventory") {
-		t.Fatalf("expected inventory panel in compact view")
+	if !strings.Contains(view, "Servers") {
+		t.Fatalf("expected servers panel in compact view")
 	}
 	if strings.Contains(view, "Details") {
 		t.Fatalf("did not expect details panel in compact inventory view")
@@ -81,8 +82,68 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 	if !strings.Contains(view, "Details") {
 		t.Fatalf("expected details panel after tab switch in compact view")
 	}
-	if strings.Contains(view, "Inventory") {
-		t.Fatalf("did not expect inventory panel after tab switch in compact view")
+	if strings.Contains(view, "Servers") {
+		t.Fatalf("did not expect servers panel after tab switch in compact view")
+	}
+}
+
+func TestListMetaShowsUserTargetAndPortOnly(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:          "prod-web",
+		HostName:       "10.0.0.1",
+		User:           "root",
+		Port:           2201,
+		Managed:        true,
+		IdentityFile:   "/tmp/id_ed25519",
+		PasswordStored: true,
+	}
+
+	got := listMeta(host)
+	want := "root @ 10.0.0.1:2201"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestRenderListItemKeepsMetaAlignedWithAlias(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:          "prod-web",
+		HostName:       "10.0.0.1",
+		User:           "root",
+		Port:           2201,
+		Managed:        true,
+		IdentityFile:   "/tmp/id_ed25519",
+		PasswordStored: true,
+	}
+
+	m := tuiModel{
+		hosts:  []model.Host{host},
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderListItem(host, 48))
+	lines := strings.Split(rendered, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(lines))
+	}
+
+	aliasColumn := strings.Index(lines[0], host.Alias)
+	metaColumn := strings.Index(lines[1], "root @ 10.0.0.1:2201")
+	if aliasColumn == -1 || metaColumn == -1 {
+		t.Fatalf("expected alias and meta text in rendered item, got %q", rendered)
+	}
+	if aliasColumn != metaColumn {
+		t.Fatalf("expected alias and meta to start at same column, got alias=%d meta=%d in %q", aliasColumn, metaColumn, rendered)
+	}
+	if strings.Contains(rendered, "managed") || strings.Contains(rendered, "default") || strings.Contains(rendered, "password") || strings.Contains(rendered, "key") {
+		t.Fatalf("expected list item to omit auth summary, got %q", rendered)
 	}
 }
 
