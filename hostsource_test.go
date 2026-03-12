@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,7 @@ import (
 func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	paths := testPaths(t)
 	writeTestFile(t, paths.SSHConfigPath, "Host external-box\n  HostName 198.51.100.10\n  User ubuntu\n")
 
@@ -22,7 +24,7 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	}
 	defer st.Close()
 
-	if err := ensureManagedSetup(paths, st); err != nil {
+	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
@@ -36,14 +38,14 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	}
 
 	favorite := true
-	if err := st.EnsureHost("managed-box"); err != nil {
+	if err := st.EnsureHost(ctx, "managed-box"); err != nil {
 		t.Fatalf("ensure host metadata: %v", err)
 	}
-	if _, err := st.UpdateHost("managed-box", store.HostPatch{Favorite: &favorite}); err != nil {
+	if _, err := st.UpdateHost(ctx, "managed-box", store.HostPatch{Favorite: &favorite}); err != nil {
 		t.Fatalf("mark favorite: %v", err)
 	}
 
-	hosts, err := listHostsForDisplay(paths, st)
+	hosts, err := listHostsForDisplay(ctx, paths, st)
 	if err != nil {
 		t.Fatalf("list hosts: %v", err)
 	}
@@ -67,6 +69,7 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	paths := testPaths(t)
 	writeTestFile(t, paths.SSHConfigPath, "Host external-box\n  HostName 198.51.100.10\n")
 
@@ -76,7 +79,7 @@ func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 	}
 	defer st.Close()
 
-	if err := ensureManagedSetup(paths, st); err != nil {
+	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 
 	"golang.org/x/term"
@@ -29,6 +32,9 @@ func main() {
 }
 
 func run(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	paths, err := config.EnsureAppDir()
 	if err != nil {
 		return err
@@ -40,46 +46,46 @@ func run(args []string) error {
 	}
 	defer st.Close()
 
-	if err := ensureManagedSetup(paths, st); err != nil {
+	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		return err
 	}
 
 	if len(args) == 0 {
-		return runTUI(paths, st)
+		return runTUI(ctx, paths, st)
 	}
 
 	switch args[0] {
 	case "tui":
-		return runTUI(paths, st)
+		return runTUI(ctx, paths, st)
 	case "list":
-		return runList(paths, st)
+		return runList(ctx, paths, st)
 	case "show":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm show <alias>")
 		}
-		return runShow(paths, st, args[1])
+		return runShow(ctx, paths, st, args[1])
 	case "add":
-		return runAdd(paths, st, args[1:])
+		return runAdd(ctx, paths, st, args[1:])
 	case "set":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm set <alias> [--name ...] [--host ...] [--user ...] [--port ...] [--identity-file ...]")
 		}
-		return runSet(paths, st, args[1], args[2:])
+		return runSet(ctx, paths, st, args[1], args[2:])
 	case "set-password":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm set-password <alias> [--value ...]")
 		}
-		return runSetPassword(paths, st, args[1], args[2:])
+		return runSetPassword(ctx, paths, st, args[1], args[2:])
 	case "clear-password":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm clear-password <alias>")
 		}
-		return runClearPassword(paths, st, args[1])
+		return runClearPassword(ctx, paths, st, args[1])
 	case "delete":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm delete <alias>")
 		}
-		return runDelete(paths, st, args[1])
+		return runDelete(ctx, paths, st, args[1])
 	case "favorite":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm favorite <alias> [on|off|toggle]")
@@ -88,7 +94,7 @@ func run(args []string) error {
 		if len(args) >= 3 {
 			mode = args[2]
 		}
-		return runFavorite(paths, st, args[1], mode)
+		return runFavorite(ctx, paths, st, args[1], mode)
 	case "import-ssh":
 		fmt.Println("Import from existing SSH config is not available.")
 		fmt.Println("vpsm only manages hosts stored in ~/.ssh/vpsm.conf. Add hosts explicitly with `vpsm add`.")
@@ -97,7 +103,7 @@ func run(args []string) error {
 		if len(args) < 2 {
 			return errors.New("usage: vpsm ssh <alias>")
 		}
-		return connectHost(paths, st, args[1])
+		return connectHost(ctx, paths, st, args[1])
 	case "help", "-h", "--help":
 		printHelp()
 		return nil
@@ -106,10 +112,10 @@ func run(args []string) error {
 	}
 }
 
-func runTUI(paths config.Paths, st *store.Store) error {
+func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 	hostService := app.HostService{Paths: paths, Store: st}
 
-	hosts, err := listHostsForDisplay(paths, st)
+	hosts, err := listHostsForDisplay(ctx, paths, st)
 	if err != nil {
 		return err
 	}
@@ -123,11 +129,11 @@ func runTUI(paths config.Paths, st *store.Store) error {
 		Hosts:         hosts,
 		InitialStatus: initialStatus,
 		ToggleFavorite: func(alias string) error {
-			_, err := st.ToggleFavorite(alias)
+			_, err := st.ToggleFavorite(ctx, alias)
 			return err
 		},
 		RefreshHosts: func() ([]ui.HostItem, string, error) {
-			hosts, err := listHostsForDisplay(paths, st)
+			hosts, err := listHostsForDisplay(ctx, paths, st)
 			if err != nil {
 				return nil, "", err
 			}
@@ -140,7 +146,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			return items, fmt.Sprintf("Reloaded %d managed host(s)", len(hosts)), nil
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
-			return hostService.AddManagedHost(app.AddManagedHostInput{
+			return hostService.AddManagedHost(ctx, app.AddManagedHostInput{
 				Alias:        input.Alias,
 				DisplayName:  input.DisplayName,
 				HostName:     input.HostName,
@@ -151,7 +157,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			})
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
-			return hostService.UpdateManagedHost(app.UpdateManagedHostInput{
+			return hostService.UpdateManagedHost(ctx, app.UpdateManagedHostInput{
 				Alias:         input.Alias,
 				DisplayName:   input.DisplayName,
 				HostName:      input.HostName,
@@ -163,7 +169,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			})
 		},
 		DeleteHost: func(alias string) error {
-			return hostService.DeleteManagedHost(alias)
+			return hostService.DeleteManagedHost(ctx, alias)
 		},
 	})
 	if err != nil {
@@ -174,11 +180,11 @@ func runTUI(paths config.Paths, st *store.Store) error {
 		return nil
 	}
 
-	return connectHost(paths, st, selected)
+	return connectHost(ctx, paths, st, selected)
 }
 
-func runList(paths config.Paths, st *store.Store) error {
-	hosts, err := listHostsForDisplay(paths, st)
+func runList(ctx context.Context, paths config.Paths, st *store.Store) error {
+	hosts, err := listHostsForDisplay(ctx, paths, st)
 	if err != nil {
 		return err
 	}
@@ -200,9 +206,9 @@ func runList(paths config.Paths, st *store.Store) error {
 	return tw.Flush()
 }
 
-func runShow(paths config.Paths, st *store.Store, alias string) error {
+func runShow(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
 	alias = app.NormalizeAlias(alias)
-	host, err := getHostForDisplay(paths, st, alias)
+	host, err := getHostForDisplay(ctx, paths, st, alias)
 	if err != nil {
 		return err
 	}
@@ -230,7 +236,7 @@ func runShow(paths config.Paths, st *store.Store, alias string) error {
 	return tw.Flush()
 }
 
-func runAdd(paths config.Paths, st *store.Store, args []string) error {
+func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []string) error {
 	hostService := app.HostService{Paths: paths, Store: st}
 
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
@@ -259,7 +265,7 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 	}
 
 	alias = app.NormalizeAlias(alias)
-	if err := hostService.AddManagedHost(app.AddManagedHostInput{
+	if err := hostService.AddManagedHost(ctx, app.AddManagedHostInput{
 		Alias:        alias,
 		DisplayName:  displayName,
 		HostName:     hostName,
@@ -273,10 +279,10 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 	}
 
 	fmt.Printf("Added %s\n", alias)
-	return runShow(paths, st, alias)
+	return runShow(ctx, paths, st, alias)
 }
 
-func runSet(paths config.Paths, st *store.Store, alias string, args []string) error {
+func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias string, args []string) error {
 	hostService := app.HostService{Paths: paths, Store: st}
 
 	fs := flag.NewFlagSet("set", flag.ContinueOnError)
@@ -299,7 +305,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 	}
 
 	alias = app.NormalizeAlias(alias)
-	host, err := getHostForDisplay(paths, st, alias)
+	host, err := getHostForDisplay(ctx, paths, st, alias)
 	if err != nil {
 		return err
 	}
@@ -342,7 +348,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 		return errors.New("no changes requested")
 	}
 
-	if err := hostService.UpdateManagedHost(app.UpdateManagedHostInput{
+	if err := hostService.UpdateManagedHost(ctx, app.UpdateManagedHostInput{
 		Alias:        alias,
 		DisplayName:  next.DisplayName,
 		HostName:     next.HostName,
@@ -354,12 +360,12 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 	}
 
 	fmt.Printf("Updated %s\n", alias)
-	return runShow(paths, st, alias)
+	return runShow(ctx, paths, st, alias)
 }
 
-func runSetPassword(paths config.Paths, st *store.Store, alias string, args []string) error {
+func runSetPassword(ctx context.Context, paths config.Paths, st *store.Store, alias string, args []string) error {
 	alias = app.NormalizeAlias(alias)
-	if _, err := getHostForDisplay(paths, st, alias); err != nil {
+	if _, err := getHostForDisplay(ctx, paths, st, alias); err != nil {
 		return err
 	}
 
@@ -386,12 +392,12 @@ func runSetPassword(paths config.Paths, st *store.Store, alias string, args []st
 	}
 
 	fmt.Printf("Stored password for %s\n", alias)
-	return runShow(paths, st, alias)
+	return runShow(ctx, paths, st, alias)
 }
 
-func runClearPassword(paths config.Paths, st *store.Store, alias string) error {
+func runClearPassword(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
 	alias = app.NormalizeAlias(alias)
-	if _, err := getHostForDisplay(paths, st, alias); err != nil {
+	if _, err := getHostForDisplay(ctx, paths, st, alias); err != nil {
 		return err
 	}
 
@@ -400,14 +406,14 @@ func runClearPassword(paths config.Paths, st *store.Store, alias string) error {
 	}
 
 	fmt.Printf("Cleared password for %s\n", alias)
-	return runShow(paths, st, alias)
+	return runShow(ctx, paths, st, alias)
 }
 
-func runDelete(paths config.Paths, st *store.Store, alias string) error {
+func runDelete(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
 	hostService := app.HostService{Paths: paths, Store: st}
 
 	alias = app.NormalizeAlias(alias)
-	if err := hostService.DeleteManagedHost(alias); err != nil {
+	if err := hostService.DeleteManagedHost(ctx, alias); err != nil {
 		return err
 	}
 
@@ -415,12 +421,12 @@ func runDelete(paths config.Paths, st *store.Store, alias string) error {
 	return nil
 }
 
-func runFavorite(paths config.Paths, st *store.Store, alias string, mode string) error {
+func runFavorite(ctx context.Context, paths config.Paths, st *store.Store, alias string, mode string) error {
 	alias = app.NormalizeAlias(alias)
-	if _, err := getHostForDisplay(paths, st, alias); err != nil {
+	if _, err := getHostForDisplay(ctx, paths, st, alias); err != nil {
 		return err
 	}
-	if err := st.EnsureHost(alias); err != nil {
+	if err := st.EnsureHost(ctx, alias); err != nil {
 		return err
 	}
 
@@ -428,13 +434,13 @@ func runFavorite(paths config.Paths, st *store.Store, alias string, mode string)
 
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "toggle":
-		_, err = st.ToggleFavorite(alias)
+		_, err = st.ToggleFavorite(ctx, alias)
 	case "on", "true", "1":
 		value := true
-		_, err = st.UpdateHost(alias, store.HostPatch{Favorite: &value})
+		_, err = st.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value})
 	case "off", "false", "0":
 		value := false
-		_, err = st.UpdateHost(alias, store.HostPatch{Favorite: &value})
+		_, err = st.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value})
 	default:
 		return fmt.Errorf("unknown favorite mode %q", mode)
 	}
@@ -442,12 +448,12 @@ func runFavorite(paths config.Paths, st *store.Store, alias string, mode string)
 		return err
 	}
 
-	return runShow(paths, st, alias)
+	return runShow(ctx, paths, st, alias)
 }
 
-func connectHost(paths config.Paths, st *store.Store, alias string) error {
+func connectHost(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
 	alias = app.NormalizeAlias(alias)
-	host, err := getHostForDisplay(paths, st, alias)
+	host, err := getHostForDisplay(ctx, paths, st, alias)
 	if err != nil {
 		return err
 	}
@@ -457,7 +463,7 @@ func connectHost(paths config.Paths, st *store.Store, alias string) error {
 		return err
 	}
 
-	cmd, err := sshutil.BuildCommandWithPassword(host, password)
+	cmd, err := sshutil.BuildCommandWithPasswordContext(ctx, host, password)
 	if err != nil {
 		return err
 	}
@@ -469,7 +475,7 @@ func connectHost(paths config.Paths, st *store.Store, alias string) error {
 		return fmt.Errorf("run ssh for %q: %w", alias, err)
 	}
 
-	if err := st.MarkConnected(alias); err != nil {
+	if err := st.MarkConnected(ctx, alias); err != nil {
 		return err
 	}
 

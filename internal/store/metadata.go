@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"vpsm/internal/model"
 )
 
+// HostPatch describes a partial update for a host metadata row.
 type HostPatch struct {
 	HostName     *string
 	User         *string
@@ -25,6 +27,7 @@ type HostPatch struct {
 	Favorite     *bool
 }
 
+// NewHost contains the fields required to create a host metadata row.
 type NewHost struct {
 	Alias        string
 	HostName     string
@@ -40,7 +43,8 @@ type NewHost struct {
 	Favorite     bool
 }
 
-func (s *Store) CreateHost(input NewHost) (model.Host, error) {
+// CreateHost creates a new locally managed host metadata row.
+func (s *Store) CreateHost(ctx context.Context, input NewHost) (model.Host, error) {
 	alias := strings.TrimSpace(input.Alias)
 	hostName := strings.TrimSpace(input.HostName)
 	if alias == "" {
@@ -57,7 +61,7 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 	}
 	authMode := normalizeAuthMode(input.AuthMode, strings.TrimSpace(input.IdentityFile))
 
-	_, err := s.db.Exec(`
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO hosts (
 			alias,
 			hostname,
@@ -93,11 +97,11 @@ func (s *Store) CreateHost(input NewHost) (model.Host, error) {
 	if err != nil {
 		return model.Host{}, fmt.Errorf("create host %q: %w", alias, err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
 		return model.Host{}, fmt.Errorf("clear ignored host %q: %w", alias, err)
 	}
 
-	return s.GetHost(alias)
+	return s.GetHost(ctx, alias)
 }
 
 func defaultPort(port int) int {
@@ -108,7 +112,8 @@ func defaultPort(port int) int {
 	return port
 }
 
-func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
+// UpdateHost applies a partial metadata update to an existing host row.
+func (s *Store) UpdateHost(ctx context.Context, alias string, patch HostPatch) (model.Host, error) {
 	assignments := make([]string, 0, 11)
 	args := make([]any, 0, 12)
 
@@ -134,7 +139,7 @@ func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
 	}
 
 	if patch.AuthMode != nil || patch.IdentityFile != nil {
-		current, err := s.GetHost(alias)
+		current, err := s.GetHost(ctx, alias)
 		if err != nil {
 			return model.Host{}, err
 		}
@@ -178,14 +183,14 @@ func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
 	}
 
 	if len(assignments) == 0 {
-		return s.GetHost(alias)
+		return s.GetHost(ctx, alias)
 	}
 
 	now := time.Now().UTC()
 	assignments = append(assignments, "updated_at = ?")
 	args = append(args, now.Format(time.RFC3339), alias)
 
-	result, err := s.db.Exec(`UPDATE hosts SET `+strings.Join(assignments, ", ")+` WHERE alias = ?`, args...)
+	result, err := s.db.ExecContext(ctx, `UPDATE hosts SET `+strings.Join(assignments, ", ")+` WHERE alias = ?`, args...)
 	if err != nil {
 		return model.Host{}, fmt.Errorf("update host %q: %w", alias, err)
 	}
@@ -195,11 +200,12 @@ func (s *Store) UpdateHost(alias string, patch HostPatch) (model.Host, error) {
 		return model.Host{}, fmt.Errorf("host %q not found", alias)
 	}
 
-	return s.GetHost(alias)
+	return s.GetHost(ctx, alias)
 }
 
-func (s *Store) DeleteHost(alias string) error {
-	host, err := s.GetHost(alias)
+// DeleteHost removes a host row and records imported aliases as ignored.
+func (s *Store) DeleteHost(ctx context.Context, alias string) error {
+	host, err := s.GetHost(ctx, alias)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("host %q not found", alias)
@@ -207,24 +213,24 @@ func (s *Store) DeleteHost(alias string) error {
 		return err
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin delete host transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
 		return fmt.Errorf("delete host %q: %w", alias, err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	switch strings.TrimSpace(host.Source) {
 	case "", "manual":
-		if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
 			return fmt.Errorf("clear ignored host %q: %w", alias, err)
 		}
 	default:
-		if _, err := tx.Exec(`
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO ignored_hosts (alias, created_at)
 			VALUES (?, ?)
 			ON CONFLICT(alias) DO UPDATE SET created_at = excluded.created_at
@@ -240,22 +246,23 @@ func (s *Store) DeleteHost(alias string) error {
 	return nil
 }
 
-func (s *Store) DeleteMetadata(alias string) error {
+// DeleteMetadata removes all local metadata for a managed host alias.
+func (s *Store) DeleteMetadata(ctx context.Context, alias string) error {
 	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return errors.New("alias is required")
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin delete metadata transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
 		return fmt.Errorf("delete metadata for host %q: %w", alias, err)
 	}
-	if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
 		return fmt.Errorf("clear ignored metadata for host %q: %w", alias, err)
 	}
 
@@ -266,12 +273,13 @@ func (s *Store) DeleteMetadata(alias string) error {
 	return nil
 }
 
-func (s *Store) ToggleFavorite(alias string) (model.Host, error) {
-	if err := s.EnsureHost(alias); err != nil {
+// ToggleFavorite flips the favorite flag for a host.
+func (s *Store) ToggleFavorite(ctx context.Context, alias string) (model.Host, error) {
+	if err := s.EnsureHost(ctx, alias); err != nil {
 		return model.Host{}, err
 	}
 
-	host, err := s.GetHost(alias)
+	host, err := s.GetHost(ctx, alias)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.Host{}, fmt.Errorf("host %q not found", alias)
@@ -280,7 +288,7 @@ func (s *Store) ToggleFavorite(alias string) (model.Host, error) {
 	}
 
 	next := !host.Favorite
-	return s.UpdateHost(alias, HostPatch{Favorite: &next})
+	return s.UpdateHost(ctx, alias, HostPatch{Favorite: &next})
 }
 
 func normalizeTags(tags []string) []string {

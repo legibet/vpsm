@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -14,15 +15,15 @@ import (
 	"vpsm/internal/store"
 )
 
-func ensureManagedSetup(paths config.Paths, st *store.Store) error {
+func ensureManagedSetup(ctx context.Context, paths config.Paths, st *store.Store) error {
 	if err := sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath); err != nil {
 		return err
 	}
-	return migrateLegacyManagedHosts(paths, st)
+	return migrateLegacyManagedHosts(ctx, paths, st)
 }
 
-func migrateLegacyManagedHosts(paths config.Paths, st *store.Store) error {
-	metadata, err := st.ListHosts()
+func migrateLegacyManagedHosts(ctx context.Context, paths config.Paths, st *store.Store) error {
+	metadata, err := st.ListHosts(ctx)
 	if err != nil {
 		return err
 	}
@@ -60,8 +61,8 @@ func migrateLegacyManagedHosts(paths config.Paths, st *store.Store) error {
 	return nil
 }
 
-func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, error) {
-	if err := ensureManagedSetup(paths, st); err != nil {
+func listHostsForDisplay(ctx context.Context, paths config.Paths, st *store.Store) ([]model.Host, error) {
+	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		return nil, err
 	}
 
@@ -70,7 +71,7 @@ func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, err
 		return nil, err
 	}
 
-	metadataRows, err := st.ListHosts()
+	metadataRows, err := st.ListHosts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +117,8 @@ func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, err
 	return hosts, nil
 }
 
-func getHostForDisplay(paths config.Paths, st *store.Store, alias string) (model.Host, error) {
-	host, ok, err := lookupHostForDisplay(paths, st, alias)
+func getHostForDisplay(ctx context.Context, paths config.Paths, st *store.Store, alias string) (model.Host, error) {
+	host, ok, err := lookupHostForDisplay(ctx, paths, st, alias)
 	if err != nil {
 		return model.Host{}, err
 	}
@@ -127,8 +128,8 @@ func getHostForDisplay(paths config.Paths, st *store.Store, alias string) (model
 	return host, nil
 }
 
-func lookupHostForDisplay(paths config.Paths, st *store.Store, alias string) (model.Host, bool, error) {
-	hosts, err := listHostsForDisplay(paths, st)
+func lookupHostForDisplay(ctx context.Context, paths config.Paths, st *store.Store, alias string) (model.Host, bool, error) {
+	hosts, err := listHostsForDisplay(ctx, paths, st)
 	if err != nil {
 		return model.Host{}, false, err
 	}

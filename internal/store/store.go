@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -15,10 +16,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Store wraps the SQLite metadata database used by vpsm.
 type Store struct {
 	db *sql.DB
 }
 
+// Open opens the SQLite metadata store and applies the current schema.
 func Open(databasePath string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(databasePath), 0o700); err != nil {
 		return nil, fmt.Errorf("create database dir: %w", err)
@@ -48,27 +51,29 @@ func Open(databasePath string) (*Store, error) {
 	return store, nil
 }
 
+// Close releases the underlying database handle.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error) {
+// SyncImportedHosts merges imported hosts into the local metadata store.
+func (s *Store) SyncImportedHosts(ctx context.Context, imported []sshconfig.ImportedHost) (int, error) {
 	if len(imported) == 0 {
 		return 0, nil
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin sync transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	ignored, err := loadIgnoredAliases(tx)
+	ignored, err := loadIgnoredAliases(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
 
-	statement, err := tx.Prepare(`
+	statement, err := tx.PrepareContext(ctx, `
 		INSERT INTO hosts (
 			alias,
 			hostname,
@@ -100,7 +105,7 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 		if _, skip := ignored[host.Alias]; skip {
 			continue
 		}
-		if _, err := statement.Exec(host.Alias, host.HostName, host.User, host.Port, host.Source, now, now); err != nil {
+		if _, err := statement.ExecContext(ctx, host.Alias, host.HostName, host.User, host.Port, host.Source, now, now); err != nil {
 			return 0, fmt.Errorf("upsert imported host %q: %w", host.Alias, err)
 		}
 		count++
@@ -113,8 +118,9 @@ func (s *Store) SyncImportedHosts(imported []sshconfig.ImportedHost) (int, error
 	return count, nil
 }
 
-func (s *Store) ListHosts() ([]model.Host, error) {
-	rows, err := s.db.Query(`
+// ListHosts returns all locally stored host metadata rows.
+func (s *Store) ListHosts(ctx context.Context) ([]model.Host, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			alias,
 			hostname,
@@ -155,8 +161,9 @@ func (s *Store) ListHosts() ([]model.Host, error) {
 	return hosts, nil
 }
 
-func (s *Store) GetHost(alias string) (model.Host, error) {
-	row := s.db.QueryRow(`
+// GetHost returns one host metadata row by alias.
+func (s *Store) GetHost(ctx context.Context, alias string) (model.Host, error) {
+	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			alias,
 			hostname,
@@ -185,13 +192,14 @@ func (s *Store) GetHost(alias string) (model.Host, error) {
 	return host, nil
 }
 
-func (s *Store) MarkConnected(alias string) error {
-	if err := s.EnsureHost(alias); err != nil {
+// MarkConnected records the latest successful connection time for a host.
+func (s *Store) MarkConnected(ctx context.Context, alias string) error {
+	if err := s.EnsureHost(ctx, alias); err != nil {
 		return err
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := s.db.Exec(`
+	if _, err := s.db.ExecContext(ctx, `
 		UPDATE hosts
 		SET last_connected_at = ?, updated_at = ?
 		WHERE alias = ?
@@ -202,14 +210,15 @@ func (s *Store) MarkConnected(alias string) error {
 	return nil
 }
 
-func (s *Store) EnsureHost(alias string) error {
+// EnsureHost creates the metadata row for an alias if it does not already exist.
+func (s *Store) EnsureHost(ctx context.Context, alias string) error {
 	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return fmt.Errorf("alias is required")
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := s.db.Exec(`
+	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO hosts (alias, created_at, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(alias) DO NOTHING
@@ -263,10 +272,10 @@ func (s *Store) migrate() error {
 	return nil
 }
 
-func loadIgnoredAliases(query interface {
-	Query(query string, args ...any) (*sql.Rows, error)
+func loadIgnoredAliases(ctx context.Context, query interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }) (map[string]struct{}, error) {
-	rows, err := query.Query(`SELECT alias FROM ignored_hosts`)
+	rows, err := query.QueryContext(ctx, `SELECT alias FROM ignored_hosts`)
 	if err != nil {
 		return nil, fmt.Errorf("query ignored hosts: %w", err)
 	}

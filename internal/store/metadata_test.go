@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 func TestUpdateHostAndToggleFavorite(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -19,7 +21,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 	}
 	defer st.Close()
 
-	_, err = st.SyncImportedHosts([]sshconfig.ImportedHost{{
+	_, err = st.SyncImportedHosts(ctx, []sshconfig.ImportedHost{{
 		Alias:    "web-1",
 		HostName: "10.0.0.11",
 		User:     "ubuntu",
@@ -36,7 +38,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 	note := "primary app node"
 	authMode := "password"
 
-	host, err := st.UpdateHost("web-1", HostPatch{
+	host, err := st.UpdateHost(ctx, "web-1", HostPatch{
 		AuthMode: &authMode,
 		Provider: &provider,
 		Region:   &region,
@@ -58,7 +60,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 		t.Fatalf("unexpected normalized tags: %+v", host.Tags)
 	}
 
-	host, err = st.ToggleFavorite("web-1")
+	host, err = st.ToggleFavorite(ctx, "web-1")
 	if err != nil {
 		t.Fatalf("toggle favorite on: %v", err)
 	}
@@ -66,7 +68,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 		t.Fatalf("expected favorite to be true")
 	}
 
-	host, err = st.ToggleFavorite("web-1")
+	host, err = st.ToggleFavorite(ctx, "web-1")
 	if err != nil {
 		t.Fatalf("toggle favorite off: %v", err)
 	}
@@ -78,6 +80,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 func TestCreateHost(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -85,7 +88,7 @@ func TestCreateHost(t *testing.T) {
 	}
 	defer st.Close()
 
-	host, err := st.CreateHost(NewHost{
+	host, err := st.CreateHost(ctx, NewHost{
 		Alias:        "manual-1",
 		HostName:     "203.0.113.10",
 		User:         "ubuntu",
@@ -122,6 +125,7 @@ func TestCreateHost(t *testing.T) {
 func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -129,7 +133,7 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 	}
 	defer st.Close()
 
-	host, err := st.CreateHost(NewHost{
+	host, err := st.CreateHost(ctx, NewHost{
 		Alias:    "manual-2",
 		HostName: "198.51.100.20",
 	})
@@ -141,7 +145,7 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 	}
 
 	identityFile := "~/.ssh/id_rsa"
-	host, err = st.UpdateHost("manual-2", HostPatch{IdentityFile: &identityFile})
+	host, err = st.UpdateHost(ctx, "manual-2", HostPatch{IdentityFile: &identityFile})
 	if err != nil {
 		t.Fatalf("update identity file: %v", err)
 	}
@@ -150,7 +154,7 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 	}
 
 	cleared := ""
-	host, err = st.UpdateHost("manual-2", HostPatch{IdentityFile: &cleared})
+	host, err = st.UpdateHost(ctx, "manual-2", HostPatch{IdentityFile: &cleared})
 	if err != nil {
 		t.Fatalf("clear identity file: %v", err)
 	}
@@ -162,6 +166,7 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -176,19 +181,19 @@ func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
 		Port:     22,
 		Source:   "/tmp/config",
 	}}
-	if _, err := st.SyncImportedHosts(imported); err != nil {
+	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
 		t.Fatalf("initial sync: %v", err)
 	}
 
-	if err := st.DeleteHost("ssh-box"); err != nil {
+	if err := st.DeleteHost(ctx, "ssh-box"); err != nil {
 		t.Fatalf("delete host: %v", err)
 	}
 
-	if _, err := st.SyncImportedHosts(imported); err != nil {
+	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
 
-	hosts, err := st.ListHosts()
+	hosts, err := st.ListHosts(ctx)
 	if err != nil {
 		t.Fatalf("list hosts: %v", err)
 	}
@@ -200,6 +205,7 @@ func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
 func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -207,7 +213,7 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	}
 	defer st.Close()
 
-	host, err := st.CreateHost(NewHost{
+	host, err := st.CreateHost(ctx, NewHost{
 		Alias:    "managed-box",
 		HostName: "203.0.113.10",
 		Favorite: true,
@@ -219,15 +225,15 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 		t.Fatal("expected favorite metadata to be stored")
 	}
 
-	if err := st.DeleteMetadata("managed-box"); err != nil {
+	if err := st.DeleteMetadata(ctx, "managed-box"); err != nil {
 		t.Fatalf("delete metadata: %v", err)
 	}
 
-	if _, err := st.GetHost("managed-box"); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := st.GetHost(ctx, "managed-box"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected sql.ErrNoRows after metadata delete, got %v", err)
 	}
 
-	ignored, err := loadIgnoredAliases(st.db)
+	ignored, err := loadIgnoredAliases(ctx, st.db)
 	if err != nil {
 		t.Fatalf("load ignored aliases: %v", err)
 	}
@@ -239,6 +245,7 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 func TestManualOverrideSurvivesImportSync(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
 	st, err := Open(dbPath)
 	if err != nil {
@@ -253,7 +260,7 @@ func TestManualOverrideSurvivesImportSync(t *testing.T) {
 		Port:     22,
 		Source:   "/tmp/config",
 	}}
-	if _, err := st.SyncImportedHosts(imported); err != nil {
+	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
 		t.Fatalf("initial sync: %v", err)
 	}
 
@@ -261,7 +268,7 @@ func TestManualOverrideSurvivesImportSync(t *testing.T) {
 	user := "ubuntu"
 	port := 2202
 	source := "manual-override"
-	host, err := st.UpdateHost("ssh-box", HostPatch{
+	host, err := st.UpdateHost(ctx, "ssh-box", HostPatch{
 		HostName: &hostName,
 		User:     &user,
 		Port:     &port,
@@ -274,11 +281,11 @@ func TestManualOverrideSurvivesImportSync(t *testing.T) {
 		t.Fatalf("expected manual override source, got %q", host.Source)
 	}
 
-	if _, err := st.SyncImportedHosts(imported); err != nil {
+	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
 
-	host, err = st.GetHost("ssh-box")
+	host, err = st.GetHost(ctx, "ssh-box")
 	if err != nil {
 		t.Fatalf("get host: %v", err)
 	}

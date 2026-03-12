@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -11,11 +12,13 @@ import (
 	"vpsm/internal/store"
 )
 
+// HostService coordinates managed-host workflows across SSH config, keychain, and metadata.
 type HostService struct {
 	Paths config.Paths
 	Store *store.Store
 }
 
+// AddManagedHostInput describes the data needed to create a managed host.
 type AddManagedHostInput struct {
 	Alias        string
 	DisplayName  string
@@ -27,6 +30,7 @@ type AddManagedHostInput struct {
 	Favorite     bool
 }
 
+// UpdateManagedHostInput describes the editable fields for a managed host.
 type UpdateManagedHostInput struct {
 	Alias         string
 	DisplayName   string
@@ -38,11 +42,13 @@ type UpdateManagedHostInput struct {
 	ClearPassword bool
 }
 
+// NormalizeAlias trims user input before host operations use it as a stable key.
 func NormalizeAlias(alias string) string {
 	return strings.TrimSpace(alias)
 }
 
-func (s HostService) AddManagedHost(input AddManagedHostInput) error {
+// AddManagedHost creates a managed SSH config entry and optional local metadata.
+func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInput) error {
 	alias := NormalizeAlias(input.Alias)
 	if err := s.ensureManagedAliasAvailable(alias); err != nil {
 		return err
@@ -67,10 +73,10 @@ func (s HostService) AddManagedHost(input AddManagedHostInput) error {
 
 	if input.Favorite {
 		value := true
-		if err := s.Store.EnsureHost(alias); err != nil {
+		if err := s.Store.EnsureHost(ctx, alias); err != nil {
 			return err
 		}
-		if _, err := s.Store.UpdateHost(alias, store.HostPatch{Favorite: &value}); err != nil {
+		if _, err := s.Store.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
 			return err
 		}
 	}
@@ -78,7 +84,8 @@ func (s HostService) AddManagedHost(input AddManagedHostInput) error {
 	return nil
 }
 
-func (s HostService) UpdateManagedHost(input UpdateManagedHostInput) error {
+// UpdateManagedHost updates a managed SSH config entry and password state.
+func (s HostService) UpdateManagedHost(ctx context.Context, input UpdateManagedHostInput) error {
 	alias := NormalizeAlias(input.Alias)
 	if _, err := s.getManagedHost(alias); err != nil {
 		return err
@@ -109,7 +116,8 @@ func (s HostService) UpdateManagedHost(input UpdateManagedHostInput) error {
 	return nil
 }
 
-func (s HostService) DeleteManagedHost(alias string) error {
+// DeleteManagedHost removes a managed SSH config entry and all local state for its alias.
+func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error {
 	alias = NormalizeAlias(alias)
 	if _, err := s.getManagedHost(alias); err != nil {
 		return err
@@ -121,7 +129,7 @@ func (s HostService) DeleteManagedHost(alias string) error {
 	if err := secret.DeletePassword(alias); err != nil {
 		return err
 	}
-	if err := s.Store.DeleteMetadata(alias); err != nil {
+	if err := s.Store.DeleteMetadata(ctx, alias); err != nil {
 		return err
 	}
 

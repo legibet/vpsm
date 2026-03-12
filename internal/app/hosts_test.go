@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	paths := testPaths(t)
 	st, err := store.Open(paths.DatabasePath)
 	if err != nil {
@@ -24,14 +26,14 @@ func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 	}
 
 	svc := HostService{Paths: paths, Store: st}
-	if err := svc.AddManagedHost(AddManagedHostInput{
+	if err := svc.AddManagedHost(ctx, AddManagedHostInput{
 		Alias:    "prod-1",
 		HostName: "203.0.113.10",
 	}); err != nil {
 		t.Fatalf("add managed host: %v", err)
 	}
 
-	err = svc.AddManagedHost(AddManagedHostInput{
+	err = svc.AddManagedHost(ctx, AddManagedHostInput{
 		Alias:    " prod-1 ",
 		HostName: "203.0.113.11",
 	})
