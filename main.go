@@ -90,11 +90,8 @@ func run(args []string) error {
 		}
 		return runFavorite(paths, st, args[1], mode)
 	case "import-ssh":
-		hosts, err := listHostsForDisplay(paths, st)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("No import needed. vpsm reads %d host(s) directly from %s\n", len(hosts), paths.SSHConfigPath)
+		fmt.Println("Import from existing SSH config is not available.")
+		fmt.Println("vpsm only manages hosts stored in ~/.ssh/vpsm.conf. Add hosts explicitly with `vpsm add`.")
 		return nil
 	case "ssh":
 		if len(args) < 2 {
@@ -116,7 +113,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 	}
 
 	if len(hosts) == 0 {
-		fmt.Println("No hosts found. Add entries to ~/.ssh/config or create one with `vpsm add`.")
+		fmt.Println("No managed hosts found. Create one with `vpsm add`.")
 		return nil
 	}
 
@@ -137,13 +134,11 @@ func runTUI(paths config.Paths, st *store.Store) error {
 				items = append(items, host)
 			}
 
-			return items, fmt.Sprintf("Reloaded %d host(s) from SSH config", len(hosts)), nil
+			return items, fmt.Sprintf("Reloaded %d managed host(s)", len(hosts)), nil
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
-			if _, exists, err := lookupHostForDisplay(paths, st, input.Alias); err != nil {
+			if err := ensureManagedAliasAvailable(paths, st, input.Alias); err != nil {
 				return err
-			} else if exists {
-				return fmt.Errorf("host %q already exists", input.Alias)
 			}
 			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
 				Alias:        input.Alias,
@@ -162,22 +157,17 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			return nil
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
-			current, err := getHostForDisplay(paths, st, input.Alias)
-			if err != nil {
+			if _, err := getHostForDisplay(paths, st, input.Alias); err != nil {
 				return err
 			}
-			if current.Managed {
-				if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
-					Alias:        input.Alias,
-					HostName:     input.HostName,
-					User:         input.User,
-					Port:         input.Port,
-					IdentityFile: input.IdentityFile,
-				}); err != nil {
-					return err
-				}
-			} else if managedFieldsChanged(current, input) {
-				return fmt.Errorf("host %q comes from your existing ssh config; stage 1 only supports password changes for non-vpsm entries", input.Alias)
+			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+				Alias:        input.Alias,
+				HostName:     input.HostName,
+				User:         input.User,
+				Port:         input.Port,
+				IdentityFile: input.IdentityFile,
+			}); err != nil {
+				return err
 			}
 			if input.ClearPassword {
 				if err := secret.DeletePassword(input.Alias); err != nil {
@@ -192,12 +182,8 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			return nil
 		},
 		DeleteHost: func(alias string) error {
-			host, err := getHostForDisplay(paths, st, alias)
-			if err != nil {
+			if _, err := getHostForDisplay(paths, st, alias); err != nil {
 				return err
-			}
-			if !host.Managed {
-				return fmt.Errorf("host %q is not managed by vpsm; edit your ssh config directly", alias)
 			}
 			if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, alias); err != nil {
 				return err
@@ -226,18 +212,18 @@ func runList(paths config.Paths, st *store.Store) error {
 	}
 
 	if len(hosts) == 0 {
-		fmt.Println("No hosts found.")
+		fmt.Println("No managed hosts found.")
 		return nil
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "FAV\tALIAS\tTARGET\tAUTH\tSOURCE\tLAST CONNECTED")
+	_, _ = fmt.Fprintln(tw, "FAV\tALIAS\tTARGET\tAUTH\tLAST CONNECTED")
 	for _, host := range hosts {
 		favorite := ""
 		if host.Favorite {
 			favorite = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", favorite, host.Alias, host.TargetName(), compactAuthLabel(host), host.SourceLabel(), host.LastConnectedLabel())
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", favorite, host.Alias, host.TargetName(), compactAuthLabel(host), host.LastConnectedLabel())
 	}
 	return tw.Flush()
 }
@@ -295,10 +281,8 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 		return err
 	}
 
-	if _, exists, err := lookupHostForDisplay(paths, st, alias); err != nil {
+	if err := ensureManagedAliasAvailable(paths, st, alias); err != nil {
 		return err
-	} else if exists {
-		return fmt.Errorf("host %q already exists", alias)
 	}
 
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
@@ -350,9 +334,6 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 	host, err := getHostForDisplay(paths, st, alias)
 	if err != nil {
 		return err
-	}
-	if !host.Managed {
-		return fmt.Errorf("host %q is not managed by vpsm; edit your ssh config directly", alias)
 	}
 
 	next := ui.UpdateHostInput{
@@ -447,12 +428,8 @@ func runClearPassword(paths config.Paths, st *store.Store, alias string) error {
 }
 
 func runDelete(paths config.Paths, st *store.Store, alias string) error {
-	host, err := getHostForDisplay(paths, st, alias)
-	if err != nil {
+	if _, err := getHostForDisplay(paths, st, alias); err != nil {
 		return err
-	}
-	if !host.Managed {
-		return fmt.Errorf("host %q is not managed by vpsm; edit your ssh config directly", alias)
 	}
 	if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, alias); err != nil {
 		return err
@@ -547,13 +524,13 @@ func connectionPreview(host model.Host) string {
 
 func printHelp() {
 	fmt.Println(strings.TrimSpace(`
-vpsm - Local-first VPS manager
+ vpsm - Local-first VPS manager
 
 Usage:
   vpsm                        Open the TUI
   vpsm tui                    Open the TUI
-  vpsm list                   Print hosts from local SSH config
-  vpsm show <alias>           Show one host
+  vpsm list                   Print vpsm-managed hosts
+  vpsm show <alias>           Show one managed host
   vpsm add --alias ...        Add a vpsm-managed host
   vpsm set <alias>            Update a vpsm-managed host
   vpsm set-password <alias>   Store an SSH password in the system keychain
@@ -562,7 +539,7 @@ Usage:
   vpsm favorite <alias>       Toggle favorite state
   vpsm favorite <alias> on    Mark as favorite
   vpsm favorite <alias> off   Remove favorite mark
-  vpsm import-ssh             Show current host count from local SSH config
+  vpsm import-ssh             Explain the current managed-only workflow
   vpsm ssh <alias>            Connect with system ssh
   vpsm help                   Show this help
 `))
@@ -580,22 +557,6 @@ func compactAuthLabel(host model.Host) string {
 		return "default"
 	}
 	return strings.Join(parts, "+")
-}
-
-func managedFieldsChanged(current model.Host, input ui.UpdateHostInput) bool {
-	if strings.TrimSpace(current.HostName) != strings.TrimSpace(input.HostName) {
-		return true
-	}
-	if strings.TrimSpace(current.User) != strings.TrimSpace(input.User) {
-		return true
-	}
-	if current.Port != input.Port {
-		return true
-	}
-	if strings.TrimSpace(current.IdentityFile) != strings.TrimSpace(input.IdentityFile) {
-		return true
-	}
-	return false
 }
 
 func promptPassword(alias string) (string, error) {
@@ -616,6 +577,24 @@ func promptPassword(alias string) (string, error) {
 	}
 
 	return password, nil
+}
+
+func ensureManagedAliasAvailable(paths config.Paths, st *store.Store, alias string) error {
+	if _, exists, err := lookupHostForDisplay(paths, st, alias); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("managed host %q already exists", alias)
+	}
+
+	conflict, err := conflictsWithUnmanagedSSHAlias(paths, alias)
+	if err != nil {
+		return err
+	}
+	if conflict {
+		return fmt.Errorf("alias %q already exists in your SSH config outside ~/.ssh/vpsm.conf", alias)
+	}
+
+	return nil
 }
 
 func firstNonEmpty(values ...string) string {

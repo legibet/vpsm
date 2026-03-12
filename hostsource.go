@@ -65,7 +65,7 @@ func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, err
 		return nil, err
 	}
 
-	imported, err := sshconfig.ParsePath(paths.SSHConfigPath)
+	managedHosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +79,16 @@ func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, err
 		metadataByAlias[host.Alias] = host
 	}
 
-	hosts := make([]model.Host, 0, len(imported))
-	for _, importedHost := range imported {
+	hosts := make([]model.Host, 0, len(managedHosts))
+	for _, managedHost := range managedHosts {
 		host := model.Host{
-			Alias:        importedHost.Alias,
-			HostName:     importedHost.HostName,
-			User:         importedHost.User,
-			Port:         importedHost.Port,
-			Source:       importedHost.Source,
-			Managed:      pathsEqual(importedHost.Source, paths.ManagedConfigPath),
-			IdentityFile: importedHost.IdentityFile,
+			Alias:        managedHost.Alias,
+			HostName:     managedHost.HostName,
+			User:         managedHost.User,
+			Port:         managedHost.Port,
+			Source:       managedHost.Source,
+			Managed:      true,
+			IdentityFile: managedHost.IdentityFile,
 		}
 
 		if metadata, ok := metadataByAlias[host.Alias]; ok {
@@ -121,7 +121,7 @@ func getHostForDisplay(paths config.Paths, st *store.Store, alias string) (model
 		return model.Host{}, err
 	}
 	if !ok {
-		return model.Host{}, fmt.Errorf("host %q not found", alias)
+		return model.Host{}, fmt.Errorf("managed host %q not found", alias)
 	}
 	return host, nil
 }
@@ -137,6 +137,30 @@ func lookupHostForDisplay(paths config.Paths, st *store.Store, alias string) (mo
 		}
 	}
 	return model.Host{}, false, nil
+}
+
+func conflictsWithUnmanagedSSHAlias(paths config.Paths, alias string) (bool, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return false, nil
+	}
+
+	imported, err := sshconfig.ParsePath(paths.SSHConfigPath)
+	if err != nil {
+		return false, err
+	}
+
+	for _, host := range imported {
+		if host.Alias != alias {
+			continue
+		}
+		if pathsEqual(host.Source, paths.ManagedConfigPath) {
+			continue
+		}
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func hydratePasswordStatus(host *model.Host) {

@@ -14,8 +14,8 @@ This file is for coding agents working in this repository.
 ## Current Architecture
 
 - `main.go`: CLI entrypoint and command routing.
-- `hostsource.go`: builds the display host list from real SSH config plus local metadata.
-- `internal/sshconfig/`: parses SSH config and manages `~/.ssh/vpsm.conf`.
+- `hostsource.go`: builds the display host list from `~/.ssh/vpsm.conf` plus local metadata.
+- `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts.
 - `internal/sshutil/`: builds `ssh` commands and askpass handling.
 - `internal/secret/`: keychain-backed password helpers.
@@ -25,14 +25,14 @@ This file is for coding agents working in this repository.
 
 ## Source of Truth Rules
 
-- Real host inventory comes from `~/.ssh/config` and its `Include` chain.
+- Visible host inventory comes from `~/.ssh/vpsm.conf`.
 - `vpsm` manages its own writable include file at `~/.ssh/vpsm.conf`.
+- The main `~/.ssh/config` is still used to ensure the managed `Include` exists and to detect alias conflicts.
 - Favorites and last-connected timestamps are local metadata in SQLite.
 - Passwords are stored in keychain only.
 - Do not store passwords in SSH config.
 - Do not store passwords in SQLite.
-- Stage 1 limitation: full edit/delete is only implemented for `vpsm`-managed hosts.
-- Existing hand-written SSH config entries are readable and connectable, but host/user/port/key edits should still be treated cautiously.
+- Existing hand-written SSH config entries are not imported into the `vpsm` inventory automatically.
 
 ## Build Commands
 
@@ -130,16 +130,14 @@ This file is for coding agents working in this repository.
 - The current TUI intentionally uses a mostly transparent/unstyled background approach.
 - Do not reintroduce heavy background fills unless there is a strong reason.
 - Form inputs are Bubble Tea text inputs; keep paste support working.
-- Preserve stage-1 UX constraints:
-  - managed hosts can be edited/deleted
-  - non-managed hosts should not be silently rewritten
+- The list view should stay compact and easy to scan.
 - Keep key hints accurate when you change interactions.
 
 ## SQLite Metadata Rules
 
 - SQLite is for local metadata only.
-- Before updating metadata for a host that may only exist in config, call `EnsureHost` when appropriate.
-- `MarkConnected` and favorites should continue to work even for config-backed hosts.
+- Before updating metadata for a managed host, call `EnsureHost` when appropriate.
+- `MarkConnected` and favorites should continue to work for managed hosts.
 - Avoid expanding metadata scope unless the data truly cannot live in SSH config or keychain.
 
 ## Documentation / CLI Behavior

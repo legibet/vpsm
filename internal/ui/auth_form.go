@@ -41,8 +41,6 @@ const (
 
 type editForm struct {
 	alias          string
-	managed        bool
-	sourceLabel    string
 	passwordStored bool
 	clearPassword  bool
 	inputs         []textinput.Model
@@ -64,8 +62,6 @@ func newEditForm(host model.Host) editForm {
 
 	return editForm{
 		alias:          host.Alias,
-		managed:        host.Managed,
-		sourceLabel:    host.SourceLabel(),
 		passwordStored: host.PasswordStored,
 		inputs:         inputs,
 	}
@@ -217,15 +213,7 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 			styles.value.Render(f.alias),
 		)
 	}
-	if !f.managed {
-		if compact {
-			rows = append(rows, styles.sectionMeta.Render("Imported ssh config host; only password changes apply."))
-		} else {
-			rows = append(rows, styles.sectionMeta.Render("This host comes from your existing ssh config. Stage 1 only applies password changes here."))
-		}
-	} else {
-		rows = append(rows, styles.sectionMeta.Render("Source: "+f.sourceLabel))
-	}
+	rows = append(rows, styles.sectionMeta.Render("Source: vpsm-managed"))
 
 	labels := []string{"* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
