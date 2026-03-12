@@ -42,7 +42,7 @@ const (
 
 const (
 	compactFormLabelWidth = 13
-	listPrefixWidth       = 3
+	listPanelHeaderRows   = 2
 )
 
 type hostsLoadedMsg struct {
@@ -406,11 +406,7 @@ func (m tuiModel) currentAlias() string {
 }
 
 func (m tuiModel) pageStep() int {
-	step := m.bodyHeight() - 4
-	if step < 3 {
-		step = 3
-	}
-	return step
+	return m.listRowsPerPage()
 }
 
 func refreshHostsCmd(refresh func() ([]HostItem, string, error), selectAlias string) tea.Cmd {
@@ -579,7 +575,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	metaText := listMeta(host)
 
 	line := primary + metaStyle.Render("  "+metaText)
-	return itemStyle.Render(line)
+	return itemStyle.MaxWidth(m.listContentWidth(width)).Render(line)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -648,10 +644,7 @@ func (m tuiModel) visibleHosts() []model.Host {
 		return nil
 	}
 
-	rowsPerPage := m.bodyHeight() - 4
-	if rowsPerPage < 4 {
-		rowsPerPage = 4
-	}
+	rowsPerPage := m.listRowsPerPage()
 	if rowsPerPage >= len(m.filtered) {
 		return m.filtered
 	}
@@ -667,6 +660,22 @@ func (m tuiModel) visibleHosts() []model.Host {
 	}
 
 	return m.filtered[start:end]
+}
+
+func (m tuiModel) listContentWidth(panelWidth int) int {
+	width := panelWidth - m.styles.panelActive.GetHorizontalFrameSize()
+	if width < 1 {
+		return 1
+	}
+	return width
+}
+
+func (m tuiModel) listRowsPerPage() int {
+	rows := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
+	if rows < 1 {
+		return 1
+	}
+	return rows
 }
 
 func (m tuiModel) renderCompactBody(width int, height int) string {

@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"vpsm/internal/model"
@@ -145,6 +147,73 @@ func TestRenderListItemShowsSingleLineWithNameAndMeta(t *testing.T) {
 	}
 	if strings.Contains(rendered, "managed") || strings.Contains(rendered, "default") || strings.Contains(rendered, "password") || strings.Contains(rendered, "key") {
 		t.Fatalf("expected list item to omit auth summary, got %q", rendered)
+	}
+}
+
+func TestRenderListItemTruncatesToListContentWidth(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:       "prod-web-eu-central-1",
+		DisplayName: "Hong Kong Production Edge Router",
+		HostName:    "203.0.113.10",
+		User:        "administrator",
+		Port:        2201,
+	}
+
+	m := tuiModel{
+		hosts:  []model.Host{host},
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderListItem(host, 38))
+	lines := strings.Split(strings.TrimRight(rendered, "\n "), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d: %q", len(lines), rendered)
+	}
+
+	if got, want := lipgloss.Width(lines[0]), m.listContentWidth(38); got > want {
+		t.Fatalf("expected rendered width <= %d, got %d in %q", want, got, lines[0])
+	}
+}
+
+func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
+	t.Parallel()
+
+	hosts := make([]model.Host, 32)
+	for i := range hosts {
+		hosts[i] = model.Host{
+			Alias:    fmt.Sprintf("host-%02d", i),
+			HostName: fmt.Sprintf("10.0.0.%d", i+1),
+			User:     "root",
+			Port:     22,
+		}
+	}
+
+	m := tuiModel{
+		hosts:  hosts,
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	want := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
+	if want < 1 {
+		want = 1
+	}
+
+	if got := m.listRowsPerPage(); got != want {
+		t.Fatalf("expected list rows per page = %d, got %d", want, got)
+	}
+	if got := m.pageStep(); got != want {
+		t.Fatalf("expected page step = %d, got %d", want, got)
+	}
+	if got := len(m.visibleHosts()); got != want {
+		t.Fatalf("expected %d visible hosts, got %d", want, got)
 	}
 }
 
