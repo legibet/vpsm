@@ -11,11 +11,11 @@ import (
 
 	"golang.org/x/term"
 
+	"vpsm/internal/app"
 	"vpsm/internal/cmdutil"
 	"vpsm/internal/config"
 	"vpsm/internal/model"
 	"vpsm/internal/secret"
-	"vpsm/internal/sshconfig"
 	"vpsm/internal/sshutil"
 	"vpsm/internal/store"
 	"vpsm/internal/ui"
@@ -107,6 +107,8 @@ func run(args []string) error {
 }
 
 func runTUI(paths config.Paths, st *store.Store) error {
+	hostService := app.HostService{Paths: paths, Store: st}
+
 	hosts, err := listHostsForDisplay(paths, st)
 	if err != nil {
 		return err
@@ -137,57 +139,30 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			return items, fmt.Sprintf("Reloaded %d managed host(s)", len(hosts)), nil
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
-			if err := ensureManagedAliasAvailable(paths, st, input.Alias); err != nil {
-				return err
-			}
-			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+			return hostService.AddManagedHost(app.AddManagedHostInput{
 				Alias:        input.Alias,
 				DisplayName:  input.DisplayName,
 				HostName:     input.HostName,
 				User:         input.User,
 				Port:         input.Port,
 				IdentityFile: input.IdentityFile,
-			}); err != nil {
-				return err
-			}
-			if strings.TrimSpace(input.Password) != "" {
-				if err := secret.SetPassword(input.Alias, input.Password); err != nil {
-					return err
-				}
-			}
-			return nil
+				Password:     input.Password,
+			})
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
-			if _, err := getHostForDisplay(paths, st, input.Alias); err != nil {
-				return err
-			}
-			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
-				Alias:        input.Alias,
-				DisplayName:  input.DisplayName,
-				HostName:     input.HostName,
-				User:         input.User,
-				Port:         input.Port,
-				IdentityFile: input.IdentityFile,
-			}); err != nil {
-				return err
-			}
-			if input.ClearPassword {
-				if err := secret.DeletePassword(input.Alias); err != nil {
-					return err
-				}
-			}
-			if strings.TrimSpace(input.Password) != "" {
-				if err := secret.SetPassword(input.Alias, input.Password); err != nil {
-					return err
-				}
-			}
-			return nil
+			return hostService.UpdateManagedHost(app.UpdateManagedHostInput{
+				Alias:         input.Alias,
+				DisplayName:   input.DisplayName,
+				HostName:      input.HostName,
+				User:          input.User,
+				Port:          input.Port,
+				IdentityFile:  input.IdentityFile,
+				Password:      input.Password,
+				ClearPassword: input.ClearPassword,
+			})
 		},
 		DeleteHost: func(alias string) error {
-			if _, err := getHostForDisplay(paths, st, alias); err != nil {
-				return err
-			}
-			return deleteManagedHost(paths, st, alias)
+			return hostService.DeleteManagedHost(alias)
 		},
 	})
 	if err != nil {
@@ -225,6 +200,7 @@ func runList(paths config.Paths, st *store.Store) error {
 }
 
 func runShow(paths config.Paths, st *store.Store, alias string) error {
+	alias = app.NormalizeAlias(alias)
 	host, err := getHostForDisplay(paths, st, alias)
 	if err != nil {
 		return err
@@ -254,6 +230,8 @@ func runShow(paths config.Paths, st *store.Store, alias string) error {
 }
 
 func runAdd(paths config.Paths, st *store.Store, args []string) error {
+	hostService := app.HostService{Paths: paths, Store: st}
+
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -279,33 +257,18 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 		return err
 	}
 
-	if err := ensureManagedAliasAvailable(paths, st, alias); err != nil {
-		return err
-	}
-
-	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+	alias = app.NormalizeAlias(alias)
+	if err := hostService.AddManagedHost(app.AddManagedHostInput{
 		Alias:        alias,
 		DisplayName:  displayName,
 		HostName:     hostName,
 		User:         user,
 		Port:         port,
 		IdentityFile: identityFile,
+		Password:     password,
+		Favorite:     favorite,
 	}); err != nil {
 		return err
-	}
-	if strings.TrimSpace(password) != "" {
-		if err := secret.SetPassword(alias, password); err != nil {
-			return err
-		}
-	}
-	if favorite {
-		value := true
-		if err := st.EnsureHost(alias); err != nil {
-			return err
-		}
-		if _, err := st.UpdateHost(alias, store.HostPatch{Favorite: &value}); err != nil {
-			return err
-		}
 	}
 
 	fmt.Printf("Added %s\n", alias)
@@ -313,6 +276,8 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 }
 
 func runSet(paths config.Paths, st *store.Store, alias string, args []string) error {
+	hostService := app.HostService{Paths: paths, Store: st}
+
 	fs := flag.NewFlagSet("set", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
@@ -332,6 +297,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 		return err
 	}
 
+	alias = app.NormalizeAlias(alias)
 	host, err := getHostForDisplay(paths, st, alias)
 	if err != nil {
 		return err
@@ -375,7 +341,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 		return errors.New("no changes requested")
 	}
 
-	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+	if err := hostService.UpdateManagedHost(app.UpdateManagedHostInput{
 		Alias:        alias,
 		DisplayName:  next.DisplayName,
 		HostName:     next.HostName,
@@ -391,6 +357,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 }
 
 func runSetPassword(paths config.Paths, st *store.Store, alias string, args []string) error {
+	alias = app.NormalizeAlias(alias)
 	if _, err := getHostForDisplay(paths, st, alias); err != nil {
 		return err
 	}
@@ -422,6 +389,7 @@ func runSetPassword(paths config.Paths, st *store.Store, alias string, args []st
 }
 
 func runClearPassword(paths config.Paths, st *store.Store, alias string) error {
+	alias = app.NormalizeAlias(alias)
 	if _, err := getHostForDisplay(paths, st, alias); err != nil {
 		return err
 	}
@@ -435,10 +403,10 @@ func runClearPassword(paths config.Paths, st *store.Store, alias string) error {
 }
 
 func runDelete(paths config.Paths, st *store.Store, alias string) error {
-	if _, err := getHostForDisplay(paths, st, alias); err != nil {
-		return err
-	}
-	if err := deleteManagedHost(paths, st, alias); err != nil {
+	hostService := app.HostService{Paths: paths, Store: st}
+
+	alias = app.NormalizeAlias(alias)
+	if err := hostService.DeleteManagedHost(alias); err != nil {
 		return err
 	}
 
@@ -446,20 +414,8 @@ func runDelete(paths config.Paths, st *store.Store, alias string) error {
 	return nil
 }
 
-func deleteManagedHost(paths config.Paths, st *store.Store, alias string) error {
-	if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, alias); err != nil {
-		return err
-	}
-	if err := secret.DeletePassword(alias); err != nil {
-		return err
-	}
-	if err := st.DeleteMetadata(alias); err != nil {
-		return err
-	}
-	return nil
-}
-
 func runFavorite(paths config.Paths, st *store.Store, alias string, mode string) error {
+	alias = app.NormalizeAlias(alias)
 	if _, err := getHostForDisplay(paths, st, alias); err != nil {
 		return err
 	}
@@ -489,6 +445,7 @@ func runFavorite(paths config.Paths, st *store.Store, alias string, mode string)
 }
 
 func connectHost(paths config.Paths, st *store.Store, alias string) error {
+	alias = app.NormalizeAlias(alias)
 	host, err := getHostForDisplay(paths, st, alias)
 	if err != nil {
 		return err
@@ -594,24 +551,6 @@ func promptPassword(alias string) (string, error) {
 	}
 
 	return password, nil
-}
-
-func ensureManagedAliasAvailable(paths config.Paths, st *store.Store, alias string) error {
-	if _, exists, err := lookupHostForDisplay(paths, st, alias); err != nil {
-		return err
-	} else if exists {
-		return fmt.Errorf("managed host %q already exists", alias)
-	}
-
-	conflict, err := conflictsWithUnmanagedSSHAlias(paths, alias)
-	if err != nil {
-		return err
-	}
-	if conflict {
-		return fmt.Errorf("alias %q already exists in your SSH config outside ~/.ssh/vpsm.conf", alias)
-	}
-
-	return nil
 }
 
 func firstNonEmpty(values ...string) string {
