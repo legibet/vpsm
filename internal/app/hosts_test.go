@@ -19,7 +19,9 @@ func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	if err := sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath); err != nil {
 		t.Fatalf("ensure managed config: %v", err)

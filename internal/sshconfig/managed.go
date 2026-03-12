@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -190,7 +191,7 @@ func writeManagedHosts(managedConfigPath string, hosts []ImportedHost) error {
 		}
 		if host.Port != 22 {
 			b.WriteString("  Port ")
-			b.WriteString(fmt.Sprintf("%d", host.Port))
+			b.WriteString(strconv.Itoa(host.Port))
 			b.WriteByte('\n')
 		}
 		if host.IdentityFile != "" {

@@ -66,7 +66,9 @@ func (s *Store) SyncImportedHosts(ctx context.Context, imported []sshconfig.Impo
 	if err != nil {
 		return 0, fmt.Errorf("begin sync transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	ignored, err := loadIgnoredAliases(ctx, tx)
 	if err != nil {
@@ -97,7 +99,9 @@ func (s *Store) SyncImportedHosts(ctx context.Context, imported []sshconfig.Impo
 	if err != nil {
 		return 0, fmt.Errorf("prepare upsert statement: %w", err)
 	}
-	defer statement.Close()
+	defer func() {
+		_ = statement.Close()
+	}()
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	count := 0
@@ -143,7 +147,9 @@ func (s *Store) ListHosts(ctx context.Context) ([]model.Host, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query hosts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	hosts := make([]model.Host, 0)
 	for rows.Next() {
@@ -279,7 +285,9 @@ func loadIgnoredAliases(ctx context.Context, query interface {
 	if err != nil {
 		return nil, fmt.Errorf("query ignored hosts: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	ignored := make(map[string]struct{})
 	for rows.Next() {

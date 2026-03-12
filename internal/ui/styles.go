@@ -53,7 +53,7 @@ func newStyles() styleSet {
 		subtitle:        lipgloss.NewStyle().Foreground(muted),
 		badge:           lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
 		panel:           basePanel,
-		panelActive:     basePanel.Copy().BorderForeground(accent),
+		panelActive:     basePanel.BorderForeground(accent),
 		sectionTitle:    lipgloss.NewStyle().Bold(true).Foreground(text),
 		sectionMeta:     lipgloss.NewStyle().Foreground(muted),
 		listItem:        lipgloss.NewStyle().UnsetBackground(),

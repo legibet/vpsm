@@ -19,7 +19,9 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	_, err = st.SyncImportedHosts(ctx, []sshconfig.ImportedHost{{
 		Alias:    "web-1",
@@ -86,7 +88,9 @@ func TestCreateHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	host, err := st.CreateHost(ctx, NewHost{
 		Alias:        "manual-1",
@@ -131,7 +135,9 @@ func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	host, err := st.CreateHost(ctx, NewHost{
 		Alias:    "manual-2",
@@ -172,7 +178,9 @@ func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	imported := []sshconfig.ImportedHost{{
 		Alias:    "ssh-box",
@@ -211,7 +219,9 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	host, err := st.CreateHost(ctx, NewHost{
 		Alias:    "managed-box",
@@ -251,7 +261,9 @@ func TestManualOverrideSurvivesImportSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	imported := []sshconfig.ImportedHost{{
 		Alias:    "ssh-box",

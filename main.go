@@ -44,7 +44,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() {
+		_ = st.Close()
+	}()
 
 	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		return err
@@ -138,10 +140,7 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 				return nil, "", err
 			}
 
-			items := make([]ui.HostItem, 0, len(hosts))
-			for _, host := range hosts {
-				items = append(items, host)
-			}
+			items := append(make([]ui.HostItem, 0, len(hosts)), hosts...)
 
 			return items, fmt.Sprintf("Reloaded %d managed host(s)", len(hosts)), nil
 		},

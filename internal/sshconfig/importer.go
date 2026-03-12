@@ -81,7 +81,9 @@ func (p *parser) parseFile(path string) error {
 		}
 		return fmt.Errorf("open ssh config %q: %w", absolutePath, err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	scanner := bufio.NewScanner(file)
 	current := hostBlock{}

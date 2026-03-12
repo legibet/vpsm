@@ -217,7 +217,9 @@ func (s *Store) DeleteHost(ctx context.Context, alias string) error {
 	if err != nil {
 		return fmt.Errorf("begin delete host transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
 		return fmt.Errorf("delete host %q: %w", alias, err)
@@ -257,7 +259,9 @@ func (s *Store) DeleteMetadata(ctx context.Context, alias string) error {
 	if err != nil {
 		return fmt.Errorf("begin delete metadata transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
 		return fmt.Errorf("delete metadata for host %q: %w", alias, err)

@@ -22,7 +22,9 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
@@ -77,7 +79,9 @@ func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer st.Close()
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
 
 	if err := ensureManagedSetup(ctx, paths, st); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)

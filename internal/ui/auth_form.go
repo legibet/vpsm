@@ -230,7 +230,7 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 
 		if compact {
 			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				labelStyle.Copy().Width(compactFormLabelWidth).Render(labels[i]),
+				labelStyle.Width(compactFormLabelWidth).Render(labels[i]),
 				inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
 			))
 			continue

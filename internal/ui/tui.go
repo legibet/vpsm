@@ -484,13 +484,14 @@ func (m tuiModel) View() tea.View {
 		leftWidth, rightWidth := m.bodyWidths(width)
 		listPanel := m.renderListPanel(leftWidth, bodyHeight)
 		var sidePanel string
-		if m.mode == modeAdd {
+		switch m.mode {
+		case modeAdd:
 			sidePanel = m.addForm.view(m.styles, rightWidth, bodyHeight)
-		} else if m.mode == modeEdit {
+		case modeEdit:
 			sidePanel = m.editForm.view(m.styles, rightWidth, bodyHeight)
-		} else if m.mode == modeDeleteConfirm {
+		case modeDeleteConfirm:
 			sidePanel = m.renderDeleteConfirmPanel(rightWidth, bodyHeight)
-		} else {
+		default:
 			sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
 		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, sidePanel)
