@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -192,6 +194,45 @@ func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
 	}
 	if len(hosts) != 0 {
 		t.Fatalf("expected deleted imported host to stay hidden, got %+v", hosts)
+	}
+}
+
+func TestDeleteMetadataRemovesLocalState(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	host, err := st.CreateHost(NewHost{
+		Alias:    "managed-box",
+		HostName: "203.0.113.10",
+		Favorite: true,
+	})
+	if err != nil {
+		t.Fatalf("create host: %v", err)
+	}
+	if !host.Favorite {
+		t.Fatal("expected favorite metadata to be stored")
+	}
+
+	if err := st.DeleteMetadata("managed-box"); err != nil {
+		t.Fatalf("delete metadata: %v", err)
+	}
+
+	if _, err := st.GetHost("managed-box"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows after metadata delete, got %v", err)
+	}
+
+	ignored, err := loadIgnoredAliases(st.db)
+	if err != nil {
+		t.Fatalf("load ignored aliases: %v", err)
+	}
+	if _, exists := ignored["managed-box"]; exists {
+		t.Fatal("expected delete metadata to leave no ignored alias marker")
 	}
 }
 

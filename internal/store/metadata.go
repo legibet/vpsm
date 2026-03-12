@@ -240,6 +240,32 @@ func (s *Store) DeleteHost(alias string) error {
 	return nil
 }
 
+func (s *Store) DeleteMetadata(alias string) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return errors.New("alias is required")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete metadata transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
+		return fmt.Errorf("delete metadata for host %q: %w", alias, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+		return fmt.Errorf("clear ignored metadata for host %q: %w", alias, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete metadata transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Store) ToggleFavorite(alias string) (model.Host, error) {
 	if err := s.EnsureHost(alias); err != nil {
 		return model.Host{}, err

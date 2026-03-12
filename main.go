@@ -187,13 +187,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			if _, err := getHostForDisplay(paths, st, alias); err != nil {
 				return err
 			}
-			if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, alias); err != nil {
-				return err
-			}
-			if err := secret.DeletePassword(alias); err != nil {
-				return err
-			}
-			return nil
+			return deleteManagedHost(paths, st, alias)
 		},
 	})
 	if err != nil {
@@ -444,14 +438,24 @@ func runDelete(paths config.Paths, st *store.Store, alias string) error {
 	if _, err := getHostForDisplay(paths, st, alias); err != nil {
 		return err
 	}
+	if err := deleteManagedHost(paths, st, alias); err != nil {
+		return err
+	}
+
+	fmt.Printf("Deleted %s\n", alias)
+	return nil
+}
+
+func deleteManagedHost(paths config.Paths, st *store.Store, alias string) error {
 	if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, alias); err != nil {
 		return err
 	}
 	if err := secret.DeletePassword(alias); err != nil {
 		return err
 	}
-
-	fmt.Printf("Deleted %s\n", alias)
+	if err := st.DeleteMetadata(alias); err != nil {
+		return err
+	}
 	return nil
 }
 
