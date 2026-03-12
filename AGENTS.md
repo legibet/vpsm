@@ -2,6 +2,8 @@
 
 This file is for coding agents working in this repository.
 
+Automately update this file when you make changes to the codebase, architecture, or conventions that affect how future agents should work. This is a living document that should reflect the current state of the project and provide clear guidance for any agent that needs to interact with the code, run tests, or understand the architecture.
+
 ## Project Overview
 
 - Language: Go `1.25`.
@@ -13,8 +15,9 @@ This file is for coding agents working in this repository.
 
 ## Current Architecture
 
-- `main.go`: CLI entrypoint and command routing.
+- `main.go`: CLI entrypoint, root context setup, and command routing.
 - `hostsource.go`: builds the display host list from `~/.ssh/vpsm.conf` plus local metadata.
+- `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts.
 - `internal/sshutil/`: builds `ssh` commands and askpass handling.
@@ -46,8 +49,8 @@ This file is for coding agents working in this repository.
 
 - Format all Go files touched in your change: `gofmt -w <files...>`
 - Repository-wide vet baseline: `go vet ./...`
-- There is no configured `golangci-lint` setup in this repo.
-- If you add a new lint tool, document it explicitly; do not assume one exists.
+- Repository-wide lint baseline: `golangci-lint run`
+- Keep code clean for the current `golangci-lint` default checks unless an explicit repo config is added later.
 
 ## Test Commands
 
@@ -112,17 +115,19 @@ This file is for coding agents working in this repository.
 
 ## SSH Config Editing Rules
 
+- Route managed-host create/update/delete flows through `internal/app/hosts.go` so SSH config, keychain, and metadata stay consistent.
 - For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
 - Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
 - Preserve the main SSH config and only ensure the managed `Include` is present.
+- Read-only flows must not rewrite `~/.ssh/config` when the managed `Include` already exists.
 - Do not silently rewrite unrelated user SSH config blocks.
 
 ## SSH Connection Rules
 
 - Keep using system `ssh`.
 - Build arguments through `internal/sshutil.BuildArgs`.
-- Build commands through `internal/sshutil.BuildCommand` or `BuildCommandWithPassword`.
+- Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password automation should continue to use the askpass helper path, not `sshpass`.
 
@@ -131,6 +136,7 @@ This file is for coding agents working in this repository.
 - The current TUI intentionally uses a mostly transparent/unstyled background approach.
 - Do not reintroduce heavy background fills unless there is a strong reason.
 - Form inputs are Bubble Tea text inputs; keep paste support working.
+- The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
 - The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
@@ -141,8 +147,10 @@ This file is for coding agents working in this repository.
 ## SQLite Metadata Rules
 
 - SQLite is for local metadata only.
+- Main store operations now take `context.Context`; propagate the caller context on blocking DB paths.
 - Before updating metadata for a managed host, call `EnsureHost` when appropriate.
 - `MarkConnected` and favorites should continue to work for managed hosts.
+- Deleting a managed host should remove its local metadata; it should not leave behind a stale row that can resurrect old state later.
 - Avoid expanding metadata scope unless the data truly cannot live in SSH config or keychain.
 
 ## Documentation / CLI Behavior
@@ -160,6 +168,8 @@ This file is for coding agents working in this repository.
 ## Before You Finish
 
 - Run `gofmt -w` on changed Go files.
+- Run `golangci-lint run`.
+- Run `go vet ./...`.
 - Run `go test ./...`.
 - Run `go build ./...` or `go build -o vpsm .`.
 - If behavior or commands changed, update `README.md` and keep this file accurate.

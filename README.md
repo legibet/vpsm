@@ -53,6 +53,8 @@ Open the TUI:
 ./vpsm
 ```
 
+If the list is empty, press `n` in the TUI to add your first managed host.
+
 ## Common commands
 
 ```bash
