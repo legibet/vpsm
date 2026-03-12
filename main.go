@@ -245,7 +245,6 @@ func runShow(paths config.Paths, st *store.Store, alias string) error {
 		{"Identity File", host.IdentityFileLabel()},
 		{"Password Stored", host.PasswordStoredLabel()},
 		{"Favorite", fmt.Sprintf("%t", host.Favorite)},
-		{"Source", host.SourceLabel()},
 		{"Preview", connectionPreview(host)},
 		{"Last Connected", host.LastConnectedLabel()},
 	}

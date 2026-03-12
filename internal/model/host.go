@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"strings"
 	"time"
 )
@@ -47,31 +46,8 @@ func (h Host) TargetName() string {
 	return h.Alias
 }
 
-func (h Host) SourceLabel() string {
-	if h.Managed {
-		return "vpsm-managed"
-	}
-	if h.IsImported() {
-		return "ssh-config"
-	}
-
-	if h.Source == "" {
-		return "manual"
-	}
-
-	return h.Source
-}
-
 func (h Host) IsConfigBacked() bool {
-	if h.Managed {
-		return true
-	}
-	source := strings.TrimSpace(h.Source)
-	return source != "" && source != "manual" && source != "manual-override"
-}
-
-func (h Host) IsImported() bool {
-	return h.IsConfigBacked() && !h.Managed
+	return h.Managed
 }
 
 func (h Host) LastConnectedLabel() string {
@@ -88,26 +64,6 @@ func (h Host) TagsLabel() string {
 	}
 
 	return strings.Join(h.Tags, ", ")
-}
-
-func (h Host) SummaryLine() string {
-	star := " "
-	if h.Favorite {
-		star = "*"
-	}
-
-	return fmt.Sprintf("%s %-20s %-24s %s", star, h.Alias, h.TargetName(), h.AuthMethodsLabel())
-}
-
-func (h Host) AuthModeLabel() string {
-	switch strings.ToLower(strings.TrimSpace(h.AuthMode)) {
-	case "key":
-		return "key file"
-	case "password":
-		return "password"
-	default:
-		return "default"
-	}
 }
 
 func (h Host) IdentityFileLabel() string {

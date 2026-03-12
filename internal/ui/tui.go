@@ -603,7 +603,6 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 		m.detailRow("Auth", selected.AuthMethodsLabel()),
 		m.detailRow("Identity", selected.IdentityFileLabel()),
 		m.detailRow("Password", selected.PasswordStoredLabel()),
-		m.detailRow("Source", selected.SourceLabel()),
 		m.detailRow("Last", selected.LastConnectedLabel()),
 		m.detailRow("Preview", connectionPreview(selected)),
 	)
@@ -626,7 +625,6 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	rows = append(rows,
 		m.detailRow("Alias", selected.Alias),
 		m.detailRow("Target", selected.TargetName()),
-		m.detailRow("Source", selected.SourceLabel()),
 	)
 	rows = append(rows, m.styles.sectionMeta.Render("This removes the entry from vpsm-managed SSH config."))
 	rows = append(rows, m.styles.errorText.Render("Press Enter or d to delete. Esc cancels."))

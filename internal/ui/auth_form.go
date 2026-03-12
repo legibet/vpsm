@@ -213,7 +213,6 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 			styles.value.Render(f.alias),
 		)
 	}
-	rows = append(rows, styles.sectionMeta.Render("Source: vpsm-managed"))
 
 	labels := []string{"* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {

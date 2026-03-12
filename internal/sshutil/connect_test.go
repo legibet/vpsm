@@ -16,7 +16,7 @@ func TestBuildArgsUsesAliasWhenSafe(t *testing.T) {
 		HostName: "1.2.3.4",
 		User:     "root",
 		Port:     2222,
-		Source:   "/Users/test/.ssh/config",
+		Managed:  true,
 	})
 	if err != nil {
 		t.Fatalf("build args: %v", err)
@@ -35,7 +35,7 @@ func TestBuildArgsFallsBackForUnicodeAlias(t *testing.T) {
 		HostName: "124.16.71.246",
 		User:     "cosmos",
 		Port:     22,
-		Source:   "/Users/test/.ssh/config",
+		Managed:  true,
 	})
 	if err != nil {
 		t.Fatalf("build args: %v", err)

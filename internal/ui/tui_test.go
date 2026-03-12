@@ -147,6 +147,33 @@ func TestRenderListItemKeepsMetaAlignedWithAlias(t *testing.T) {
 	}
 }
 
+func TestDetailsPanelOmitsSourceRow(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:          "prod-web",
+		HostName:       "10.0.0.1",
+		User:           "root",
+		Port:           2201,
+		Managed:        true,
+		IdentityFile:   "/tmp/id_ed25519",
+		PasswordStored: true,
+	}
+
+	m := tuiModel{
+		hosts:  []model.Host{host},
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderDetailsPanel(48, 18))
+	if strings.Contains(rendered, "Source") {
+		t.Fatalf("expected details panel to omit source row, got %q", rendered)
+	}
+}
+
 func testHosts() []model.Host {
 	return []model.Host{
 		{Alias: "prod-web", HostName: "10.0.0.1", User: "root", Port: 22},

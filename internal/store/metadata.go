@@ -218,18 +218,18 @@ func (s *Store) DeleteHost(alias string) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	switch host.SourceLabel() {
-	case "ssh-config", "manual override":
+	switch strings.TrimSpace(host.Source) {
+	case "", "manual":
+		if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
+			return fmt.Errorf("clear ignored host %q: %w", alias, err)
+		}
+	default:
 		if _, err := tx.Exec(`
 			INSERT INTO ignored_hosts (alias, created_at)
 			VALUES (?, ?)
 			ON CONFLICT(alias) DO UPDATE SET created_at = excluded.created_at
 		`, alias, now); err != nil {
 			return fmt.Errorf("ignore host %q after delete: %w", alias, err)
-		}
-	default:
-		if _, err := tx.Exec(`DELETE FROM ignored_hosts WHERE alias = ?`, alias); err != nil {
-			return fmt.Errorf("clear ignored host %q: %w", alias, err)
 		}
 	}
 
