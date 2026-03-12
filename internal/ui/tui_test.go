@@ -89,6 +89,22 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 	}
 }
 
+func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
+	t.Parallel()
+
+	m := tuiModel{
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderListPanel(48, 18))
+	if !strings.Contains(rendered, "No managed hosts yet. Press n to add one.") {
+		t.Fatalf("expected empty-state add hint, got %q", rendered)
+	}
+}
+
 func TestListMetaShowsUserTargetAndPortOnly(t *testing.T) {
 	t.Parallel()
 

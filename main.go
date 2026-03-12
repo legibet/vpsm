@@ -114,13 +114,14 @@ func runTUI(paths config.Paths, st *store.Store) error {
 		return err
 	}
 
+	initialStatus := ""
 	if len(hosts) == 0 {
-		fmt.Println("No managed hosts found. Create one with `vpsm add`.")
-		return nil
+		initialStatus = "No managed hosts yet. Press n to add one."
 	}
 
 	selected, err := ui.Run(ui.Options{
-		Hosts: hosts,
+		Hosts:         hosts,
+		InitialStatus: initialStatus,
 		ToggleFavorite: func(alias string) error {
 			_, err := st.ToggleFavorite(alias)
 			return err

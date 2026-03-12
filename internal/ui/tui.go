@@ -548,7 +548,11 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 	}
 
 	if len(m.filtered) == 0 {
-		rows = append(rows, m.styles.muted.Render("No hosts match the current filter."))
+		message := "No hosts match the current filter."
+		if len(m.hosts) == 0 {
+			message = "No managed hosts yet. Press n to add one."
+		}
+		rows = append(rows, m.styles.muted.Render(message))
 		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
