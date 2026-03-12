@@ -132,6 +132,9 @@ This file is for coding agents working in this repository.
 - Do not reintroduce heavy background fills unless there is a strong reason.
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The list view should stay compact and easy to scan.
+- The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
+- Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
+- Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout.
 - If a display name exists, show it without hiding the technical alias completely.
 - Keep key hints accurate when you change interactions.
 

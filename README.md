@@ -16,6 +16,7 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 
 - `vpsm` only manages hosts you add to `vpsm`
 - it does not automatically import your existing hand-written SSH entries
+- `vpsm import-ssh` explains the current managed-only workflow
 - each server has a required `alias` for commands and SSH
 - each server can also have an optional `name` for display and search
 - when you connect from `vpsm`, it runs your system `ssh`
@@ -56,6 +57,7 @@ Open the TUI:
 
 ```bash
 ./vpsm
+./vpsm tui
 ./vpsm list
 ./vpsm show hk-prod-01
 ./vpsm add --alias my-box --name "Staging API" --host 198.51.100.10 --user ubuntu
@@ -63,6 +65,7 @@ Open the TUI:
 ./vpsm set-password my-box
 ./vpsm clear-password my-box
 ./vpsm favorite my-box on
+./vpsm import-ssh
 ./vpsm ssh my-box
 ./vpsm delete my-box
 ```
@@ -70,27 +73,28 @@ Open the TUI:
 ## TUI basics
 
 - `j` / `k`: move
+- `pgup` / `pgdn`: page in wide layout
 - `/`: search
 - `n`: add
 - `e`: edit
 - `d`: delete
 - `f`: favorite
-- `r`: reload
+- `r`: refresh
+- `tab`: switch panes in compact layout
 - `enter`: connect
 - `q`: quit
 
 ## Day-to-day usage
 
-In the server list, `vpsm` shows the human-friendly name first when you have one, while still keeping the alias visible.
+In the server list, `vpsm` keeps each host on a single row. When a display name exists, it shows the human-friendly name first, keeps the alias visible, and appends the target meta on the same line.
 
 Example:
 
 ```text
-Hong Kong Production · hk-prod-01
-root @ 203.0.113.10:22
+Hong Kong Production · hk-prod-01  root @ 203.0.113.10
 ```
 
-That makes the list easier to scan without hiding the technical alias you need for commands.
+That keeps the list compact and easy to scan without hiding the technical alias you need for commands.
 
 ## A few useful notes
 
