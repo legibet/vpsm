@@ -46,31 +46,22 @@ func newStyles() styleSet {
 		Padding(1, 1)
 
 	return styleSet{
-		canvas:       lipgloss.NewStyle().UnsetBackground().Foreground(text),
-		app:          lipgloss.NewStyle().UnsetBackground().Padding(0, 1),
-		headBar:      lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
-		title:        lipgloss.NewStyle().Bold(true).Foreground(text),
-		subtitle:     lipgloss.NewStyle().Foreground(muted),
-		badge:        lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
-		panel:        basePanel,
-		panelActive:  basePanel.Copy().BorderForeground(accent),
-		sectionTitle: lipgloss.NewStyle().Bold(true).Foreground(text),
-		sectionMeta:  lipgloss.NewStyle().Foreground(muted),
-		listItem: lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderForeground(border).
-			UnsetBackground().
-			Padding(0, 1),
-		listItemActive: lipgloss.NewStyle().
-			BorderLeft(true).
-			BorderForeground(accent).
-			UnsetBackground().
-			Padding(0, 1).
-			Bold(true),
+		canvas:          lipgloss.NewStyle().UnsetBackground().Foreground(text),
+		app:             lipgloss.NewStyle().UnsetBackground().Padding(0, 1),
+		headBar:         lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
+		title:           lipgloss.NewStyle().Bold(true).Foreground(text),
+		subtitle:        lipgloss.NewStyle().Foreground(muted),
+		badge:           lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
+		panel:           basePanel,
+		panelActive:     basePanel.Copy().BorderForeground(accent),
+		sectionTitle:    lipgloss.NewStyle().Bold(true).Foreground(text),
+		sectionMeta:     lipgloss.NewStyle().Foreground(muted),
+		listItem:        lipgloss.NewStyle().UnsetBackground(),
+		listItemActive:  lipgloss.NewStyle().UnsetBackground(),
 		alias:           lipgloss.NewStyle().Bold(true).Foreground(text),
 		aliasActive:     lipgloss.NewStyle().Bold(true).Foreground(accent),
 		meta:            lipgloss.NewStyle().Foreground(muted),
-		metaActive:      lipgloss.NewStyle().Foreground(warm),
+		metaActive:      lipgloss.NewStyle().Foreground(lipgloss.Color("248")),
 		label:           lipgloss.NewStyle().Foreground(muted).Width(14),
 		value:           lipgloss.NewStyle().Foreground(text),
 		muted:           lipgloss.NewStyle().Foreground(muted),

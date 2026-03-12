@@ -406,7 +406,7 @@ func (m tuiModel) currentAlias() string {
 }
 
 func (m tuiModel) pageStep() int {
-	step := (m.bodyHeight() - 4) / 3
+	step := m.bodyHeight() - 4
 	if step < 3 {
 		step = 3
 	}
@@ -576,10 +576,10 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 
 	prefix := listPrefix(selected, host.Favorite)
 	primary := renderListPrimary(host, prefix, primaryStyle, metaStyle)
-	meta := metaStyle.Copy().PaddingLeft(listPrefixWidth).Render(listMeta(host))
+	metaText := listMeta(host)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, primary, meta)
-	return itemStyle.Width(width - 6).Render(content)
+	line := primary + metaStyle.Render("  "+metaText)
+	return itemStyle.Render(line)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -648,7 +648,7 @@ func (m tuiModel) visibleHosts() []model.Host {
 		return nil
 	}
 
-	rowsPerPage := (m.bodyHeight() - 4) / 3
+	rowsPerPage := m.bodyHeight() - 4
 	if rowsPerPage < 4 {
 		rowsPerPage = 4
 	}
@@ -842,17 +842,15 @@ func renderListPrimary(host model.Host, prefix string, primaryStyle lipgloss.Sty
 }
 
 func listPrefix(selected bool, favorite bool) string {
-	selectMark := " "
+	cursor := " "
 	if selected {
-		selectMark = ">"
+		cursor = "▸"
 	}
-
 	star := " "
 	if favorite {
 		star = "*"
 	}
-
-	return selectMark + star + " "
+	return cursor + star + " "
 }
 
 func listTargetLabel(host model.Host) string {
