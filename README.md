@@ -1,27 +1,24 @@
 # vpsm
 
-`vpsm` is a local-first VPS manager for people who keep a lot of SSH hosts.
+`vpsm` is a small SSH host manager for people who want a cleaner list than a long, hand-edited config file.
 
-It does not replace your terminal or SSH client. It manages the hosts stored in `~/.ssh/vpsm.conf`, ensures that file is included from your main SSH config, and launches your system `ssh` when you connect.
+It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and still uses your system `ssh` when you connect.
 
-## What works today
+## What vpsm is good at
 
-- automatically maintain a managed include file at `~/.ssh/vpsm.conf`
-- browse `vpsm`-managed hosts in a keyboard-first TUI
-- search managed hosts in the TUI
-- add an optional display name for listing and search
-- add new `vpsm`-managed hosts from the CLI or the TUI
-- edit `vpsm`-managed hosts from the CLI or the TUI
-- delete `vpsm`-managed hosts from the TUI or CLI
-- store SSH passwords in the system keychain
-- store favorites and last-connection history locally
-- launch your system OpenSSH with either a safe alias or a direct target fallback
+- keeping a tidy list of servers you actually care about
+- giving each server a readable display name
+- searching by name, alias, host, or user
+- storing SSH passwords in the system keychain
+- launching your normal `ssh` command without replacing your workflow
 
-## Requirements
+## What to expect
 
-- Go `1.25+`
-- a real terminal for the TUI
-- OpenSSH available in `PATH`
+- `vpsm` only manages hosts you add to `vpsm`
+- it does not automatically import your existing hand-written SSH entries
+- each server has a required `alias` for commands and SSH
+- each server can also have an optional `name` for display and search
+- when you connect from `vpsm`, it runs your system `ssh`
 
 ## Build
 
@@ -31,59 +28,73 @@ go build -o vpsm .
 
 ## Quick start
 
+Add a server:
+
 ```bash
-./vpsm list
-./vpsm add --alias hk-lab --name "Hong Kong Lab" --host 203.0.113.10 --user root --port 22 --identity-file ~/.ssh/id_ed25519
-./vpsm set-password hk-lab
+./vpsm add \
+  --alias hk-prod-01 \
+  --name "Hong Kong Production" \
+  --host 203.0.113.10 \
+  --user root \
+  --port 22 \
+  --identity-file ~/.ssh/id_ed25519
+```
+
+Store a password if you need one:
+
+```bash
+./vpsm set-password hk-prod-01
+```
+
+Open the TUI:
+
+```bash
 ./vpsm
 ```
 
 ## Common commands
 
 ```bash
+./vpsm
 ./vpsm list
-./vpsm show my-host
-./vpsm add --alias my-box --name "Production API" --host 198.51.100.10 --user ubuntu --port 2201 --identity-file ~/.ssh/id_ed25519
-./vpsm set my-box --name "Production API" --host 198.51.100.11 --user root --port 22 --identity-file ~/.ssh/id_root
+./vpsm show hk-prod-01
+./vpsm add --alias my-box --name "Staging API" --host 198.51.100.10 --user ubuntu
+./vpsm set my-box --name "Staging API" --host 198.51.100.11
 ./vpsm set-password my-box
 ./vpsm clear-password my-box
-./vpsm delete my-box
 ./vpsm favorite my-box on
 ./vpsm ssh my-box
+./vpsm delete my-box
 ```
 
-## TUI keys
+## TUI basics
 
 - `j` / `k`: move
-- `pgup` / `pgdn`: page
 - `/`: search
-- `n`: add a new server
-- `e`: edit the selected server
-- `d`: delete the selected `vpsm`-managed server
-- `f`: toggle favorite
-- `r`: reload managed hosts
-- `enter`: connect with `ssh`
+- `n`: add
+- `e`: edit
+- `d`: delete
+- `f`: favorite
+- `r`: reload
+- `enter`: connect
 - `q`: quit
 
-## How config works
+## Day-to-day usage
 
-- on startup it ensures `~/.ssh/config` includes `~/.ssh/vpsm.conf`
-- the visible host inventory comes from `~/.ssh/vpsm.conf`
-- hosts created by `vpsm` are written to `~/.ssh/vpsm.conf`
-- an optional display name is stored as a `# vpsm-name: ...` comment above each managed host block
-- existing hand-written SSH config entries are not imported or shown automatically
-- when adding a host, `vpsm` checks for alias conflicts with the rest of your SSH config
+In the server list, `vpsm` shows the human-friendly name first when you have one, while still keeping the alias visible.
 
-## Data
+Example:
 
-- managed host source of truth: `~/.ssh/vpsm.conf`
-- main SSH config: `~/.ssh/config` only needs to include `~/.ssh/vpsm.conf`
-- local metadata DB: OS config directory under `vpsm`
-- on macOS the DB is `~/Library/Application Support/vpsm/vpsm.db`
+```text
+Hong Kong Production · hk-prod-01
+root @ 203.0.113.10:22
+```
 
-## Notes
+That makes the list easier to scan without hiding the technical alias you need for commands.
 
-- `vpsm import-ssh` currently only explains the managed-only workflow; it does not copy hosts from your existing SSH config
-- passwords are stored in the system keychain, not in SSH config or SQLite
-- favorites and last-connected timestamps stay local to `vpsm`
-- if an alias contains non-ASCII characters, `vpsm` falls back to a direct `user@host` SSH target instead of calling `ssh <alias>`
+## A few useful notes
+
+- If you already have a large `~/.ssh/config`, `vpsm` will not pull those hosts into its list automatically.
+- Passwords are stored in your system keychain, not in the SSH config.
+- Favorites and connection history stay local to `vpsm`.
+- If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.
