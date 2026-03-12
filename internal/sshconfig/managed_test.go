@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnsureManagedConfigAddsIncludeAtTop(t *testing.T) {
@@ -30,6 +31,46 @@ func TestEnsureManagedConfigAddsIncludeAtTop(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(content), "Include "+managedPath+"\n") {
 		t.Fatalf("expected managed include at top, got %q", string(content))
+	}
+}
+
+func TestEnsureManagedConfigDoesNotRewriteExistingInclude(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("mkdir ssh dir: %v", err)
+	}
+	content := "Include " + managedPath + "\n\nHost prod\n  HostName 10.0.0.1\n"
+	if err := os.WriteFile(mainPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write main config: %v", err)
+	}
+
+	modTime := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(mainPath, modTime, modTime); err != nil {
+		t.Fatalf("set main config time: %v", err)
+	}
+
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	info, err := os.Stat(mainPath)
+	if err != nil {
+		t.Fatalf("stat main config: %v", err)
+	}
+	if !info.ModTime().Equal(modTime) {
+		t.Fatalf("expected mod time %v, got %v", modTime, info.ModTime())
+	}
+
+	got, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatalf("read main config: %v", err)
+	}
+	if string(got) != content {
+		t.Fatalf("expected content unchanged, got %q", string(got))
 	}
 }
 

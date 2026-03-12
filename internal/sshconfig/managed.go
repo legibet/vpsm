@@ -34,12 +34,14 @@ func EnsureManagedConfig(mainConfigPath string, managedConfigPath string) error 
 			return fmt.Errorf("read ssh config: %w", err)
 		}
 		content = []byte(includeLine)
+		if err := os.WriteFile(mainConfigPath, content, 0o600); err != nil {
+			return fmt.Errorf("write ssh config: %w", err)
+		}
 	} else if !hasManagedInclude(mainConfigPath, managedConfigPath, string(content)) {
 		content = append([]byte(includeLine+"\n"), content...)
-	}
-
-	if err := os.WriteFile(mainConfigPath, content, 0o600); err != nil {
-		return fmt.Errorf("write ssh config: %w", err)
+		if err := os.WriteFile(mainConfigPath, content, 0o600); err != nil {
+			return fmt.Errorf("write ssh config: %w", err)
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(managedConfigPath), 0o700); err != nil {
