@@ -17,7 +17,7 @@ func TestParsePathReadsHostBlocksAndIncludes(t *testing.T) {
 	}
 
 	includePath := filepath.Join(includeDir, "servers.conf")
-	if err := os.WriteFile(includePath, []byte("Host db-1\n  HostName 10.0.0.12\n  User root\n  IdentityFile ~/.ssh/id_db\n"), 0o644); err != nil {
+	if err := os.WriteFile(includePath, []byte("# vpsm-name: Database Primary\nHost db-1\n  HostName 10.0.0.12\n  User root\n  IdentityFile ~/.ssh/id_db\n"), 0o644); err != nil {
 		t.Fatalf("write include file: %v", err)
 	}
 
@@ -35,7 +35,7 @@ func TestParsePathReadsHostBlocksAndIncludes(t *testing.T) {
 		t.Fatalf("expected 2 hosts, got %d", len(hosts))
 	}
 
-	if hosts[0].Alias != "db-1" || hosts[0].HostName != "10.0.0.12" || hosts[0].Port != 22 || hosts[0].IdentityFile != "~/.ssh/id_db" {
+	if hosts[0].Alias != "db-1" || hosts[0].DisplayName != "Database Primary" || hosts[0].HostName != "10.0.0.12" || hosts[0].Port != 22 || hosts[0].IdentityFile != "~/.ssh/id_db" {
 		t.Fatalf("unexpected first host: %+v", hosts[0])
 	}
 

@@ -12,6 +12,7 @@ import (
 
 type CreateHostInput struct {
 	Alias        string
+	DisplayName  string
 	HostName     string
 	User         string
 	Port         int
@@ -29,6 +30,7 @@ const (
 
 const (
 	fieldAlias = iota
+	fieldDisplayName
 	fieldHostName
 	fieldUser
 	fieldPort
@@ -47,6 +49,7 @@ func newAddForm() addForm {
 	inputs := make([]textinput.Model, fieldCount)
 
 	inputs[fieldAlias] = newTextInput("web-hk-01", 48)
+	inputs[fieldDisplayName] = newTextInput("Hong Kong Production", 48)
 	inputs[fieldHostName] = newTextInput("203.0.113.10", 48)
 	inputs[fieldUser] = newTextInput("root", 24)
 	inputs[fieldPort] = newTextInput("22", 8)
@@ -166,6 +169,7 @@ func (f *addForm) values() (CreateHostInput, error) {
 
 	return CreateHostInput{
 		Alias:        alias,
+		DisplayName:  strings.TrimSpace(f.inputs[fieldDisplayName].Value()),
 		HostName:     hostName,
 		User:         strings.TrimSpace(f.inputs[fieldUser].Value()),
 		Port:         port,
@@ -189,12 +193,12 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 		styles.sectionTitle.Render("New Server"),
 	}
 	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Required: alias and host."))
+		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Name is optional."))
 	} else {
-		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Password is optional."))
+		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Name and password are optional."))
 	}
 
-	labels := []string{"* Alias", "* Host / IP", "User", "Port", "Identity file", "Password"}
+	labels := []string{"* Alias", "Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox

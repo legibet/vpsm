@@ -26,10 +26,11 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
-		Alias:    "managed-box",
-		HostName: "203.0.113.10",
-		User:     "root",
-		Port:     2201,
+		Alias:       "managed-box",
+		DisplayName: "Managed Box",
+		HostName:    "203.0.113.10",
+		User:        "root",
+		Port:        2201,
 	}); err != nil {
 		t.Fatalf("upsert managed host: %v", err)
 	}
@@ -51,6 +52,9 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	}
 	if hosts[0].Alias != "managed-box" {
 		t.Fatalf("expected managed host alias %q, got %q", "managed-box", hosts[0].Alias)
+	}
+	if hosts[0].DisplayName != "Managed Box" {
+		t.Fatalf("expected managed host display name %q, got %q", "Managed Box", hosts[0].DisplayName)
 	}
 	if !hosts[0].Managed {
 		t.Fatal("expected listed host to be marked managed")
@@ -76,8 +80,9 @@ func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
-		Alias:    "managed-box",
-		HostName: "203.0.113.10",
+		Alias:       "managed-box",
+		DisplayName: "Managed Box",
+		HostName:    "203.0.113.10",
 	}); err != nil {
 		t.Fatalf("upsert managed host: %v", err)
 	}

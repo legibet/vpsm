@@ -9,6 +9,7 @@ It does not replace your terminal or SSH client. It manages the hosts stored in 
 - automatically maintain a managed include file at `~/.ssh/vpsm.conf`
 - browse `vpsm`-managed hosts in a keyboard-first TUI
 - search managed hosts in the TUI
+- add an optional display name for listing and search
 - add new `vpsm`-managed hosts from the CLI or the TUI
 - edit `vpsm`-managed hosts from the CLI or the TUI
 - delete `vpsm`-managed hosts from the TUI or CLI
@@ -32,7 +33,7 @@ go build -o vpsm .
 
 ```bash
 ./vpsm list
-./vpsm add --alias hk-lab --host 203.0.113.10 --user root --port 22 --identity-file ~/.ssh/id_ed25519
+./vpsm add --alias hk-lab --name "Hong Kong Lab" --host 203.0.113.10 --user root --port 22 --identity-file ~/.ssh/id_ed25519
 ./vpsm set-password hk-lab
 ./vpsm
 ```
@@ -42,8 +43,8 @@ go build -o vpsm .
 ```bash
 ./vpsm list
 ./vpsm show my-host
-./vpsm add --alias my-box --host 198.51.100.10 --user ubuntu --port 2201 --identity-file ~/.ssh/id_ed25519
-./vpsm set my-box --host 198.51.100.11 --user root --port 22 --identity-file ~/.ssh/id_root
+./vpsm add --alias my-box --name "Production API" --host 198.51.100.10 --user ubuntu --port 2201 --identity-file ~/.ssh/id_ed25519
+./vpsm set my-box --name "Production API" --host 198.51.100.11 --user root --port 22 --identity-file ~/.ssh/id_root
 ./vpsm set-password my-box
 ./vpsm clear-password my-box
 ./vpsm delete my-box
@@ -69,6 +70,7 @@ go build -o vpsm .
 - on startup it ensures `~/.ssh/config` includes `~/.ssh/vpsm.conf`
 - the visible host inventory comes from `~/.ssh/vpsm.conf`
 - hosts created by `vpsm` are written to `~/.ssh/vpsm.conf`
+- an optional display name is stored as a `# vpsm-name: ...` comment above each managed host block
 - existing hand-written SSH config entries are not imported or shown automatically
 - when adding a host, `vpsm` checks for alias conflicts with the rest of your SSH config
 

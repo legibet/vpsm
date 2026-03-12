@@ -575,7 +575,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	}
 
 	prefix := listPrefix(selected, host.Favorite)
-	primary := primaryStyle.Render(prefix + host.Alias)
+	primary := renderListPrimary(host, prefix, primaryStyle, metaStyle)
 	meta := metaStyle.Copy().PaddingLeft(listPrefixWidth).Render(listMeta(host))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, primary, meta)
@@ -595,6 +595,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 
 	selected := m.filtered[m.cursor]
 	rows = append(rows,
+		m.detailRow("Name", firstNonEmpty(selected.DisplayName, "-")),
 		m.detailRow("Alias", selected.Alias),
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
@@ -622,6 +623,9 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	}
 
 	selected := m.filtered[m.cursor]
+	if strings.TrimSpace(selected.DisplayName) != "" {
+		rows = append(rows, m.detailRow("Name", selected.DisplayName))
+	}
 	rows = append(rows,
 		m.detailRow("Alias", selected.Alias),
 		m.detailRow("Target", selected.TargetName()),
@@ -823,6 +827,18 @@ func compactFormInputWidth(panelWidth int) int {
 
 func listMeta(host model.Host) string {
 	return listTargetLabel(host)
+}
+
+func renderListPrimary(host model.Host, prefix string, primaryStyle lipgloss.Style, metaStyle lipgloss.Style) string {
+	if strings.TrimSpace(host.DisplayName) == "" {
+		return primaryStyle.Render(prefix + host.Alias)
+	}
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		primaryStyle.Render(prefix+host.DisplayName),
+		metaStyle.Render(" · "+host.Alias),
+	)
 }
 
 func listPrefix(selected bool, favorite bool) string {

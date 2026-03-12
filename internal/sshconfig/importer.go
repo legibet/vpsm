@@ -13,6 +13,7 @@ import (
 
 type ImportedHost struct {
 	Alias        string
+	DisplayName  string
 	HostName     string
 	User         string
 	Port         int
@@ -27,6 +28,7 @@ type parser struct {
 
 type hostBlock struct {
 	aliases      []string
+	displayName  string
 	hostName     string
 	user         string
 	port         int
@@ -83,6 +85,7 @@ func (p *parser) parseFile(path string) error {
 
 	scanner := bufio.NewScanner(file)
 	current := hostBlock{}
+	pendingDisplayName := ""
 
 	flush := func() {
 		for _, alias := range current.aliases {
@@ -95,6 +98,7 @@ func (p *parser) parseFile(path string) error {
 
 			host := ImportedHost{
 				Alias:        alias,
+				DisplayName:  current.displayName,
 				HostName:     firstNonEmpty(current.hostName, alias),
 				User:         current.user,
 				Port:         defaultPort(current.port),
@@ -107,8 +111,23 @@ func (p *parser) parseFile(path string) error {
 	}
 
 	for scanner.Scan() {
-		line := sanitizeLine(scanner.Text())
+		rawLine := strings.TrimSpace(scanner.Text())
+		if rawLine == "" {
+			pendingDisplayName = ""
+			continue
+		}
+		if displayName, ok := parseDisplayNameComment(rawLine); ok {
+			pendingDisplayName = displayName
+			continue
+		}
+		if strings.HasPrefix(rawLine, "#") {
+			pendingDisplayName = ""
+			continue
+		}
+
+		line := sanitizeLine(rawLine)
 		if line == "" {
+			pendingDisplayName = ""
 			continue
 		}
 
@@ -124,13 +143,17 @@ func (p *parser) parseFile(path string) error {
 		case "host":
 			flush()
 			current = hostBlock{
-				aliases: parseValues(value),
-				source:  absolutePath,
+				aliases:     parseValues(value),
+				displayName: pendingDisplayName,
+				source:      absolutePath,
 			}
+			pendingDisplayName = ""
 		case "match":
 			flush()
 			current = hostBlock{}
+			pendingDisplayName = ""
 		case "include":
+			pendingDisplayName = ""
 			matches, err := resolveIncludes(absolutePath, parseValues(value))
 			if err != nil {
 				return err
@@ -141,14 +164,17 @@ func (p *parser) parseFile(path string) error {
 				}
 			}
 		case "hostname":
+			pendingDisplayName = ""
 			if len(current.aliases) > 0 {
 				current.hostName = firstValue(value)
 			}
 		case "user":
+			pendingDisplayName = ""
 			if len(current.aliases) > 0 {
 				current.user = firstValue(value)
 			}
 		case "port":
+			pendingDisplayName = ""
 			if len(current.aliases) == 0 {
 				continue
 			}
@@ -157,9 +183,12 @@ func (p *parser) parseFile(path string) error {
 				current.port = port
 			}
 		case "identityfile":
+			pendingDisplayName = ""
 			if len(current.aliases) > 0 && current.identityFile == "" {
 				current.identityFile = firstValue(value)
 			}
+		default:
+			pendingDisplayName = ""
 		}
 	}
 
@@ -169,6 +198,16 @@ func (p *parser) parseFile(path string) error {
 
 	flush()
 	return nil
+}
+
+func parseDisplayNameComment(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, displayNameCommentPrefix) {
+		return "", false
+	}
+
+	value := strings.TrimSpace(strings.TrimPrefix(line, displayNameCommentPrefix))
+	return normalizeManagedDisplayName(value), true
 }
 
 func sanitizeLine(line string) string {

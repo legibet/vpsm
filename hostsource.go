@@ -83,6 +83,7 @@ func listHostsForDisplay(paths config.Paths, st *store.Store) ([]model.Host, err
 	for _, managedHost := range managedHosts {
 		host := model.Host{
 			Alias:        managedHost.Alias,
+			DisplayName:  managedHost.DisplayName,
 			HostName:     managedHost.HostName,
 			User:         managedHost.User,
 			Port:         managedHost.Port,

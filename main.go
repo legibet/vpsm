@@ -62,7 +62,7 @@ func run(args []string) error {
 		return runAdd(paths, st, args[1:])
 	case "set":
 		if len(args) < 2 {
-			return errors.New("usage: vpsm set <alias> [--host ...] [--user ...] [--port ...] [--identity-file ...]")
+			return errors.New("usage: vpsm set <alias> [--name ...] [--host ...] [--user ...] [--port ...] [--identity-file ...]")
 		}
 		return runSet(paths, st, args[1], args[2:])
 	case "set-password":
@@ -142,6 +142,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			}
 			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
 				Alias:        input.Alias,
+				DisplayName:  input.DisplayName,
 				HostName:     input.HostName,
 				User:         input.User,
 				Port:         input.Port,
@@ -162,6 +163,7 @@ func runTUI(paths config.Paths, st *store.Store) error {
 			}
 			if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
 				Alias:        input.Alias,
+				DisplayName:  input.DisplayName,
 				HostName:     input.HostName,
 				User:         input.User,
 				Port:         input.Port,
@@ -217,13 +219,13 @@ func runList(paths config.Paths, st *store.Store) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "FAV\tALIAS\tTARGET\tAUTH\tLAST CONNECTED")
+	_, _ = fmt.Fprintln(tw, "FAV\tNAME\tALIAS\tTARGET\tAUTH\tLAST CONNECTED")
 	for _, host := range hosts {
 		favorite := ""
 		if host.Favorite {
 			favorite = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", favorite, host.Alias, host.TargetName(), compactAuthLabel(host), host.LastConnectedLabel())
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", favorite, firstNonEmpty(host.DisplayName, "-"), host.Alias, host.TargetName(), compactAuthLabel(host), host.LastConnectedLabel())
 	}
 	return tw.Flush()
 }
@@ -236,6 +238,7 @@ func runShow(paths config.Paths, st *store.Store, alias string) error {
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	rows := [][2]string{
+		{"Name", firstNonEmpty(host.DisplayName, "-")},
 		{"Alias", host.Alias},
 		{"Target", host.TargetName()},
 		{"User", firstNonEmpty(host.User, "-")},
@@ -261,6 +264,7 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	var alias string
+	var displayName string
 	var hostName string
 	var user string
 	var port int
@@ -269,6 +273,7 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 	var password string
 
 	fs.StringVar(&alias, "alias", "", "Host alias")
+	fs.StringVar(&displayName, "name", "", "Display name")
 	fs.StringVar(&hostName, "host", "", "Host or IP")
 	fs.StringVar(&user, "user", "", "SSH user")
 	fs.IntVar(&port, "port", 22, "SSH port")
@@ -286,6 +291,7 @@ func runAdd(paths config.Paths, st *store.Store, args []string) error {
 
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
 		Alias:        alias,
+		DisplayName:  displayName,
 		HostName:     hostName,
 		User:         user,
 		Port:         port,
@@ -316,11 +322,13 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 	fs := flag.NewFlagSet("set", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
+	var displayName cmdutil.OptionalString
 	var hostName cmdutil.OptionalString
 	var user cmdutil.OptionalString
 	var portValue string
 	var identityFile cmdutil.OptionalString
 
+	fs.Var(&displayName, "name", "Display name")
 	fs.Var(&hostName, "host", "Host or IP")
 	fs.Var(&user, "user", "SSH user")
 	fs.StringVar(&portValue, "port", "", "SSH port")
@@ -337,12 +345,17 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 
 	next := ui.UpdateHostInput{
 		Alias:        alias,
+		DisplayName:  host.DisplayName,
 		HostName:     host.HostName,
 		User:         host.User,
 		Port:         host.Port,
 		IdentityFile: host.IdentityFile,
 	}
 	changed := false
+	if displayName.IsSet() {
+		next.DisplayName = displayName.Value()
+		changed = true
+	}
 	if hostName.IsSet() {
 		next.HostName = hostName.Value()
 		changed = true
@@ -370,6 +383,7 @@ func runSet(paths config.Paths, st *store.Store, alias string, args []string) er
 
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
 		Alias:        alias,
+		DisplayName:  next.DisplayName,
 		HostName:     next.HostName,
 		User:         next.User,
 		Port:         next.Port,
@@ -530,8 +544,8 @@ Usage:
   vpsm tui                    Open the TUI
   vpsm list                   Print vpsm-managed hosts
   vpsm show <alias>           Show one managed host
-  vpsm add --alias ...        Add a vpsm-managed host
-  vpsm set <alias>            Update a vpsm-managed host
+  vpsm add --alias ...        Add a vpsm-managed host (optional --name)
+  vpsm set <alias>            Update a vpsm-managed host (optional --name)
   vpsm set-password <alias>   Store an SSH password in the system keychain
   vpsm clear-password <alias> Delete a stored SSH password
   vpsm delete <alias>         Delete a vpsm-managed host

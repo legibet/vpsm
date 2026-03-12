@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const managedHeader = "# Managed by vpsm. Entries in this file are safe to edit with vpsm.\n"
+const (
+	managedHeader            = "# Managed by vpsm. Entries in this file are safe to edit with vpsm.\n"
+	displayNameCommentPrefix = "# vpsm-name:"
+)
 
 func EnsureManagedConfig(mainConfigPath string, managedConfigPath string) error {
 	mainConfigPath, err := filepath.Abs(mainConfigPath)
@@ -146,6 +149,7 @@ func DeleteManagedHost(managedConfigPath string, alias string) error {
 func normalizeManagedHost(managedConfigPath string, host ImportedHost) ImportedHost {
 	host.Source = managedConfigPath
 	host.Alias = strings.TrimSpace(host.Alias)
+	host.DisplayName = normalizeManagedDisplayName(host.DisplayName)
 	host.HostName = strings.TrimSpace(host.HostName)
 	host.User = strings.TrimSpace(host.User)
 	host.IdentityFile = strings.TrimSpace(host.IdentityFile)
@@ -165,6 +169,12 @@ func writeManagedHosts(managedConfigPath string, hosts []ImportedHost) error {
 	}
 	for i, host := range hosts {
 		host = normalizeManagedHost(managedConfigPath, host)
+		if host.DisplayName != "" {
+			b.WriteString(displayNameCommentPrefix)
+			b.WriteByte(' ')
+			b.WriteString(host.DisplayName)
+			b.WriteByte('\n')
+		}
 		b.WriteString("Host ")
 		b.WriteString(host.Alias)
 		b.WriteByte('\n')
@@ -195,6 +205,15 @@ func writeManagedHosts(managedConfigPath string, hosts []ImportedHost) error {
 		return fmt.Errorf("write managed ssh config: %w", err)
 	}
 	return nil
+}
+
+func normalizeManagedDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func samePath(left string, right string) bool {

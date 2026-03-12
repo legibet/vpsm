@@ -27,6 +27,7 @@ This file is for coding agents working in this repository.
 
 - Visible host inventory comes from `~/.ssh/vpsm.conf`.
 - `vpsm` manages its own writable include file at `~/.ssh/vpsm.conf`.
+- Optional display names live with managed hosts in `~/.ssh/vpsm.conf` comments.
 - The main `~/.ssh/config` is still used to ensure the managed `Include` exists and to detect alias conflicts.
 - Favorites and last-connected timestamps are local metadata in SQLite.
 - Passwords are stored in keychain only.
@@ -83,7 +84,7 @@ This file is for coding agents working in this repository.
 - Unexported helpers use lowerCamelCase.
 - Short receiver names are fine: `func (s *Store)`, `func (m tuiModel)`.
 - Struct field names should be explicit and domain-oriented: `HostName`, `IdentityFile`, `PasswordStored`.
-- Boolean helpers should read naturally: `IsImported`, `IsConfigBacked`, `CanUseAlias`.
+- Boolean helpers should read naturally: `Managed`, `IsConfigBacked`, `CanUseAlias`.
 
 ## Type Conventions
 
@@ -113,7 +114,7 @@ This file is for coding agents working in this repository.
 
 - For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
-- Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives.
+- Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
 - Preserve the main SSH config and only ensure the managed `Include` is present.
 - Do not silently rewrite unrelated user SSH config blocks.
 
@@ -131,6 +132,7 @@ This file is for coding agents working in this repository.
 - Do not reintroduce heavy background fills unless there is a strong reason.
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The list view should stay compact and easy to scan.
+- If a display name exists, show it without hiding the technical alias completely.
 - Keep key hints accurate when you change interactions.
 
 ## SQLite Metadata Rules

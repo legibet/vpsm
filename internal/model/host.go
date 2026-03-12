@@ -7,6 +7,7 @@ import (
 
 type Host struct {
 	Alias           string
+	DisplayName     string
 	HostName        string
 	User            string
 	Port            int
@@ -27,6 +28,7 @@ type Host struct {
 
 func (h Host) SearchText() string {
 	parts := []string{
+		h.DisplayName,
 		h.Alias,
 		h.HostName,
 		h.User,
@@ -41,6 +43,14 @@ func (h Host) SearchText() string {
 func (h Host) TargetName() string {
 	if h.HostName != "" {
 		return h.HostName
+	}
+
+	return h.Alias
+}
+
+func (h Host) DisplayLabel() string {
+	if strings.TrimSpace(h.DisplayName) != "" {
+		return h.DisplayName
 	}
 
 	return h.Alias

@@ -45,6 +45,7 @@ func TestUpsertAndDeleteManagedHost(t *testing.T) {
 
 	if err := UpsertManagedHost(managedPath, ImportedHost{
 		Alias:        "lab-1",
+		DisplayName:  "Lab Primary",
 		HostName:     "203.0.113.10",
 		User:         "ubuntu",
 		Port:         2202,
@@ -57,8 +58,15 @@ func TestUpsertAndDeleteManagedHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse main config: %v", err)
 	}
-	if len(hosts) != 1 || hosts[0].Alias != "lab-1" || hosts[0].IdentityFile != "~/.ssh/id_lab" {
+	if len(hosts) != 1 || hosts[0].Alias != "lab-1" || hosts[0].DisplayName != "Lab Primary" || hosts[0].IdentityFile != "~/.ssh/id_lab" {
 		t.Fatalf("unexpected parsed hosts: %+v", hosts)
+	}
+	content, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read managed config after upsert: %v", err)
+	}
+	if !strings.Contains(string(content), "# vpsm-name: Lab Primary") {
+		t.Fatalf("expected managed config to store display name comment, got %q", string(content))
 	}
 
 	if err := DeleteManagedHost(managedPath, "lab-1"); err != nil {
@@ -72,7 +80,7 @@ func TestUpsertAndDeleteManagedHost(t *testing.T) {
 	if len(hosts) != 0 {
 		t.Fatalf("expected no hosts after delete, got %+v", hosts)
 	}
-	content, err := os.ReadFile(managedPath)
+	content, err = os.ReadFile(managedPath)
 	if err != nil {
 		t.Fatalf("read managed config: %v", err)
 	}

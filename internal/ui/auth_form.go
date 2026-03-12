@@ -14,6 +14,7 @@ import (
 
 type UpdateHostInput struct {
 	Alias         string
+	DisplayName   string
 	HostName      string
 	User          string
 	Port          int
@@ -31,7 +32,8 @@ const (
 )
 
 const (
-	editFieldHostName = iota
+	editFieldDisplayName = iota
+	editFieldHostName
 	editFieldUser
 	editFieldPort
 	editFieldIdentity
@@ -50,6 +52,8 @@ type editForm struct {
 
 func newEditForm(host model.Host) editForm {
 	inputs := make([]textinput.Model, editFieldCount)
+	inputs[editFieldDisplayName] = newTextInput("Hong Kong Production", 48)
+	inputs[editFieldDisplayName].SetValue(host.DisplayName)
 	inputs[editFieldHostName] = newTextInput("203.0.113.10", 48)
 	inputs[editFieldHostName].SetValue(host.HostName)
 	inputs[editFieldUser] = newTextInput("root", 24)
@@ -168,6 +172,7 @@ func (f *editForm) values() (UpdateHostInput, error) {
 
 	return UpdateHostInput{
 		Alias:         f.alias,
+		DisplayName:   strings.TrimSpace(f.inputs[editFieldDisplayName].Value()),
 		HostName:      hostName,
 		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
 		Port:          port,
@@ -209,12 +214,12 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		rows = append(rows, styles.sectionMeta.Render("Alias: "+f.alias))
 	} else {
 		rows = append(rows,
-			styles.sectionMeta.Render("Update host, user, port, key path, or stored password."),
+			styles.sectionMeta.Render("Update name, host, user, port, key path, or stored password."),
 			styles.value.Render(f.alias),
 		)
 	}
 
-	labels := []string{"* Host / IP", "User", "Port", "Identity file", "Password"}
+	labels := []string{"Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox

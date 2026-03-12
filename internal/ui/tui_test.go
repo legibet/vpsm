@@ -112,6 +112,7 @@ func TestRenderListItemKeepsMetaAlignedWithAlias(t *testing.T) {
 
 	host := model.Host{
 		Alias:          "prod-web",
+		DisplayName:    "Hong Kong Production",
 		HostName:       "10.0.0.1",
 		User:           "root",
 		Port:           2201,
@@ -134,13 +135,16 @@ func TestRenderListItemKeepsMetaAlignedWithAlias(t *testing.T) {
 		t.Fatalf("expected at least 2 lines, got %d", len(lines))
 	}
 
-	aliasColumn := strings.Index(lines[0], host.Alias)
+	titleColumn := strings.Index(lines[0], host.DisplayName)
 	metaColumn := strings.Index(lines[1], "root @ 10.0.0.1:2201")
-	if aliasColumn == -1 || metaColumn == -1 {
+	if titleColumn == -1 || metaColumn == -1 {
 		t.Fatalf("expected alias and meta text in rendered item, got %q", rendered)
 	}
-	if aliasColumn != metaColumn {
-		t.Fatalf("expected alias and meta to start at same column, got alias=%d meta=%d in %q", aliasColumn, metaColumn, rendered)
+	if titleColumn != metaColumn {
+		t.Fatalf("expected title and meta to start at same column, got title=%d meta=%d in %q", titleColumn, metaColumn, rendered)
+	}
+	if !strings.Contains(lines[0], host.Alias) {
+		t.Fatalf("expected primary line to include alias, got %q", lines[0])
 	}
 	if strings.Contains(rendered, "managed") || strings.Contains(rendered, "default") || strings.Contains(rendered, "password") || strings.Contains(rendered, "key") {
 		t.Fatalf("expected list item to omit auth summary, got %q", rendered)
@@ -152,6 +156,7 @@ func TestDetailsPanelOmitsSourceRow(t *testing.T) {
 
 	host := model.Host{
 		Alias:          "prod-web",
+		DisplayName:    "Hong Kong Production",
 		HostName:       "10.0.0.1",
 		User:           "root",
 		Port:           2201,
@@ -171,6 +176,9 @@ func TestDetailsPanelOmitsSourceRow(t *testing.T) {
 	rendered := ansi.Strip(m.renderDetailsPanel(48, 18))
 	if strings.Contains(rendered, "Source") {
 		t.Fatalf("expected details panel to omit source row, got %q", rendered)
+	}
+	if !strings.Contains(rendered, host.DisplayName) {
+		t.Fatalf("expected details panel to show display name, got %q", rendered)
 	}
 }
 
@@ -192,6 +200,22 @@ func searchModel() tuiModel {
 	}
 	m.applyFilter()
 	return m
+}
+
+func TestSearchMatchesDisplayName(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	m.hosts[0].DisplayName = "Hong Kong Production"
+	m.query = "hong kong"
+	m.applyFilter()
+
+	if len(m.filtered) != 1 {
+		t.Fatalf("expected 1 match by display name, got %d", len(m.filtered))
+	}
+	if m.filtered[0].Alias != "prod-web" {
+		t.Fatalf("expected display-name search to match prod-web, got %q", m.filtered[0].Alias)
+	}
 }
 
 func TestSearchEnterConnectsSelectedHost(t *testing.T) {
