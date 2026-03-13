@@ -33,6 +33,7 @@ type metadataStore interface {
 	EnsureHost(ctx context.Context, alias string) error
 	UpdateHost(ctx context.Context, alias string, patch store.HostPatch) (model.Host, error)
 	DeleteMetadata(ctx context.Context, alias string) error
+	RenameHost(ctx context.Context, oldAlias, newAlias string) error
 }
 
 // HostService coordinates managed-host workflows across SSH config, keychain, and metadata.
@@ -65,7 +66,8 @@ type AddManagedHostInput struct {
 
 // UpdateManagedHostInput describes the editable fields for a managed host.
 type UpdateManagedHostInput struct {
-	Alias         string
+	Alias         string // current alias (used as the lookup key)
+	NewAlias      string // when non-empty and different from Alias, renames the host
 	DisplayName   string
 	HostName      string
 	User          string
@@ -156,10 +158,21 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 }
 
 // UpdateManagedHost updates a managed SSH config entry and password state.
+// When input.NewAlias is set and differs from input.Alias the host is renamed
+// atomically across SSH config, keychain, and metadata.
 func (s HostService) UpdateManagedHost(ctx context.Context, input UpdateManagedHostInput) error {
-	_ = ctx
-
 	alias := NormalizeAlias(input.Alias)
+	newAlias := NormalizeAlias(input.NewAlias)
+
+	if newAlias != "" && newAlias != alias {
+		return s.renameManagedHost(ctx, alias, newAlias, input)
+	}
+
+	return s.updateManagedHostFields(ctx, alias, input)
+}
+
+// updateManagedHostFields updates all fields for an existing alias (no rename).
+func (s HostService) updateManagedHostFields(ctx context.Context, alias string, input UpdateManagedHostInput) error {
 	currentHost, err := s.getManagedHost(alias)
 	if err != nil {
 		return err
@@ -195,6 +208,87 @@ func (s HostService) UpdateManagedHost(ctx context.Context, input UpdateManagedH
 		return withRollback(err, rollbackErr)
 	}
 
+	return nil
+}
+
+// renameManagedHost renames the host alias across SSH config, keychain, and metadata.
+func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias string, input UpdateManagedHostInput) error {
+	if err := s.ensureManagedAliasAvailable(newAlias); err != nil {
+		return err
+	}
+
+	currentHost, err := s.getManagedHost(oldAlias)
+	if err != nil {
+		return err
+	}
+
+	passwordState, err := s.loadPasswordSnapshot(oldAlias)
+	if err != nil {
+		return err
+	}
+
+	// Write new SSH config entry.
+	nextHost := sshconfig.ImportedHost{
+		Alias:        newAlias,
+		DisplayName:  input.DisplayName,
+		HostName:     input.HostName,
+		User:         input.User,
+		Port:         input.Port,
+		IdentityFile: input.IdentityFile,
+	}
+	if err := s.managedHosts.Upsert(nextHost); err != nil {
+		return err
+	}
+
+	// Remove old SSH config entry.
+	if err := s.managedHosts.Delete(oldAlias); err != nil {
+		_ = s.managedHosts.Delete(newAlias) // best-effort rollback
+		return err
+	}
+
+	// Migrate keychain: apply new password rules, then migrate the stored secret.
+	if err := s.migratePassword(ctx, oldAlias, newAlias, passwordState, input); err != nil {
+		// Rollback SSH config changes.
+		_ = s.managedHosts.Delete(newAlias)
+		_ = s.managedHosts.Upsert(currentHost)
+		return err
+	}
+
+	// Rename the metadata row (best-effort; row may not exist yet).
+	if err := s.metadata.RenameHost(ctx, oldAlias, newAlias); err != nil {
+		// Rollback SSH config and keychain.
+		_ = s.managedHosts.Delete(newAlias)
+		_ = s.managedHosts.Upsert(currentHost)
+		_ = s.restorePassword(oldAlias, passwordState)
+		_ = s.passwords.DeletePassword(newAlias)
+		return err
+	}
+
+	return nil
+}
+
+// migratePassword handles keychain updates when renaming a host.
+// Priority: explicit new password > ClearPassword flag > copy existing secret.
+func (s HostService) migratePassword(_ context.Context, oldAlias, newAlias string, oldState passwordSnapshot, input UpdateManagedHostInput) error {
+	newPassword := strings.TrimSpace(input.Password)
+	if newPassword != "" {
+		// User provided a new password: store it under the new alias.
+		if err := s.passwords.SetPassword(newAlias, newPassword); err != nil {
+			return err
+		}
+		return s.passwords.DeletePassword(oldAlias)
+	}
+	if input.ClearPassword {
+		// User explicitly cleared the password.
+		return s.passwords.DeletePassword(oldAlias)
+	}
+	if oldState.ok {
+		// No change requested: copy the existing secret to the new alias.
+		if err := s.passwords.SetPassword(newAlias, oldState.value); err != nil {
+			return err
+		}
+		return s.passwords.DeletePassword(oldAlias)
+	}
 	return nil
 }
 

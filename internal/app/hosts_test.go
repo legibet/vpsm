@@ -365,3 +365,14 @@ func (s *fakeMetadataStore) DeleteMetadata(ctx context.Context, alias string) er
 	delete(s.hosts, alias)
 	return nil
 }
+
+func (s *fakeMetadataStore) RenameHost(ctx context.Context, oldAlias, newAlias string) error {
+	host, ok := s.hosts[oldAlias]
+	if !ok {
+		return nil // no-op when row does not exist
+	}
+	host.Alias = newAlias
+	s.hosts[newAlias] = host
+	delete(s.hosts, oldAlias)
+	return nil
+}

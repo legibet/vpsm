@@ -158,6 +158,7 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 		UpdateHost: func(input ui.UpdateHostInput) error {
 			return hostService.UpdateManagedHost(ctx, app.UpdateManagedHostInput{
 				Alias:         input.Alias,
+				NewAlias:      input.NewAlias,
 				DisplayName:   input.DisplayName,
 				HostName:      input.HostName,
 				User:          input.User,

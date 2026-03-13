@@ -13,7 +13,8 @@ import (
 )
 
 type UpdateHostInput struct {
-	Alias         string
+	Alias         string // original alias (lookup key)
+	NewAlias      string // when different from Alias, rename is requested
 	DisplayName   string
 	HostName      string
 	User          string
@@ -32,7 +33,8 @@ const (
 )
 
 const (
-	editFieldDisplayName = iota
+	editFieldAlias = iota
+	editFieldDisplayName
 	editFieldHostName
 	editFieldUser
 	editFieldPort
@@ -52,6 +54,8 @@ type editForm struct {
 
 func newEditForm(host model.Host) editForm {
 	inputs := make([]textinput.Model, editFieldCount)
+	inputs[editFieldAlias] = newTextInput("web-hk-01", 48)
+	inputs[editFieldAlias].SetValue(host.Alias)
 	inputs[editFieldDisplayName] = newTextInput("Hong Kong Production", 48)
 	inputs[editFieldDisplayName].SetValue(host.DisplayName)
 	inputs[editFieldHostName] = newTextInput("203.0.113.10", 48)
@@ -155,6 +159,11 @@ func (f *editForm) setFocus(index int) tea.Cmd {
 }
 
 func (f *editForm) values() (UpdateHostInput, error) {
+	aliasValue := strings.TrimSpace(f.inputs[editFieldAlias].Value())
+	if aliasValue == "" {
+		return UpdateHostInput{}, fmt.Errorf("alias is required")
+	}
+
 	hostName := strings.TrimSpace(f.inputs[editFieldHostName].Value())
 	if hostName == "" {
 		return UpdateHostInput{}, fmt.Errorf("host is required")
@@ -172,6 +181,7 @@ func (f *editForm) values() (UpdateHostInput, error) {
 
 	return UpdateHostInput{
 		Alias:         f.alias,
+		NewAlias:      aliasValue,
 		DisplayName:   strings.TrimSpace(f.inputs[editFieldDisplayName].Value()),
 		HostName:      hostName,
 		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
@@ -211,15 +221,12 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		styles.sectionTitle.Render("Edit Server"),
 	}
 	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Alias: "+f.alias))
+		rows = append(rows, styles.sectionMeta.Render("Editing: "+f.alias))
 	} else {
-		rows = append(rows,
-			styles.sectionMeta.Render("Update name, host, user, port, key path, or stored password."),
-			styles.value.Render(f.alias),
-		)
+		rows = append(rows, styles.sectionMeta.Render("Update alias, name, host, user, port, key path, or stored password."))
 	}
 
-	labels := []string{"Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
+	labels := []string{"* Alias", "Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox

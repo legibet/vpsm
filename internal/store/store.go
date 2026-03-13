@@ -235,6 +235,27 @@ func (s *Store) EnsureHost(ctx context.Context, alias string) error {
 	return nil
 }
 
+// RenameHost updates the alias primary key for an existing metadata row.
+// If no row exists for oldAlias the call is a no-op (the row may not have been
+// created yet, which is fine; the new alias will be created on first connect).
+func (s *Store) RenameHost(ctx context.Context, oldAlias, newAlias string) error {
+	oldAlias = strings.TrimSpace(oldAlias)
+	newAlias = strings.TrimSpace(newAlias)
+	if oldAlias == "" || newAlias == "" {
+		return fmt.Errorf("alias is required")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE hosts SET alias = ?, updated_at = ? WHERE alias = ?`,
+		newAlias, now, oldAlias,
+	); err != nil {
+		return fmt.Errorf("rename host %q to %q: %w", oldAlias, newAlias, err)
+	}
+
+	return nil
+}
+
 func (s *Store) migrate() error {
 	const schema = `
 		CREATE TABLE IF NOT EXISTS hosts (
