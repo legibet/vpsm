@@ -560,13 +560,21 @@ func (m tuiModel) headerSummary() string {
 }
 
 func (m tuiModel) renderListPanel(width int, height int) string {
+	contentWidth := m.listContentWidth(width)
 	titleLine := m.styles.sectionTitle.Render("Servers")
 	if len(m.filtered) > 0 {
 		pos := m.styles.sectionMeta.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(m.filtered)))
 		titleLine += pos
 	}
 	if m.searchMode && m.query != "" {
-		titleLine += m.styles.statusBar.Render(fmt.Sprintf("  \"%s\"", m.query))
+		remaining := contentWidth - lipgloss.Width(titleLine) - 5
+		q := m.query
+		if remaining > 0 {
+			if runeCount := len([]rune(q)); runeCount > remaining {
+				q = string([]rune(q)[:remaining]) + "…"
+			}
+			titleLine += m.styles.statusBar.Render(fmt.Sprintf("  \"%s\"", q))
+		}
 	}
 
 	rows := []string{
@@ -599,19 +607,37 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
 	primaryStyle := m.styles.alias
 	metaStyle := m.styles.meta
-	itemStyle := m.styles.listItem
+	starStyle := m.styles.star
 	if selected {
-		primaryStyle = m.styles.aliasActive
-		metaStyle = m.styles.metaActive
-		itemStyle = m.styles.listItemActive
+		bg := lipgloss.Color("236")
+		primaryStyle = m.styles.aliasActive.Background(bg)
+		metaStyle = m.styles.metaActive.Background(bg)
+		starStyle = m.styles.star.Background(bg)
 	}
 
-	prefix := m.listPrefix(selected, host.Favorite)
-	primary := renderListPrimary(host, prefix, primaryStyle, metaStyle)
-	metaText := listMeta(host)
+	cursor := " "
+	if selected {
+		cursor = "▸"
+	}
 
-	line := primary + metaStyle.Render("  "+metaText)
-	return itemStyle.MaxWidth(m.listContentWidth(width)).Render(line)
+	var parts []string
+	if host.Favorite {
+		parts = append(parts, primaryStyle.Render(cursor), starStyle.Render("★"), primaryStyle.Render(" "))
+	} else {
+		parts = append(parts, primaryStyle.Render(cursor+"  "))
+	}
+
+	displayName := strings.TrimSpace(host.DisplayName)
+	if displayName != "" {
+		parts = append(parts, primaryStyle.Render(displayName), metaStyle.Render(" · "+host.Alias))
+	} else {
+		parts = append(parts, primaryStyle.Render(host.Alias))
+	}
+
+	parts = append(parts, metaStyle.Render("  "+listMeta(host)))
+
+	line := strings.Join(parts, "")
+	return m.styles.listItem.MaxWidth(m.listContentWidth(width)).Render(line)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -974,29 +1000,6 @@ func compactFormInputWidth(panelWidth int) int {
 
 func listMeta(host model.Host) string {
 	return listTargetLabel(host)
-}
-
-func renderListPrimary(host model.Host, prefix string, primaryStyle lipgloss.Style, metaStyle lipgloss.Style) string {
-	if strings.TrimSpace(host.DisplayName) == "" {
-		return primaryStyle.Render(prefix + host.Alias)
-	}
-
-	return lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		primaryStyle.Render(prefix+host.DisplayName),
-		metaStyle.Render(" · "+host.Alias),
-	)
-}
-
-func (m tuiModel) listPrefix(selected bool, favorite bool) string {
-	cursor := " "
-	if selected {
-		cursor = "▸"
-	}
-	if favorite {
-		return cursor + m.styles.star.Render("★") + " "
-	}
-	return cursor + "  "
 }
 
 func listTargetLabel(host model.Host) string {
