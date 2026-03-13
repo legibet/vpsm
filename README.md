@@ -18,6 +18,7 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 - it does not automatically import your existing hand-written SSH entries
 - `vpsm import-ssh` explains the current managed-only workflow
 - each server has a required `alias` for commands and SSH
+- managed aliases must be single tokens without whitespace, wildcards, negation markers, or quotes
 - each server can also have an optional `name` for display and search
 - when you connect from `vpsm`, it runs your system `ssh`
 

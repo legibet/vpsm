@@ -17,7 +17,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - `main.go`: CLI entrypoint, root context setup, and command routing.
 - `hostsource.go`: builds the display host list from `~/.ssh/vpsm.conf` plus local metadata.
-- `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata.
+- `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts.
 - `internal/sshutil/`: builds `ssh` commands and askpass handling.
@@ -37,6 +37,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Do not store passwords in SSH config.
 - Do not store passwords in SQLite.
 - Existing hand-written SSH config entries are not imported into the `vpsm` inventory automatically.
+- Read-only flows must not migrate or resurrect hosts from SQLite metadata into `~/.ssh/vpsm.conf`.
 
 ## Build Commands
 
@@ -117,11 +118,14 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - Route managed-host create/update/delete flows through `internal/app/hosts.go` so SSH config, keychain, and metadata stay consistent.
 - For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers.
+- Validate managed host aliases through `internal/sshconfig.ValidateAlias` before writing `Host` entries.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
 - Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
+- Managed aliases must round-trip safely through SSH config parsing: reject whitespace, wildcard, negation, and quoted aliases.
 - Preserve the main SSH config and only ensure the managed `Include` is present.
 - Read-only flows must not rewrite `~/.ssh/config` when the managed `Include` already exists.
 - Do not silently rewrite unrelated user SSH config blocks.
+- When parsing SSH config, merge repeated concrete aliases by filling only missing fields; do not let a later block overwrite an earlier concrete value.
 
 ## SSH Connection Rules
 
@@ -152,6 +156,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - `MarkConnected` and favorites should continue to work for managed hosts.
 - Deleting a managed host should remove its local metadata; it should not leave behind a stale row that can resurrect old state later.
 - Avoid expanding metadata scope unless the data truly cannot live in SSH config or keychain.
+- Do not treat SQLite-only rows as inventory candidates; managed hosts must already exist in `~/.ssh/vpsm.conf`.
 
 ## Documentation / CLI Behavior
 
