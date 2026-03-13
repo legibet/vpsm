@@ -138,14 +138,17 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## TUI Rules
 
-- The current TUI intentionally uses a mostly transparent/unstyled background approach.
-- Do not reintroduce heavy background fills unless there is a strong reason.
+- The TUI uses a transparent background with rounded borders (`RoundedBorder()`).
+- The selected list row uses a subtle background highlight (`Background("236")`); avoid heavy background fills elsewhere.
+- Do not nest lipgloss `Render()` calls. Inner renders produce ANSI resets (`\x1b[0m`) that break outer foreground, bold, and background. Instead, render each styled segment independently and concatenate the results. When an item needs a shared background (e.g. selected row), apply the background to each segment's style individually.
+- Status bar uses three color tiers: green (`statusBarOK`) for success, orange (`statusBar`) for info, red (`statusBarError`) for errors. Use `setStatus(text, kind)` to set both message and kind together.
+- Footer key hints are rendered with structured `footerHint` pairs (key in accent color, description in muted); do not fall back to plain pipe-separated strings.
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
 - The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
-- Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout.
+- Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
 - If a display name exists, show it without hiding the technical alias completely.
 - Keep key hints accurate when you change interactions.
 
