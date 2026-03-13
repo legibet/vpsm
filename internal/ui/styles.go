@@ -24,17 +24,23 @@ type styleSet struct {
 	muted           lipgloss.Style
 	statusBar       lipgloss.Style
 	statusBarError  lipgloss.Style
+	statusBarOK     lipgloss.Style
 	footerBar       lipgloss.Style
+	footerKey       lipgloss.Style
 	errorText       lipgloss.Style
 	formLabel       lipgloss.Style
 	formLabelActive lipgloss.Style
 	inputBox        lipgloss.Style
 	inputBoxActive  lipgloss.Style
+	star            lipgloss.Style
+	detailName      lipgloss.Style
+	separator       lipgloss.Style
 }
 
 func newStyles() styleSet {
 	accent := lipgloss.Color("75")
 	warm := lipgloss.Color("214")
+	success := lipgloss.Color("114")
 	text := lipgloss.Color("252")
 	muted := lipgloss.Color("244")
 	border := lipgloss.Color("241")
@@ -42,23 +48,23 @@ func newStyles() styleSet {
 
 	basePanel := lipgloss.NewStyle().
 		UnsetBackground().
-		BorderStyle(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(border).
 		Padding(1, 1)
 
 	return styleSet{
 		canvas:          lipgloss.NewStyle().UnsetBackground().Foreground(text),
 		app:             lipgloss.NewStyle().UnsetBackground().Padding(0, 1),
-		headBar:         lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
+		headBar:         lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1),
 		title:           lipgloss.NewStyle().Bold(true).Foreground(text),
 		subtitle:        lipgloss.NewStyle().Foreground(muted),
-		badge:           lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
+		badge:           lipgloss.NewStyle().UnsetBackground().Foreground(accent).BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1),
 		panel:           basePanel,
 		panelActive:     basePanel.BorderForeground(accent),
 		sectionTitle:    lipgloss.NewStyle().Bold(true).Foreground(text),
 		sectionMeta:     lipgloss.NewStyle().Foreground(muted),
 		listItem:        lipgloss.NewStyle().UnsetBackground(),
-		listItemActive:  lipgloss.NewStyle().UnsetBackground(),
+		listItemActive:  lipgloss.NewStyle().Background(lipgloss.Color("236")),
 		alias:           lipgloss.NewStyle().Bold(true).Foreground(text),
 		aliasActive:     lipgloss.NewStyle().Bold(true).Foreground(accent),
 		meta:            lipgloss.NewStyle().Foreground(muted),
@@ -68,11 +74,16 @@ func newStyles() styleSet {
 		muted:           lipgloss.NewStyle().Foreground(muted),
 		statusBar:       lipgloss.NewStyle().UnsetBackground().Foreground(warm).Padding(0, 1),
 		statusBarError:  lipgloss.NewStyle().UnsetBackground().Foreground(errorColor).Bold(true).Padding(0, 1),
+		statusBarOK:     lipgloss.NewStyle().UnsetBackground().Foreground(success).Padding(0, 1),
 		footerBar:       lipgloss.NewStyle().UnsetBackground().Foreground(muted).Padding(0, 1),
+		footerKey:       lipgloss.NewStyle().Foreground(accent),
 		errorText:       lipgloss.NewStyle().Foreground(errorColor).Bold(true),
 		formLabel:       lipgloss.NewStyle().Foreground(muted),
 		formLabelActive: lipgloss.NewStyle().Foreground(accent).Bold(true),
-		inputBox:        lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		inputBoxActive:  lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.NormalBorder()).BorderForeground(accent).Padding(0, 1),
+		inputBox:        lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1),
+		inputBoxActive:  lipgloss.NewStyle().UnsetBackground().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1),
+		star:            lipgloss.NewStyle().Foreground(warm),
+		detailName:      lipgloss.NewStyle().Bold(true).Foreground(accent),
+		separator:       lipgloss.NewStyle().Foreground(muted),
 	}
 }

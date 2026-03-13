@@ -52,6 +52,14 @@ type hostsLoadedMsg struct {
 	err         error
 }
 
+type statusKind int
+
+const (
+	statusInfo statusKind = iota
+	statusSuccess
+	statusError
+)
+
 type tuiModel struct {
 	hosts          []model.Host
 	filtered       []model.Host
@@ -64,6 +72,7 @@ type tuiModel struct {
 	selectedHost   string
 	quitting       bool
 	status         string
+	statusType     statusKind
 	mode           uiMode
 	addForm        addForm
 	editForm       editForm
@@ -130,7 +139,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editForm.errorText = msg.err.Error()
 				return m, nil
 			}
-			m.status = "Error: " + msg.err.Error()
+			m.setStatus(msg.err.Error(), statusError)
 			return m, nil
 		}
 
@@ -142,7 +151,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.hosts != nil {
 			m.hosts = msg.hosts
 		}
-		m.status = msg.status
+		m.setStatus(msg.status, statusSuccess)
 		m.mode = modeBrowse
 		m.addForm = addForm{}
 		m.editForm = editForm{}
@@ -189,13 +198,13 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "/":
 		m.searchMode = true
-		m.status = ""
+		m.setStatus("", statusInfo)
 		return m, nil
 	case "n":
 		m.mode = modeAdd
 		m.addForm = newAddForm()
 		m.addForm.setWidth(m.formWidth())
-		m.status = ""
+		m.setStatus("", statusInfo)
 		return m, m.addForm.init()
 	case "e":
 		if len(m.filtered) == 0 || m.updateHost == nil {
@@ -204,7 +213,7 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeEdit
 		m.editForm = newEditForm(m.filtered[m.cursor])
 		m.editForm.setWidth(m.formWidth())
-		m.status = ""
+		m.setStatus("", statusInfo)
 		return m, m.editForm.init()
 	case "d":
 		if len(m.filtered) == 0 || m.deleteHost == nil {
@@ -212,7 +221,7 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDeleteConfirm
 		m.deleteAlias = m.currentAlias()
-		m.status = ""
+		m.setStatus("", statusInfo)
 		return m, nil
 	case "up", "k":
 		if m.cursor > 0 {
@@ -301,7 +310,7 @@ func (m tuiModel) updateAddMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case addFormCancel:
 		m.mode = modeBrowse
 		m.addForm = addForm{}
-		m.status = "Add canceled"
+		m.setStatus("Add canceled", statusInfo)
 		return m, nil
 	case addFormSave:
 		input, err := m.addForm.values()
@@ -322,7 +331,7 @@ func (m tuiModel) updateEditMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editFormCancel:
 		m.mode = modeBrowse
 		m.editForm = editForm{}
-		m.status = "Edit canceled"
+		m.setStatus("Edit canceled", statusInfo)
 		return m, nil
 	case editFormSave:
 		input, err := m.editForm.values()
@@ -347,7 +356,7 @@ func (m tuiModel) updateDeleteConfirmMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		m.mode = modeBrowse
 		m.deleteAlias = ""
-		m.status = "Delete canceled"
+		m.setStatus("Delete canceled", statusInfo)
 		return m, nil
 	case "y", "Y":
 		alias := m.deleteAlias
@@ -401,6 +410,11 @@ func (m tuiModel) currentAlias() string {
 		return ""
 	}
 	return m.filtered[m.cursor].Alias
+}
+
+func (m *tuiModel) setStatus(text string, kind statusKind) {
+	m.status = text
+	m.statusType = kind
 }
 
 func (m tuiModel) pageStep() int {
@@ -546,17 +560,31 @@ func (m tuiModel) headerSummary() string {
 }
 
 func (m tuiModel) renderListPanel(width int, height int) string {
+	titleLine := m.styles.sectionTitle.Render("Servers")
+	if len(m.filtered) > 0 {
+		pos := m.styles.sectionMeta.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(m.filtered)))
+		titleLine += pos
+	}
+	if m.searchMode && m.query != "" {
+		titleLine += m.styles.statusBar.Render(fmt.Sprintf("  \"%s\"", m.query))
+	}
+
 	rows := []string{
-		m.styles.sectionTitle.Render("Servers"),
+		titleLine,
 		m.styles.sectionMeta.Render("/ search  n add  e edit  d delete  enter connect"),
 	}
 
 	if len(m.filtered) == 0 {
-		message := "No hosts match the current filter."
 		if len(m.hosts) == 0 {
-			message = "No managed hosts yet. Press n to add one."
+			keyN := m.styles.footerKey.Render("n")
+			rows = append(rows,
+				"",
+				m.styles.muted.Render("No managed hosts yet."),
+				m.styles.muted.Render("Press "+keyN+m.styles.muted.Render(" to add your first server.")),
+			)
+		} else {
+			rows = append(rows, m.styles.muted.Render("No hosts match the current filter."))
 		}
-		rows = append(rows, m.styles.muted.Render(message))
 		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
@@ -578,7 +606,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 		itemStyle = m.styles.listItemActive
 	}
 
-	prefix := listPrefix(selected, host.Favorite)
+	prefix := m.listPrefix(selected, host.Favorite)
 	primary := renderListPrimary(host, prefix, primaryStyle, metaStyle)
 	metaText := listMeta(host)
 
@@ -589,7 +617,6 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Details"),
-		m.styles.sectionMeta.Render("Selected host and connection settings"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -602,18 +629,35 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	if port == 0 {
 		port = 22
 	}
+
+	displayName := strings.TrimSpace(selected.DisplayName)
+	if displayName != "" {
+		rows = append(rows, m.styles.detailName.Render(displayName))
+		rows = append(rows, m.styles.sectionMeta.Render(selected.Alias))
+	} else {
+		rows = append(rows, m.styles.detailName.Render(selected.Alias))
+	}
+
 	rows = append(rows,
-		m.detailRow("Name", firstNonEmpty(selected.DisplayName, "-")),
-		m.detailRow("Alias", selected.Alias),
+		"",
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
 		m.detailRow("Port", fmt.Sprintf("%d", port)),
 		m.detailRow("Route", connectionMode(selected)),
-		m.detailRow("Auth", selected.AuthMethodsLabel()),
+	)
+
+	rows = append(rows,
+		"",
+		m.styles.separator.Render("── Auth ──"),
+		m.detailRow("Method", selected.AuthMethodsLabel()),
 		m.detailRow("Identity", selected.IdentityFileLabel()),
 		m.detailRow("Password", selected.PasswordStoredLabel()),
+	)
+
+	rows = append(rows,
+		"",
 		m.detailRow("Last", selected.LastConnectedLabel()),
-		m.detailRow("Preview", connectionPreview(selected)),
+		m.styles.sectionMeta.Render(connectionPreview(selected)),
 	)
 
 	return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
@@ -726,16 +770,36 @@ func (m tuiModel) bodyWidths(width int) (int, int) {
 
 func (m tuiModel) renderStatusBar(width int) string {
 	if m.searchMode {
-		return m.styles.statusBar.Width(width).Render("/ " + m.query + "▌")
+		slash := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("75")).Render("/")
+		return m.styles.statusBar.Width(width).Render(slash + " " + m.query + "▌")
 	}
-	if strings.HasPrefix(m.status, "Error:") {
+	switch m.statusType {
+	case statusError:
 		return m.styles.statusBarError.Width(width).Render(m.status)
+	case statusSuccess:
+		return m.styles.statusBarOK.Width(width).Render(m.status)
+	default:
+		return m.styles.statusBar.Width(width).Render(m.status)
 	}
-	return m.styles.statusBar.Width(width).Render(m.status)
+}
+
+type footerHint struct {
+	key  string
+	desc string
 }
 
 func (m tuiModel) renderFooterBar(width int) string {
-	return m.styles.footerBar.Width(width).Render(m.footerText())
+	hints := m.footerHints()
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		if h.desc == "" {
+			parts[i] = m.styles.footerKey.Render(h.key)
+		} else {
+			parts[i] = m.styles.footerKey.Render(h.key) + " " + m.styles.muted.Render(h.desc)
+		}
+	}
+	content := strings.Join(parts, "  ")
+	return m.styles.footerBar.Width(width).Render(content)
 }
 
 func (m tuiModel) availableBodyHeight(parts ...string) int {
@@ -787,32 +851,88 @@ func (m tuiModel) formWidth() int {
 	return width
 }
 
-func (m tuiModel) footerText() string {
+func (m tuiModel) footerHints() []footerHint {
 	if m.mode == modeAdd {
-		if m.isCompactLayout() {
-			return "tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
+		hints := []footerHint{
+			{"tab", "move"},
+			{"ctrl+v", "paste"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
 		}
-		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | esc cancel"
+		if !m.isCompactLayout() {
+			hints[0] = footerHint{"tab/⇧tab", "move"}
+		}
+		return hints
 	}
 	if m.mode == modeEdit {
-		if m.isCompactLayout() {
-			return "tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear | esc cancel"
+		hints := []footerHint{
+			{"tab", "move"},
+			{"ctrl+v", "paste"},
+			{"ctrl+s", "save"},
+			{"ctrl+x", "clear"},
+			{"esc", "cancel"},
 		}
-		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear password | esc cancel"
+		if !m.isCompactLayout() {
+			hints[0] = footerHint{"tab/⇧tab", "move"}
+			hints[3] = footerHint{"ctrl+x", "clear password"}
+		}
+		return hints
 	}
 	if m.mode == modeDeleteConfirm {
-		return "y confirm delete | esc cancel"
+		return []footerHint{
+			{"y", "confirm delete"},
+			{"esc", "cancel"},
+		}
 	}
 	if m.searchMode {
-		if m.isCompactLayout() {
-			return "type to filter | up/down move | enter connect | ctrl+u clear | esc exit"
+		hints := []footerHint{
+			{"type", "filter"},
+			{"↑/↓", "move"},
+			{"enter", "connect"},
+			{"ctrl+u", "clear"},
+			{"esc", "exit"},
 		}
-		return "type to filter | up/down move | enter connect | ctrl+u clear | esc exit search"
+		if !m.isCompactLayout() {
+			hints[4] = footerHint{"esc", "exit search"}
+		}
+		return hints
 	}
 	if m.isCompactLayout() {
-		return "tab pane | j/k move | / search | n/e/d/f/r | enter connect | q quit"
+		return []footerHint{
+			{"tab", "pane"},
+			{"j/k", "move"},
+			{"/", "search"},
+			{"n/e/d/f/r", ""},
+			{"enter", "connect"},
+			{"q", "quit"},
+		}
 	}
-	return "j/k move | pgup/pgdn page | / search | n new | e edit | d delete | f favorite | r refresh | enter connect | q quit"
+	return []footerHint{
+		{"j/k", "move"},
+		{"pgup/dn", "page"},
+		{"/", "search"},
+		{"n", "new"},
+		{"e", "edit"},
+		{"d", "delete"},
+		{"f", "fav"},
+		{"r", "refresh"},
+		{"enter", "connect"},
+		{"q", "quit"},
+	}
+}
+
+// footerText returns the plain-text footer for test assertions.
+func (m tuiModel) footerText() string {
+	hints := m.footerHints()
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		if h.desc == "" {
+			parts[i] = h.key
+		} else {
+			parts[i] = h.key + " " + h.desc
+		}
+	}
+	return strings.Join(parts, "  ")
 }
 
 func (m tuiModel) formPanelWidth() int {
@@ -868,16 +988,15 @@ func renderListPrimary(host model.Host, prefix string, primaryStyle lipgloss.Sty
 	)
 }
 
-func listPrefix(selected bool, favorite bool) string {
+func (m tuiModel) listPrefix(selected bool, favorite bool) string {
 	cursor := " "
 	if selected {
 		cursor = "▸"
 	}
-	star := " "
 	if favorite {
-		star = "*"
+		return cursor + m.styles.star.Render("★") + " "
 	}
-	return cursor + star + " "
+	return cursor + "  "
 }
 
 func listTargetLabel(host model.Host) string {

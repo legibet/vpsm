@@ -100,8 +100,11 @@ func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	m.applyFilter()
 
 	rendered := ansi.Strip(m.renderListPanel(48, 18))
-	if !strings.Contains(rendered, "No managed hosts yet. Press n to add one.") {
+	if !strings.Contains(rendered, "No managed hosts yet.") {
 		t.Fatalf("expected empty-state add hint, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "to add your first server") {
+		t.Fatalf("expected empty-state instruction, got %q", rendered)
 	}
 }
 
@@ -385,10 +388,10 @@ func TestSearchFooterShowsSearchHints(t *testing.T) {
 	m := searchModel()
 	footer := m.footerText()
 
-	if !strings.Contains(footer, "enter connect") {
-		t.Fatalf("expected search footer to mention 'enter connect', got %q", footer)
+	if !strings.Contains(footer, "enter") || !strings.Contains(footer, "connect") {
+		t.Fatalf("expected search footer to mention 'enter' and 'connect', got %q", footer)
 	}
-	if !strings.Contains(footer, "esc exit") {
-		t.Fatalf("expected search footer to mention 'esc exit', got %q", footer)
+	if !strings.Contains(footer, "esc") || !strings.Contains(footer, "exit") {
+		t.Fatalf("expected search footer to mention 'esc' and 'exit', got %q", footer)
 	}
 }

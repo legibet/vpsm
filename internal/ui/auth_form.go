@@ -228,6 +228,10 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 
 	labels := []string{"* Alias", "Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
 	for i := range f.inputs {
+		if i == editFieldIdentity {
+			rows = append(rows, styles.separator.Render("── Authentication ──"))
+		}
+
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
 		if i == f.focusIndex {
