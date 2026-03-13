@@ -23,7 +23,7 @@ type ImportedHost struct {
 
 type parser struct {
 	visited map[string]struct{}
-	hosts   map[string]ImportedHost
+	hosts   map[string]parsedHost
 }
 
 type hostBlock struct {
@@ -32,6 +32,18 @@ type hostBlock struct {
 	hostName     string
 	user         string
 	port         int
+	portSet      bool
+	identityFile string
+	source       string
+}
+
+type parsedHost struct {
+	alias        string
+	displayName  string
+	hostName     string
+	user         string
+	port         int
+	portSet      bool
 	identityFile string
 	source       string
 }
@@ -44,7 +56,7 @@ func ParsePath(path string) ([]ImportedHost, error) {
 
 	collector := &parser{
 		visited: make(map[string]struct{}),
-		hosts:   make(map[string]ImportedHost),
+		hosts:   make(map[string]parsedHost),
 	}
 
 	if err := collector.parseFile(cleanPath); err != nil {
@@ -53,7 +65,7 @@ func ParsePath(path string) ([]ImportedHost, error) {
 
 	result := make([]ImportedHost, 0, len(collector.hosts))
 	for _, host := range collector.hosts {
-		result = append(result, host)
+		result = append(result, host.export())
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -94,20 +106,22 @@ func (p *parser) parseFile(path string) error {
 			if skipAlias(alias) {
 				continue
 			}
-			if _, exists := p.hosts[alias]; exists {
+
+			host := parsedHost{
+				alias:        alias,
+				displayName:  current.displayName,
+				hostName:     current.hostName,
+				user:         current.user,
+				port:         current.port,
+				portSet:      current.portSet,
+				identityFile: current.identityFile,
+				source:       current.source,
+			}
+
+			if existing, exists := p.hosts[alias]; exists {
+				p.hosts[alias] = mergeParsedHost(existing, host)
 				continue
 			}
-
-			host := ImportedHost{
-				Alias:        alias,
-				DisplayName:  current.displayName,
-				HostName:     firstNonEmpty(current.hostName, alias),
-				User:         current.user,
-				Port:         defaultPort(current.port),
-				IdentityFile: current.identityFile,
-				Source:       current.source,
-			}
-
 			p.hosts[alias] = host
 		}
 	}
@@ -183,6 +197,7 @@ func (p *parser) parseFile(path string) error {
 			port, err := strconv.Atoi(firstValue(value))
 			if err == nil {
 				current.port = port
+				current.portSet = true
 			}
 		case "identityfile":
 			pendingDisplayName = ""
@@ -302,6 +317,41 @@ func expandHome(path string) (string, error) {
 
 func skipAlias(alias string) bool {
 	return alias == "" || strings.HasPrefix(alias, "!") || strings.ContainsAny(alias, "*?")
+}
+
+func mergeParsedHost(existing parsedHost, next parsedHost) parsedHost {
+	if existing.displayName == "" && next.displayName != "" {
+		existing.displayName = next.displayName
+	}
+	if existing.hostName == "" && next.hostName != "" {
+		existing.hostName = next.hostName
+	}
+	if existing.user == "" && next.user != "" {
+		existing.user = next.user
+	}
+	if !existing.portSet && next.portSet {
+		existing.port = next.port
+		existing.portSet = true
+	}
+	if existing.identityFile == "" && next.identityFile != "" {
+		existing.identityFile = next.identityFile
+	}
+	if existing.source == "" && next.source != "" {
+		existing.source = next.source
+	}
+	return existing
+}
+
+func (h parsedHost) export() ImportedHost {
+	return ImportedHost{
+		Alias:        h.alias,
+		DisplayName:  h.displayName,
+		HostName:     firstNonEmpty(h.hostName, h.alias),
+		User:         h.user,
+		Port:         defaultPort(h.port),
+		IdentityFile: h.identityFile,
+		Source:       h.source,
+	}
 }
 
 func defaultPort(port int) int {
