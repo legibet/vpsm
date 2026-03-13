@@ -48,7 +48,7 @@ func run(args []string) error {
 		_ = st.Close()
 	}()
 
-	if err := ensureManagedSetup(ctx, paths, st); err != nil {
+	if err := ensureManagedSetup(paths); err != nil {
 		return err
 	}
 

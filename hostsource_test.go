@@ -26,7 +26,7 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 		_ = st.Close()
 	})
 
-	if err := ensureManagedSetup(ctx, paths, st); err != nil {
+	if err := ensureManagedSetup(paths); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
@@ -71,7 +71,6 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
 	paths := testPaths(t)
 	writeTestFile(t, paths.SSHConfigPath, "Host external-box\n  HostName 198.51.100.10\n")
 
@@ -83,7 +82,7 @@ func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 		_ = st.Close()
 	})
 
-	if err := ensureManagedSetup(ctx, paths, st); err != nil {
+	if err := ensureManagedSetup(paths); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
@@ -108,6 +107,49 @@ func TestConflictsWithUnmanagedSSHAliasIgnoresManagedEntries(t *testing.T) {
 	}
 	if conflict {
 		t.Fatal("did not expect managed alias to count as conflict")
+	}
+}
+
+func TestListHostsForDisplayDoesNotMigrateMetadataOnlyHosts(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	if err := ensureManagedSetup(paths); err != nil {
+		t.Fatalf("ensure managed setup: %v", err)
+	}
+	if _, err := st.CreateHost(ctx, store.NewHost{
+		Alias:    "legacy-only",
+		HostName: "203.0.113.20",
+		User:     "root",
+		Source:   "manual",
+	}); err != nil {
+		t.Fatalf("create legacy metadata host: %v", err)
+	}
+
+	hosts, err := listHostsForDisplay(ctx, paths, st)
+	if err != nil {
+		t.Fatalf("list hosts: %v", err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("expected no managed hosts, got %d", len(hosts))
+	}
+
+	managedHosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(managedHosts) != 0 {
+		t.Fatalf("expected no managed hosts to be written, got %d", len(managedHosts))
 	}
 }
 

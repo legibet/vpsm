@@ -15,54 +15,12 @@ import (
 	"vpsm/internal/store"
 )
 
-func ensureManagedSetup(ctx context.Context, paths config.Paths, st *store.Store) error {
-	if err := sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath); err != nil {
-		return err
-	}
-	return migrateLegacyManagedHosts(ctx, paths, st)
-}
-
-func migrateLegacyManagedHosts(ctx context.Context, paths config.Paths, st *store.Store) error {
-	metadata, err := st.ListHosts(ctx)
-	if err != nil {
-		return err
-	}
-
-	managedHosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
-	if err != nil {
-		return err
-	}
-	managedAliases := make(map[string]struct{}, len(managedHosts))
-	for _, host := range managedHosts {
-		managedAliases[host.Alias] = struct{}{}
-	}
-
-	for _, host := range metadata {
-		if host.Source != "manual" && host.Source != "manual-override" {
-			continue
-		}
-		if strings.TrimSpace(host.HostName) == "" {
-			continue
-		}
-		if _, exists := managedAliases[host.Alias]; exists {
-			continue
-		}
-		if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
-			Alias:        host.Alias,
-			HostName:     host.HostName,
-			User:         host.User,
-			Port:         host.Port,
-			IdentityFile: host.IdentityFile,
-		}); err != nil {
-			return fmt.Errorf("migrate legacy host %q to managed config: %w", host.Alias, err)
-		}
-	}
-
-	return nil
+func ensureManagedSetup(paths config.Paths) error {
+	return sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath)
 }
 
 func listHostsForDisplay(ctx context.Context, paths config.Paths, st *store.Store) ([]model.Host, error) {
-	if err := ensureManagedSetup(ctx, paths, st); err != nil {
+	if err := ensureManagedSetup(paths); err != nil {
 		return nil, err
 	}
 
