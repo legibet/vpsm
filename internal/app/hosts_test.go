@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -251,7 +252,7 @@ func TestSetupManagedHostKeyWritesBackIdentityFile(t *testing.T) {
 		keySetup:     keySetup,
 	}
 
-	if err := svc.SetupManagedHostKey(ctx, "prod-1"); err != nil {
+	if err := svc.SetupManagedHostKey(ctx, "prod-1", nil, nil, nil); err != nil {
 		t.Fatalf("setup managed host key: %v", err)
 	}
 
@@ -297,7 +298,7 @@ func TestSetupManagedHostKeyLeavesConfigUntouchedWhenIdentityFileUnchanged(t *te
 		keySetup:     keySetup,
 	}
 
-	if err := svc.SetupManagedHostKey(ctx, "prod-1"); err != nil {
+	if err := svc.SetupManagedHostKey(ctx, "prod-1", nil, nil, nil); err != nil {
 		t.Fatalf("setup managed host key: %v", err)
 	}
 
@@ -467,7 +468,7 @@ type fakeKeySetupRunner struct {
 	lastPassword string
 }
 
-func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, password string) (keySetupResult, error) {
+func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
 	s.calls++
 	s.lastAlias = host.Alias
 	s.lastPassword = password

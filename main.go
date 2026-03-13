@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -171,8 +172,8 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 		DeleteHost: func(alias string) error {
 			return hostService.DeleteManagedHost(ctx, alias)
 		},
-		SetupHostKey: func(alias string) error {
-			return hostService.SetupManagedHostKey(ctx, alias)
+		SetupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+			return hostService.SetupManagedHostKey(ctx, alias, stdin, stdout, stderr)
 		},
 	})
 	if err != nil {

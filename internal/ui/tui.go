@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,7 +21,7 @@ type Options struct {
 	CreateHost     func(input CreateHostInput) error
 	UpdateHost     func(input UpdateHostInput) error
 	DeleteHost     func(alias string) error
-	SetupHostKey   func(alias string) error
+	SetupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 	InitialStatus  string
 	InitialQuery   string
 }
@@ -87,7 +88,7 @@ type tuiModel struct {
 	createHost     func(input CreateHostInput) error
 	updateHost     func(input UpdateHostInput) error
 	deleteHost     func(alias string) error
-	setupHostKey   func(alias string) error
+	setupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 }
 
 func Run(options Options) (string, error) {
@@ -1185,12 +1186,20 @@ func deleteHostCmd(alias string, remove func(string) error, refresh func() ([]Ho
 	}
 }
 
-func setupHostKeyCmd(alias string, setup func(string) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
-	return func() tea.Msg {
-		if setup == nil {
+func setupHostKeyCmd(alias string, setup func(string, io.Reader, io.Writer, io.Writer) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	if setup == nil {
+		return func() tea.Msg {
 			return hostsLoadedMsg{err: fmt.Errorf("ssh key setup action is unavailable")}
 		}
-		if err := setup(alias); err != nil {
+	}
+
+	command := &keySetupExecCommand{
+		alias: alias,
+		run:   setup,
+	}
+
+	return tea.Exec(command, func(err error) tea.Msg {
+		if err != nil {
 			return hostsLoadedMsg{err: err}
 		}
 
@@ -1199,15 +1208,39 @@ func setupHostKeyCmd(alias string, setup func(string) error, refresh func() ([]H
 			return hostsLoadedMsg{status: status, selectAlias: alias}
 		}
 
-		items, refreshStatus, err := refresh()
-		if err != nil {
-			return hostsLoadedMsg{err: err}
+		items, refreshStatus, refreshErr := refresh()
+		if refreshErr != nil {
+			return hostsLoadedMsg{err: refreshErr}
 		}
 		if strings.TrimSpace(refreshStatus) != "" {
 			status = status + "; " + refreshStatus
 		}
 		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
-	}
+	})
+}
+
+type keySetupExecCommand struct {
+	alias  string
+	run    func(string, io.Reader, io.Writer, io.Writer) error
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+}
+
+func (c *keySetupExecCommand) Run() error {
+	return c.run(c.alias, c.stdin, c.stdout, c.stderr)
+}
+
+func (c *keySetupExecCommand) SetStdin(stdin io.Reader) {
+	c.stdin = stdin
+}
+
+func (c *keySetupExecCommand) SetStdout(stdout io.Writer) {
+	c.stdout = stdout
+}
+
+func (c *keySetupExecCommand) SetStderr(stderr io.Writer) {
+	c.stderr = stderr
 }
 
 func connectionPreview(host model.Host) string {

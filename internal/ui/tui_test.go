@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -408,7 +409,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 		styles:       newStyles(),
 		width:        120,
 		height:       24,
-		setupHostKey: func(alias string) error { return nil },
+		setupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error { return nil },
 	}
 	m.applyFilter()
 

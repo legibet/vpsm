@@ -108,6 +108,7 @@ That keeps the list compact and easy to scan without hiding the technical alias 
 - On the first password-based connection to a new host, `vpsm` now lets the normal SSH host key confirmation happen before it auto-fills the password.
 - Press `i` in the TUI to configure a host key for the selected server. If the host already has an `IdentityFile`, `vpsm` reuses it; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
 - Key installation only appends the public key when it is missing. It does not overwrite remote `authorized_keys`.
-- If the host key is still unknown and your SSH config requires interactive confirmation, confirm it once in a normal terminal first, then run the TUI action again.
+- If the host key is still unknown and your SSH config requires interactive confirmation, `vpsm` now pauses the TUI and lets you confirm it in the current terminal before key installation continues.
+- Reusing an existing `IdentityFile` for TUI key setup currently requires a concrete local path such as `~/.ssh/id_ed25519` or an absolute path.
 - Favorites and connection history stay local to `vpsm`.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.

@@ -56,3 +56,17 @@ func TestPlanKeySetupDefaultsToManagedKeyPath(t *testing.T) {
 		t.Fatal("expected missing default key to require generation")
 	}
 }
+
+func TestPlanKeySetupRejectsIdentityFileTokens(t *testing.T) {
+	_, err := PlanKeySetup("prod-1", "%d/.ssh/id_demo")
+	if err == nil {
+		t.Fatal("expected token-based identity file to be rejected")
+	}
+}
+
+func TestPlanKeySetupRejectsRelativeIdentityFilePaths(t *testing.T) {
+	_, err := PlanKeySetup("prod-1", "relative_key")
+	if err == nil {
+		t.Fatal("expected relative identity file to be rejected")
+	}
+}

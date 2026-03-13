@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,7 @@ type resolvedSSHConfig struct {
 
 // EnsureHostKeyAcceptedContext makes the first host-key confirmation explicit
 // before password automation takes over the interactive prompts.
-func EnsureHostKeyAcceptedContext(ctx context.Context, host model.Host, stdin *os.File, stdout *os.File, stderr *os.File) error {
+func EnsureHostKeyAcceptedContext(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	cfg, err := resolveSSHConfig(ctx, host)
 	if err != nil {
 		return err
@@ -46,7 +47,7 @@ func EnsureHostKeyAcceptedContext(ctx context.Context, host model.Host, stdin *o
 	if cfg.StrictHostKeyChecking == "yes" {
 		return fmt.Errorf("ssh host key for %q is not trusted and StrictHostKeyChecking=yes prevents interactive confirmation", host.Alias)
 	}
-	if stdin == nil || !term.IsTerminal(int(stdin.Fd())) {
+	if !isInteractiveTerminal(stdin) {
 		return fmt.Errorf("ssh host key for %q is not trusted yet; confirm it once in an interactive terminal first", host.Alias)
 	}
 
@@ -253,7 +254,7 @@ func knownHostsFileContains(ctx context.Context, file string, target string) (bo
 	return false, fmt.Errorf("search known_hosts file %q for %q: %w", file, target, err)
 }
 
-func confirmUnknownHostKeyContext(ctx context.Context, host model.Host, stdin *os.File, stdout *os.File, stderr *os.File) error {
+func confirmUnknownHostKeyContext(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	args, err := BuildArgs(host)
 	if err != nil {
 		return err
@@ -281,4 +282,21 @@ func confirmUnknownHostKeyContext(ctx context.Context, host model.Host, stdin *o
 	}
 
 	return fmt.Errorf("confirm ssh host key for %q: %w", host.Alias, err)
+}
+
+func isInteractiveTerminal(stdin io.Reader) bool {
+	if stdin == nil {
+		return false
+	}
+
+	type fdProvider interface {
+		Fd() uintptr
+	}
+
+	file, ok := stdin.(fdProvider)
+	if !ok {
+		return false
+	}
+
+	return term.IsTerminal(int(file.Fd()))
 }

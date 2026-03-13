@@ -135,6 +135,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
 - For stored-password connections, run `internal/sshutil.EnsureHostKeyAcceptedContext` before askpass so first-connect host key confirmation happens explicitly.
 - TUI key setup should reuse an existing `IdentityFile` when possible; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
+- TUI key setup only supports concrete local `IdentityFile` paths (absolute or `~/...`); reject SSH token or environment-variable forms instead of guessing a filesystem location.
 - Public-key install flows must append idempotently to remote `authorized_keys`; do not overwrite the file.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password automation should continue to use the askpass helper path, not `sshpass`.
@@ -151,6 +152,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - The list view should stay compact and easy to scan.
 - The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
+- Interactive key-setup work that needs terminal control should pause Bubble Tea with `tea.Exec`/`tea.ExecProcess`; do not try to run first-time host-key confirmation in a background `tea.Cmd`.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
 - If a display name exists, show it without hiding the technical alias completely.

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"vpsm/internal/model"
 	"vpsm/internal/sshutil"
@@ -13,12 +14,12 @@ type keySetupResult struct {
 }
 
 type keySetupRunner interface {
-	Setup(ctx context.Context, host model.Host, password string) (keySetupResult, error)
+	Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error)
 }
 
 // SetupManagedHostKey ensures the selected managed host has a local key pair and
 // uploads the corresponding public key to the remote server.
-func (s HostService) SetupManagedHostKey(ctx context.Context, alias string) error {
+func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	managedHost, err := s.getManagedHost(alias)
 	if err != nil {
 		return err
@@ -37,7 +38,7 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string) erro
 		Port:         managedHost.Port,
 		Managed:      true,
 		IdentityFile: managedHost.IdentityFile,
-	}, password)
+	}, password, stdin, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string) erro
 
 type systemKeySetupRunner struct{}
 
-func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, password string) (keySetupResult, error) {
+func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
 	plan, err := sshutil.PlanKeySetup(host.Alias, host.IdentityFile)
 	if err != nil {
 		return keySetupResult{}, err
@@ -73,7 +74,7 @@ func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, password
 
 	target := host
 	target.IdentityFile = plan.IdentityFile
-	if err := sshutil.EnsureHostKeyAcceptedContext(ctx, target, nil, nil, nil); err != nil {
+	if err := sshutil.EnsureHostKeyAcceptedContext(ctx, target, stdin, stdout, stderr); err != nil {
 		return keySetupResult{}, err
 	}
 

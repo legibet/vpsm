@@ -34,6 +34,9 @@ func PlanKeySetup(alias string, identityFile string) (KeySetupPlan, error) {
 	if identityFile == "" {
 		identityFile = filepath.Join("~", ".ssh", "vpsm", defaultKeyFileName(alias))
 	}
+	if err := validateLocalIdentityFilePath(identityFile); err != nil {
+		return KeySetupPlan{}, err
+	}
 
 	resolvedIdentityFile, err := resolveLocalPath(identityFile)
 	if err != nil {
@@ -167,6 +170,23 @@ func resolveLocalPath(path string) (string, error) {
 		return "", fmt.Errorf("resolve local path %q: %w", path, err)
 	}
 	return absolutePath, nil
+}
+
+func validateLocalIdentityFilePath(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return errors.New("identity file is required")
+	}
+	if strings.Contains(path, "%") || strings.Contains(path, "$") {
+		return fmt.Errorf("identity file %q must be a concrete local path; SSH tokens and environment variables are not supported here", path)
+	}
+
+	expanded := expandHomePath(path)
+	if filepath.IsAbs(expanded) || strings.HasPrefix(path, "~/") || path == "~" {
+		return nil
+	}
+
+	return fmt.Errorf("identity file %q must be an absolute path or start with ~/", path)
 }
 
 func pathExists(path string) (bool, error) {
