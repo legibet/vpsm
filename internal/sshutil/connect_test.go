@@ -1,6 +1,7 @@
 package sshutil
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -118,5 +119,23 @@ func TestBuildCommandWithPasswordUsesAskpass(t *testing.T) {
 	}
 	if !hasAskpass || !hasPassword {
 		t.Fatalf("expected askpass env, got %#v", cmd.Env)
+	}
+}
+
+func TestBuildRemoteCommandWithPasswordIncludesRemoteCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := BuildRemoteCommandWithPasswordContext(context.Background(), model.Host{
+		Alias:    "demo",
+		HostName: "10.0.0.5",
+		User:     "root",
+		Source:   "manual",
+	}, "s3cr3t", "echo hello")
+	if err != nil {
+		t.Fatalf("build remote command: %v", err)
+	}
+
+	if got := cmd.Args[len(cmd.Args)-1]; got != "echo hello" {
+		t.Fatalf("expected remote command at the end, got %q", got)
 	}
 }

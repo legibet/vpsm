@@ -10,6 +10,7 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 - giving each server a readable display name
 - searching by name, alias, host, or user
 - storing SSH passwords in the system keychain
+- generating or reusing SSH keys and installing the public key from the TUI
 - launching your normal `ssh` command without replacing your workflow
 
 ## What to expect
@@ -81,6 +82,7 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 - `n`: add
 - `e`: edit
 - `d`: delete
+- `i`: configure SSH key for the selected host
 - `f`: favorite
 - `r`: refresh
 - `tab`: switch panes in compact layout
@@ -104,5 +106,8 @@ That keeps the list compact and easy to scan without hiding the technical alias 
 - If you already have a large `~/.ssh/config`, `vpsm` will not pull those hosts into its list automatically.
 - Passwords are stored in your system keychain, not in the SSH config.
 - On the first password-based connection to a new host, `vpsm` now lets the normal SSH host key confirmation happen before it auto-fills the password.
+- Press `i` in the TUI to configure a host key for the selected server. If the host already has an `IdentityFile`, `vpsm` reuses it; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
+- Key installation only appends the public key when it is missing. It does not overwrite remote `authorized_keys`.
+- If the host key is still unknown and your SSH config requires interactive confirmation, confirm it once in a normal terminal first, then run the TUI action again.
 - Favorites and connection history stay local to `vpsm`.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.

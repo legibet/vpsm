@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -393,5 +394,55 @@ func TestSearchFooterShowsSearchHints(t *testing.T) {
 	}
 	if !strings.Contains(footer, "esc") || !strings.Contains(footer, "exit") {
 		t.Fatalf("expected search footer to mention 'esc' and 'exit', got %q", footer)
+	}
+}
+
+func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := tuiModel{
+		hosts: []model.Host{
+			{Alias: "prod/api", HostName: "203.0.113.10", User: "root", Port: 22},
+		},
+		styles:       newStyles(),
+		width:        120,
+		height:       24,
+		setupHostKey: func(alias string) error { return nil },
+	}
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "i", Code: 'i'})
+	result := updated.(tuiModel)
+
+	if result.mode != modeKeySetupConfirm {
+		t.Fatalf("expected mode %v, got %v", modeKeySetupConfirm, result.mode)
+	}
+
+	wantPath := filepath.Join("~", ".ssh", "vpsm", "prod_api_ed25519")
+	if result.keySetupPlan.IdentityFile != wantPath {
+		t.Fatalf("unexpected key path: got %q want %q", result.keySetupPlan.IdentityFile, wantPath)
+	}
+
+	rendered := ansi.Strip(result.renderKeySetupConfirmPanel(48, 18))
+	if !strings.Contains(rendered, "Configure SSH Key") {
+		t.Fatalf("expected key setup title, got %q", rendered)
+	}
+	if !strings.Contains(rendered, wantPath) {
+		t.Fatalf("expected key path in panel, got %q", rendered)
+	}
+}
+
+func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
+	t.Parallel()
+
+	m := tuiModel{
+		mode:   modeKeySetupConfirm,
+		styles: newStyles(),
+	}
+
+	footer := m.footerText()
+	if !strings.Contains(footer, "enter/y") || !strings.Contains(footer, "configure key") {
+		t.Fatalf("expected key setup footer hint, got %q", footer)
 	}
 }

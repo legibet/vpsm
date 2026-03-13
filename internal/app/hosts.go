@@ -41,6 +41,7 @@ type HostService struct {
 	managedHosts managedHostStore
 	passwords    passwordStore
 	metadata     metadataStore
+	keySetup     keySetupRunner
 }
 
 // NewHostService wires the default managed-host dependencies.
@@ -49,6 +50,7 @@ func NewHostService(paths config.Paths, st *store.Store) HostService {
 		managedHosts: fileManagedHostStore{paths: paths},
 		passwords:    systemPasswordStore{},
 		metadata:     st,
+		keySetup:     systemKeySetupRunner{},
 	}
 }
 

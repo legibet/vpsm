@@ -32,13 +32,34 @@ func BuildCommandContext(ctx context.Context, host model.Host) (*exec.Cmd, error
 
 // BuildCommandWithPasswordContext builds an ssh command bound to the provided context.
 func BuildCommandWithPasswordContext(ctx context.Context, host model.Host, password string) (*exec.Cmd, error) {
+	return buildSSHCommandContext(ctx, host, password, nil)
+}
+
+// BuildRemoteCommandContext builds an ssh command that runs a remote command.
+func BuildRemoteCommandContext(ctx context.Context, host model.Host, remoteCommand string) (*exec.Cmd, error) {
+	return BuildRemoteCommandWithPasswordContext(ctx, host, "", remoteCommand)
+}
+
+// BuildRemoteCommandWithPasswordContext builds an ssh command that runs a remote
+// command and configures askpass when needed.
+func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host, password string, remoteCommand string) (*exec.Cmd, error) {
+	extraArgs := []string{}
+	if strings.TrimSpace(remoteCommand) != "" {
+		extraArgs = append(extraArgs, remoteCommand)
+	}
+	return buildSSHCommandContext(ctx, host, password, extraArgs)
+}
+
+func buildSSHCommandContext(ctx context.Context, host model.Host, password string, extraArgs []string) (*exec.Cmd, error) {
 	args, err := BuildArgs(host)
 	if err != nil {
 		return nil, err
 	}
+	args = append(args, extraArgs...)
 
+	cmdArgs := args
 	if strings.TrimSpace(password) == "" {
-		return exec.CommandContext(ctx, "ssh", args...), nil
+		return exec.CommandContext(ctx, "ssh", cmdArgs...), nil
 	}
 
 	askpassPath, err := ensureAskpassHelper()
@@ -46,8 +67,8 @@ func BuildCommandWithPasswordContext(ctx context.Context, host model.Host, passw
 		return nil, err
 	}
 
-	args = append([]string{"-o", "PreferredAuthentications=publickey,password,keyboard-interactive"}, args...)
-	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmdArgs = append([]string{"-o", "PreferredAuthentications=publickey,password,keyboard-interactive"}, cmdArgs...)
+	cmd := exec.CommandContext(ctx, "ssh", cmdArgs...)
 	cmd.Env = append(os.Environ(),
 		"DISPLAY=vpsm:0",
 		"SSH_ASKPASS="+askpassPath,

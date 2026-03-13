@@ -171,6 +171,9 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 		DeleteHost: func(alias string) error {
 			return hostService.DeleteManagedHost(ctx, alias)
 		},
+		SetupHostKey: func(alias string) error {
+			return hostService.SetupManagedHostKey(ctx, alias)
+		},
 	})
 	if err != nil {
 		return err

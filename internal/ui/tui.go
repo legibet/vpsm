@@ -20,6 +20,7 @@ type Options struct {
 	CreateHost     func(input CreateHostInput) error
 	UpdateHost     func(input UpdateHostInput) error
 	DeleteHost     func(alias string) error
+	SetupHostKey   func(alias string) error
 	InitialStatus  string
 	InitialQuery   string
 }
@@ -31,6 +32,7 @@ const (
 	modeAdd
 	modeEdit
 	modeDeleteConfirm
+	modeKeySetupConfirm
 )
 
 type browsePane int
@@ -77,12 +79,15 @@ type tuiModel struct {
 	addForm        addForm
 	editForm       editForm
 	deleteAlias    string
+	keySetupAlias  string
+	keySetupPlan   sshutil.KeySetupPlan
 	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
 	createHost     func(input CreateHostInput) error
 	updateHost     func(input UpdateHostInput) error
 	deleteHost     func(alias string) error
+	setupHostKey   func(alias string) error
 }
 
 func Run(options Options) (string, error) {
@@ -96,6 +101,7 @@ func Run(options Options) (string, error) {
 		createHost:     options.CreateHost,
 		updateHost:     options.UpdateHost,
 		deleteHost:     options.DeleteHost,
+		setupHostKey:   options.SetupHostKey,
 	}
 	m.applyFilter()
 
@@ -156,6 +162,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addForm = addForm{}
 		m.editForm = editForm{}
 		m.deleteAlias = ""
+		m.keySetupAlias = ""
+		m.keySetupPlan = sshutil.KeySetupPlan{}
 		m.applyFilter()
 		m.selectAlias(selectedAlias)
 		return m, nil
@@ -169,6 +177,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.mode == modeDeleteConfirm {
 		return m.updateDeleteConfirmMode(msg)
+	}
+	if m.mode == modeKeySetupConfirm {
+		return m.updateKeySetupConfirmMode(msg)
 	}
 
 	keyMsg, ok := msg.(tea.KeyPressMsg)
@@ -221,6 +232,20 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDeleteConfirm
 		m.deleteAlias = m.currentAlias()
+		m.setStatus("", statusInfo)
+		return m, nil
+	case "i":
+		if len(m.filtered) == 0 || m.setupHostKey == nil {
+			return m, nil
+		}
+		plan, err := sshutil.PlanKeySetup(m.filtered[m.cursor].Alias, m.filtered[m.cursor].IdentityFile)
+		if err != nil {
+			m.setStatus(err.Error(), statusError)
+			return m, nil
+		}
+		m.mode = modeKeySetupConfirm
+		m.keySetupAlias = m.currentAlias()
+		m.keySetupPlan = plan
 		m.setStatus("", statusInfo)
 		return m, nil
 	case "up", "k":
@@ -366,6 +391,28 @@ func (m tuiModel) updateDeleteConfirmMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m tuiModel) updateKeySetupConfirmMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch keyMsg.String() {
+	case "esc", "q":
+		m.mode = modeBrowse
+		m.keySetupAlias = ""
+		m.keySetupPlan = sshutil.KeySetupPlan{}
+		m.setStatus("SSH key setup canceled", statusInfo)
+		return m, nil
+	case "enter", "y", "Y":
+		alias := m.keySetupAlias
+		m.setStatus("Configuring SSH key for "+alias+"...", statusInfo)
+		return m, setupHostKeyCmd(alias, m.setupHostKey, m.refreshHosts)
+	default:
+		return m, nil
+	}
+}
+
 func (m *tuiModel) applyFilter() {
 	query := strings.ToLower(strings.TrimSpace(m.query))
 	m.filtered = m.filtered[:0]
@@ -503,6 +550,8 @@ func (m tuiModel) View() tea.View {
 			sidePanel = m.editForm.view(m.styles, rightWidth, bodyHeight)
 		case modeDeleteConfirm:
 			sidePanel = m.renderDeleteConfirmPanel(rightWidth, bodyHeight)
+		case modeKeySetupConfirm:
+			sidePanel = m.renderKeySetupConfirmPanel(rightWidth, bodyHeight)
 		default:
 			sidePanel = m.renderDetailsPanel(rightWidth, bodyHeight)
 		}
@@ -546,6 +595,8 @@ func (m tuiModel) headerSummary() string {
 		return hostCount + "  [edit]"
 	case modeDeleteConfirm:
 		return hostCount + "  [delete]"
+	case modeKeySetupConfirm:
+		return hostCount + "  [key setup]"
 	}
 
 	// browse / search mode
@@ -579,7 +630,7 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 
 	rows := []string{
 		titleLine,
-		m.styles.sectionMeta.Render("/ search  n add  e edit  d delete  enter connect"),
+		m.styles.sectionMeta.Render("/ search  n add  e edit  d delete  i key  enter connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -714,6 +765,51 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
+func (m tuiModel) renderKeySetupConfirmPanel(width int, height int) string {
+	rows := []string{
+		m.styles.sectionTitle.Render("Configure SSH Key"),
+		m.styles.sectionMeta.Render("This uploads a public key to the selected server."),
+	}
+
+	if len(m.filtered) == 0 {
+		rows = append(rows, m.styles.muted.Render("Nothing selected."))
+		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+	}
+
+	selected := m.filtered[m.cursor]
+	rows = append(rows,
+		m.detailRow("Alias", selected.Alias),
+		m.detailRow("Target", selected.TargetName()),
+		m.detailRow("Key file", m.keySetupPlan.IdentityFile),
+	)
+
+	keyAction := "reuse the existing key pair"
+	if m.keySetupPlan.GenerateKeyPair {
+		keyAction = "generate a new ed25519 key pair"
+	}
+	updateAction := "leave IdentityFile unchanged"
+	if strings.TrimSpace(selected.IdentityFile) != m.keySetupPlan.IdentityFile {
+		updateAction = "save IdentityFile to " + m.keySetupPlan.IdentityFile
+	}
+
+	rows = append(rows,
+		"",
+		m.styles.separator.Render("── Plan ──"),
+		m.detailRow("Local", keyAction),
+		m.detailRow("Remote", "append the public key if missing"),
+		m.detailRow("Config", updateAction),
+	)
+
+	if selected.PasswordStored {
+		rows = append(rows, "", m.styles.sectionMeta.Render("Stored password is available if the server still needs password auth."))
+	} else {
+		rows = append(rows, "", m.styles.sectionMeta.Render("vpsm will use the server's existing SSH auth path."))
+	}
+	rows = append(rows, m.styles.errorText.Render("Press enter or y to continue. Esc cancels."))
+
+	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
 func (m tuiModel) detailRow(label string, value string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top,
 		m.styles.label.Render(label),
@@ -768,6 +864,8 @@ func (m tuiModel) renderCompactBody(width int, height int) string {
 		return m.editForm.view(m.styles, width, height)
 	case modeDeleteConfirm:
 		return m.renderDeleteConfirmPanel(width, height)
+	case modeKeySetupConfirm:
+		return m.renderKeySetupConfirmPanel(width, height)
 	default:
 		if m.browsePane == browsePaneDetails {
 			return m.renderDetailsPanel(width, height)
@@ -910,6 +1008,12 @@ func (m tuiModel) footerHints() []footerHint {
 			{"esc", "cancel"},
 		}
 	}
+	if m.mode == modeKeySetupConfirm {
+		return []footerHint{
+			{"enter/y", "configure key"},
+			{"esc", "cancel"},
+		}
+	}
 	if m.searchMode {
 		hints := []footerHint{
 			{"type", "filter"},
@@ -928,7 +1032,7 @@ func (m tuiModel) footerHints() []footerHint {
 			{"tab", "pane"},
 			{"j/k", "move"},
 			{"/", "search"},
-			{"n/e/d/f/r", ""},
+			{"n/e/d/i/f/r", ""},
 			{"enter", "connect"},
 			{"q", "quit"},
 		}
@@ -940,6 +1044,7 @@ func (m tuiModel) footerHints() []footerHint {
 		{"n", "new"},
 		{"e", "edit"},
 		{"d", "delete"},
+		{"i", "key"},
 		{"f", "fav"},
 		{"r", "refresh"},
 		{"enter", "connect"},
@@ -1077,6 +1182,31 @@ func deleteHostCmd(alias string, remove func(string) error, refresh func() ([]Ho
 			status = status + "; " + refreshStatus
 		}
 		return hostsLoadedMsg{hosts: items, status: status}
+	}
+}
+
+func setupHostKeyCmd(alias string, setup func(string) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
+	return func() tea.Msg {
+		if setup == nil {
+			return hostsLoadedMsg{err: fmt.Errorf("ssh key setup action is unavailable")}
+		}
+		if err := setup(alias); err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		status := "Configured SSH key for " + alias
+		if refresh == nil {
+			return hostsLoadedMsg{status: status, selectAlias: alias}
+		}
+
+		items, refreshStatus, err := refresh()
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+		if strings.TrimSpace(refreshStatus) != "" {
+			status = status + "; " + refreshStatus
+		}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
 	}
 }
 

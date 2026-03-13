@@ -18,9 +18,10 @@ Automately update this file when you make changes to the codebase, architecture,
 - `main.go`: CLI entrypoint, root context setup, and command routing.
 - `hostsource.go`: builds the display host list from `~/.ssh/vpsm.conf` plus local metadata.
 - `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
+- `internal/app/keysetup.go`: orchestrates managed-host SSH key setup and `IdentityFile` write-back.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts.
-- `internal/sshutil/`: builds `ssh` commands and askpass handling.
+- `internal/sshutil/`: builds `ssh` commands, askpass handling, host-key checks, and public-key install helpers.
 - `internal/secret/`: keychain-backed password helpers.
 - `internal/ui/`: Bubble Tea TUI and forms.
 - `internal/model/`: core `Host` type and display helpers.
@@ -133,6 +134,8 @@ Automately update this file when you make changes to the codebase, architecture,
 - Build arguments through `internal/sshutil.BuildArgs`.
 - Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
 - For stored-password connections, run `internal/sshutil.EnsureHostKeyAcceptedContext` before askpass so first-connect host key confirmation happens explicitly.
+- TUI key setup should reuse an existing `IdentityFile` when possible; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
+- Public-key install flows must append idempotently to remote `authorized_keys`; do not overwrite the file.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password automation should continue to use the askpass helper path, not `sshpass`.
 
@@ -147,6 +150,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
 - The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
+- Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
 - If a display name exists, show it without hiding the technical alias completely.
