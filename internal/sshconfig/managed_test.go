@@ -129,3 +129,30 @@ func TestUpsertAndDeleteManagedHost(t *testing.T) {
 		t.Fatalf("expected managed header, got %q", string(content))
 	}
 }
+
+func TestUpsertManagedHostRejectsInvalidAlias(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	err := UpsertManagedHost(managedPath, ImportedHost{
+		Alias:    "bad alias",
+		HostName: "203.0.113.10",
+	})
+	if err == nil {
+		t.Fatal("expected invalid alias error")
+	}
+
+	hosts, err := ListManagedHosts(managedPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("expected no managed hosts, got %d", len(hosts))
+	}
+}

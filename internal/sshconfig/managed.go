@@ -100,8 +100,8 @@ func ListManagedHosts(managedConfigPath string) ([]ImportedHost, error) {
 func UpsertManagedHost(managedConfigPath string, host ImportedHost) error {
 	alias := strings.TrimSpace(host.Alias)
 	hostName := strings.TrimSpace(host.HostName)
-	if alias == "" {
-		return fmt.Errorf("alias is required")
+	if err := ValidateAlias(alias); err != nil {
+		return err
 	}
 	if hostName == "" {
 		return fmt.Errorf("host is required")

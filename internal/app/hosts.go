@@ -175,8 +175,8 @@ func (s HostService) lookupManagedHost(alias string) (sshconfig.ImportedHost, bo
 
 func (s HostService) ensureManagedAliasAvailable(alias string) error {
 	alias = NormalizeAlias(alias)
-	if alias == "" {
-		return fmt.Errorf("alias is required")
+	if err := sshconfig.ValidateAlias(alias); err != nil {
+		return err
 	}
 
 	if _, exists, err := s.lookupManagedHost(alias); err != nil {

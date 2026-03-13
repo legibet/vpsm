@@ -58,6 +58,41 @@ func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 	}
 }
 
+func TestAddManagedHostRejectsInvalidAliasBeforeWriting(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	if err := sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	svc := HostService{Paths: paths, Store: st}
+	err = svc.AddManagedHost(ctx, AddManagedHostInput{
+		Alias:    "bad alias",
+		HostName: "203.0.113.10",
+	})
+	if err == nil {
+		t.Fatal("expected invalid alias error")
+	}
+
+	hosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("expected no managed hosts, got %d", len(hosts))
+	}
+}
+
 func testPaths(t *testing.T) config.Paths {
 	t.Helper()
 
