@@ -2,20 +2,53 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"vpsm/internal/config"
+	"vpsm/internal/model"
 	"vpsm/internal/secret"
 	"vpsm/internal/sshconfig"
 	"vpsm/internal/store"
 )
 
+type managedHostStore interface {
+	Get(alias string) (sshconfig.ImportedHost, bool, error)
+	Upsert(host sshconfig.ImportedHost) error
+	Delete(alias string) error
+	HasAliasConflict(alias string) (bool, error)
+}
+
+type passwordStore interface {
+	GetPasswordIfExists(alias string) (string, bool, error)
+	SetPassword(alias string, password string) error
+	DeletePassword(alias string) error
+}
+
+type metadataStore interface {
+	GetHost(ctx context.Context, alias string) (model.Host, error)
+	EnsureHost(ctx context.Context, alias string) error
+	UpdateHost(ctx context.Context, alias string, patch store.HostPatch) (model.Host, error)
+	DeleteMetadata(ctx context.Context, alias string) error
+}
+
 // HostService coordinates managed-host workflows across SSH config, keychain, and metadata.
 type HostService struct {
-	Paths config.Paths
-	Store *store.Store
+	managedHosts managedHostStore
+	passwords    passwordStore
+	metadata     metadataStore
+}
+
+// NewHostService wires the default managed-host dependencies.
+func NewHostService(paths config.Paths, st *store.Store) HostService {
+	return HostService{
+		managedHosts: fileManagedHostStore{paths: paths},
+		passwords:    systemPasswordStore{},
+		metadata:     st,
+	}
 }
 
 // AddManagedHostInput describes the data needed to create a managed host.
@@ -42,42 +75,80 @@ type UpdateManagedHostInput struct {
 	ClearPassword bool
 }
 
+type managedHostSnapshot struct {
+	host sshconfig.ImportedHost
+	ok   bool
+}
+
+type passwordSnapshot struct {
+	value string
+	ok    bool
+}
+
+type favoriteSnapshot struct {
+	exists   bool
+	favorite bool
+}
+
 // NormalizeAlias trims user input before host operations use it as a stable key.
 func NormalizeAlias(alias string) string {
 	return strings.TrimSpace(alias)
 }
 
-// AddManagedHost creates a managed SSH config entry and optional local metadata.
+// AddManagedHost creates a managed SSH config entry and applies the requested
+// password and favorite state.
 func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInput) error {
 	alias := NormalizeAlias(input.Alias)
 	if err := s.ensureManagedAliasAvailable(alias); err != nil {
 		return err
 	}
 
-	if err := sshconfig.UpsertManagedHost(s.Paths.ManagedConfigPath, sshconfig.ImportedHost{
+	passwordState, err := s.loadPasswordSnapshot(alias)
+	if err != nil {
+		return err
+	}
+
+	favoriteState := favoriteSnapshot{}
+	if input.Favorite {
+		favoriteState, err = s.loadFavoriteSnapshot(ctx, alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	host := sshconfig.ImportedHost{
 		Alias:        alias,
 		DisplayName:  input.DisplayName,
 		HostName:     input.HostName,
 		User:         input.User,
 		Port:         input.Port,
 		IdentityFile: input.IdentityFile,
-	}); err != nil {
+	}
+	if err := s.managedHosts.Upsert(host); err != nil {
 		return err
 	}
 
-	if strings.TrimSpace(input.Password) != "" {
-		if err := secret.SetPassword(alias, input.Password); err != nil {
-			return err
-		}
+	if err := s.applyAddPassword(alias, input.Password); err != nil {
+		rollbackErr := s.restorePassword(alias, passwordState)
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+		return withRollback(err, rollbackErr)
 	}
 
+	favoriteTouched := false
 	if input.Favorite {
-		value := true
-		if err := s.Store.EnsureHost(ctx, alias); err != nil {
-			return err
+		if err := s.metadata.EnsureHost(ctx, alias); err != nil {
+			rollbackErr := s.restorePassword(alias, passwordState)
+			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+			return withRollback(err, rollbackErr)
 		}
-		if _, err := s.Store.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
-			return err
+		favoriteTouched = true
+
+		value := true
+		if _, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
+			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, favoriteTouched)
+			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+			return withRollback(err, rollbackErr)
 		}
 	}
 
@@ -86,31 +157,42 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 
 // UpdateManagedHost updates a managed SSH config entry and password state.
 func (s HostService) UpdateManagedHost(ctx context.Context, input UpdateManagedHostInput) error {
+	_ = ctx
+
 	alias := NormalizeAlias(input.Alias)
-	if _, err := s.getManagedHost(alias); err != nil {
+	currentHost, err := s.getManagedHost(alias)
+	if err != nil {
 		return err
 	}
 
-	if err := sshconfig.UpsertManagedHost(s.Paths.ManagedConfigPath, sshconfig.ImportedHost{
+	passwordTouched := input.ClearPassword || strings.TrimSpace(input.Password) != ""
+	passwordState := passwordSnapshot{}
+	if passwordTouched {
+		passwordState, err = s.loadPasswordSnapshot(alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	nextHost := sshconfig.ImportedHost{
 		Alias:        alias,
 		DisplayName:  input.DisplayName,
 		HostName:     input.HostName,
 		User:         input.User,
 		Port:         input.Port,
 		IdentityFile: input.IdentityFile,
-	}); err != nil {
+	}
+	if err := s.managedHosts.Upsert(nextHost); err != nil {
 		return err
 	}
 
-	if input.ClearPassword {
-		if err := secret.DeletePassword(alias); err != nil {
-			return err
-		}
-	}
-	if strings.TrimSpace(input.Password) != "" {
-		if err := secret.SetPassword(alias, input.Password); err != nil {
-			return err
-		}
+	if err := s.applyUpdatedPassword(alias, input); err != nil {
+		rollbackErr := s.restorePassword(alias, passwordState)
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
+			host: currentHost,
+			ok:   true,
+		}))
+		return withRollback(err, rollbackErr)
 	}
 
 	return nil
@@ -119,18 +201,34 @@ func (s HostService) UpdateManagedHost(ctx context.Context, input UpdateManagedH
 // DeleteManagedHost removes a managed SSH config entry and all local state for its alias.
 func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error {
 	alias = NormalizeAlias(alias)
-	if _, err := s.getManagedHost(alias); err != nil {
+	currentHost, err := s.getManagedHost(alias)
+	if err != nil {
 		return err
 	}
 
-	if err := sshconfig.DeleteManagedHost(s.Paths.ManagedConfigPath, alias); err != nil {
+	passwordState, err := s.loadPasswordSnapshot(alias)
+	if err != nil {
 		return err
 	}
-	if err := secret.DeletePassword(alias); err != nil {
+
+	if err := s.managedHosts.Delete(alias); err != nil {
 		return err
 	}
-	if err := s.Store.DeleteMetadata(ctx, alias); err != nil {
-		return err
+	if err := s.passwords.DeletePassword(alias); err != nil {
+		rollbackErr := s.restorePassword(alias, passwordState)
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
+			host: currentHost,
+			ok:   true,
+		}))
+		return withRollback(err, rollbackErr)
+	}
+	if err := s.metadata.DeleteMetadata(ctx, alias); err != nil {
+		rollbackErr := s.restorePassword(alias, passwordState)
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
+			host: currentHost,
+			ok:   true,
+		}))
+		return withRollback(err, rollbackErr)
 	}
 
 	return nil
@@ -142,7 +240,7 @@ func (s HostService) getManagedHost(alias string) (sshconfig.ImportedHost, error
 		return sshconfig.ImportedHost{}, fmt.Errorf("alias is required")
 	}
 
-	host, ok, err := s.lookupManagedHost(alias)
+	host, ok, err := s.managedHosts.Get(alias)
 	if err != nil {
 		return sshconfig.ImportedHost{}, err
 	}
@@ -153,39 +251,19 @@ func (s HostService) getManagedHost(alias string) (sshconfig.ImportedHost, error
 	return host, nil
 }
 
-func (s HostService) lookupManagedHost(alias string) (sshconfig.ImportedHost, bool, error) {
-	alias = NormalizeAlias(alias)
-	if alias == "" {
-		return sshconfig.ImportedHost{}, false, nil
-	}
-
-	hosts, err := sshconfig.ListManagedHosts(s.Paths.ManagedConfigPath)
-	if err != nil {
-		return sshconfig.ImportedHost{}, false, err
-	}
-
-	for _, host := range hosts {
-		if host.Alias == alias {
-			return host, true, nil
-		}
-	}
-
-	return sshconfig.ImportedHost{}, false, nil
-}
-
 func (s HostService) ensureManagedAliasAvailable(alias string) error {
 	alias = NormalizeAlias(alias)
 	if err := sshconfig.ValidateAlias(alias); err != nil {
 		return err
 	}
 
-	if _, exists, err := s.lookupManagedHost(alias); err != nil {
+	if _, exists, err := s.managedHosts.Get(alias); err != nil {
 		return err
 	} else if exists {
 		return fmt.Errorf("managed host %q already exists", alias)
 	}
 
-	conflict, err := s.conflictsWithUnmanagedSSHAlias(alias)
+	conflict, err := s.managedHosts.HasAliasConflict(alias)
 	if err != nil {
 		return err
 	}
@@ -196,28 +274,155 @@ func (s HostService) ensureManagedAliasAvailable(alias string) error {
 	return nil
 }
 
-func (s HostService) conflictsWithUnmanagedSSHAlias(alias string) (bool, error) {
+func (s HostService) loadPasswordSnapshot(alias string) (passwordSnapshot, error) {
+	value, ok, err := s.passwords.GetPasswordIfExists(alias)
+	if err != nil {
+		return passwordSnapshot{}, err
+	}
+	return passwordSnapshot{value: value, ok: ok}, nil
+}
+
+func (s HostService) loadFavoriteSnapshot(ctx context.Context, alias string) (favoriteSnapshot, error) {
+	host, err := s.metadata.GetHost(ctx, alias)
+	if err == nil {
+		return favoriteSnapshot{
+			exists:   true,
+			favorite: host.Favorite,
+		}, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return favoriteSnapshot{}, nil
+	}
+	return favoriteSnapshot{}, err
+}
+
+func (s HostService) applyAddPassword(alias string, password string) error {
+	if strings.TrimSpace(password) != "" {
+		return s.passwords.SetPassword(alias, password)
+	}
+	return s.passwords.DeletePassword(alias)
+}
+
+func (s HostService) applyUpdatedPassword(alias string, input UpdateManagedHostInput) error {
+	if strings.TrimSpace(input.Password) != "" {
+		return s.passwords.SetPassword(alias, input.Password)
+	}
+	if input.ClearPassword {
+		return s.passwords.DeletePassword(alias)
+	}
+	return nil
+}
+
+func (s HostService) restoreManagedHost(alias string, snapshot managedHostSnapshot) error {
+	if snapshot.ok {
+		return s.managedHosts.Upsert(snapshot.host)
+	}
+	return s.managedHosts.Delete(alias)
+}
+
+func (s HostService) restorePassword(alias string, snapshot passwordSnapshot) error {
+	if snapshot.ok {
+		return s.passwords.SetPassword(alias, snapshot.value)
+	}
+	return s.passwords.DeletePassword(alias)
+}
+
+func (s HostService) restoreFavorite(ctx context.Context, alias string, snapshot favoriteSnapshot, touched bool) error {
+	if !touched {
+		return nil
+	}
+	if !snapshot.exists {
+		return s.metadata.DeleteMetadata(ctx, alias)
+	}
+
+	value := snapshot.favorite
+	_, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value})
+	return err
+}
+
+func joinErrors(current error, next error) error {
+	if current == nil {
+		return next
+	}
+	if next == nil {
+		return current
+	}
+	return errors.Join(current, next)
+}
+
+func withRollback(err error, rollbackErr error) error {
+	if rollbackErr == nil {
+		return err
+	}
+	return fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+}
+
+type fileManagedHostStore struct {
+	paths config.Paths
+}
+
+func (s fileManagedHostStore) Get(alias string) (sshconfig.ImportedHost, bool, error) {
+	alias = NormalizeAlias(alias)
+	if alias == "" {
+		return sshconfig.ImportedHost{}, false, nil
+	}
+
+	hosts, err := sshconfig.ListManagedHosts(s.paths.ManagedConfigPath)
+	if err != nil {
+		return sshconfig.ImportedHost{}, false, err
+	}
+	for _, host := range hosts {
+		if host.Alias == alias {
+			return host, true, nil
+		}
+	}
+
+	return sshconfig.ImportedHost{}, false, nil
+}
+
+func (s fileManagedHostStore) Upsert(host sshconfig.ImportedHost) error {
+	return sshconfig.UpsertManagedHost(s.paths.ManagedConfigPath, host)
+}
+
+func (s fileManagedHostStore) Delete(alias string) error {
+	return sshconfig.DeleteManagedHost(s.paths.ManagedConfigPath, alias)
+}
+
+func (s fileManagedHostStore) HasAliasConflict(alias string) (bool, error) {
 	alias = NormalizeAlias(alias)
 	if alias == "" {
 		return false, nil
 	}
 
-	imported, err := sshconfig.ParsePath(s.Paths.SSHConfigPath)
+	imported, err := sshconfig.ParsePath(s.paths.SSHConfigPath)
 	if err != nil {
 		return false, err
 	}
-
 	for _, host := range imported {
 		if host.Alias != alias {
 			continue
 		}
-		if samePath(host.Source, s.Paths.ManagedConfigPath) {
+		if samePath(host.Source, s.paths.ManagedConfigPath) {
 			continue
 		}
 		return true, nil
 	}
 
 	return false, nil
+}
+
+type systemPasswordStore struct{}
+
+func (systemPasswordStore) GetPasswordIfExists(alias string) (string, bool, error) {
+	return secret.GetPasswordIfExists(alias)
+}
+
+func (systemPasswordStore) SetPassword(alias string, password string) error {
+	return secret.SetPassword(alias, password)
+}
+
+func (systemPasswordStore) DeletePassword(alias string) error {
+	return secret.DeletePassword(alias)
 }
 
 func samePath(left string, right string) bool {

@@ -115,7 +115,7 @@ func run(args []string) error {
 }
 
 func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
-	hostService := app.HostService{Paths: paths, Store: st}
+	hostService := app.NewHostService(paths, st)
 
 	hosts, err := listHostsForDisplay(ctx, paths, st)
 	if err != nil {
@@ -236,7 +236,7 @@ func runShow(ctx context.Context, paths config.Paths, st *store.Store, alias str
 }
 
 func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []string) error {
-	hostService := app.HostService{Paths: paths, Store: st}
+	hostService := app.NewHostService(paths, st)
 
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -282,7 +282,7 @@ func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []str
 }
 
 func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias string, args []string) error {
-	hostService := app.HostService{Paths: paths, Store: st}
+	hostService := app.NewHostService(paths, st)
 
 	fs := flag.NewFlagSet("set", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -409,7 +409,7 @@ func runClearPassword(ctx context.Context, paths config.Paths, st *store.Store, 
 }
 
 func runDelete(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
-	hostService := app.HostService{Paths: paths, Store: st}
+	hostService := app.NewHostService(paths, st)
 
 	alias = app.NormalizeAlias(alias)
 	if err := hostService.DeleteManagedHost(ctx, alias); err != nil {

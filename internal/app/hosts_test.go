@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"vpsm/internal/config"
+	"vpsm/internal/model"
 	"vpsm/internal/sshconfig"
 	"vpsm/internal/store"
 )
@@ -27,7 +30,7 @@ func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 		t.Fatalf("ensure managed config: %v", err)
 	}
 
-	svc := HostService{Paths: paths, Store: st}
+	svc := NewHostService(paths, st)
 	if err := svc.AddManagedHost(ctx, AddManagedHostInput{
 		Alias:    "prod-1",
 		HostName: "203.0.113.10",
@@ -75,7 +78,7 @@ func TestAddManagedHostRejectsInvalidAliasBeforeWriting(t *testing.T) {
 		t.Fatalf("ensure managed config: %v", err)
 	}
 
-	svc := HostService{Paths: paths, Store: st}
+	svc := NewHostService(paths, st)
 	err = svc.AddManagedHost(ctx, AddManagedHostInput{
 		Alias:    "bad alias",
 		HostName: "203.0.113.10",
@@ -93,6 +96,137 @@ func TestAddManagedHostRejectsInvalidAliasBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestAddManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	passwords := newFakePasswordStore()
+	passwords.failSetOnce = true
+	metadata := newFakeMetadataStore()
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		metadata:     metadata,
+	}
+
+	err := svc.AddManagedHost(ctx, AddManagedHostInput{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		Password: "secret",
+	})
+	if err == nil {
+		t.Fatal("expected password write error")
+	}
+
+	if _, ok, _ := managed.Get("prod-1"); ok {
+		t.Fatal("expected managed host rollback to remove alias")
+	}
+	if _, ok, _ := passwords.GetPasswordIfExists("prod-1"); ok {
+		t.Fatal("expected password rollback to remove stored secret")
+	}
+}
+
+func TestUpdateManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "root",
+	}
+	passwords := newFakePasswordStore()
+	passwords.values["prod-1"] = "old-secret"
+	passwords.failSetOnce = true
+	metadata := newFakeMetadataStore()
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		metadata:     metadata,
+	}
+
+	err := svc.UpdateManagedHost(ctx, UpdateManagedHostInput{
+		Alias:    "prod-1",
+		HostName: "203.0.113.11",
+		User:     "ubuntu",
+		Password: "new-secret",
+	})
+	if err == nil {
+		t.Fatal("expected password write error")
+	}
+
+	host, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get managed host: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected managed host to be restored")
+	}
+	if host.HostName != "203.0.113.10" || host.User != "root" {
+		t.Fatalf("expected original host state, got %+v", host)
+	}
+
+	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	if err != nil {
+		t.Fatalf("get password: %v", err)
+	}
+	if !ok || password != "old-secret" {
+		t.Fatalf("expected original password to be restored, got %q", password)
+	}
+}
+
+func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "root",
+	}
+	passwords := newFakePasswordStore()
+	passwords.values["prod-1"] = "secret"
+	metadata := newFakeMetadataStore()
+	metadata.hosts["prod-1"] = model.Host{Alias: "prod-1", Favorite: true}
+	metadata.deleteErr = errors.New("delete metadata failed")
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		metadata:     metadata,
+	}
+
+	err := svc.DeleteManagedHost(ctx, "prod-1")
+	if err == nil {
+		t.Fatal("expected metadata delete error")
+	}
+
+	host, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get managed host: %v", err)
+	}
+	if !ok || host.HostName != "203.0.113.10" {
+		t.Fatalf("expected managed host to be restored, got %+v", host)
+	}
+
+	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	if err != nil {
+		t.Fatalf("get password: %v", err)
+	}
+	if !ok || password != "secret" {
+		t.Fatalf("expected password to be restored, got %q", password)
+	}
+
+	if _, err := metadata.GetHost(ctx, "prod-1"); err != nil {
+		t.Fatalf("expected metadata to remain, got %v", err)
+	}
+}
+
 func testPaths(t *testing.T) config.Paths {
 	t.Helper()
 
@@ -106,4 +240,128 @@ func testPaths(t *testing.T) config.Paths {
 		SSHConfigPath:     filepath.Join(sshDir, "config"),
 		ManagedConfigPath: filepath.Join(sshDir, "vpsm.conf"),
 	}
+}
+
+type fakeManagedHostStore struct {
+	hosts     map[string]sshconfig.ImportedHost
+	conflicts map[string]bool
+	upsertErr error
+	deleteErr error
+}
+
+func newFakeManagedHostStore() *fakeManagedHostStore {
+	return &fakeManagedHostStore{
+		hosts:     make(map[string]sshconfig.ImportedHost),
+		conflicts: make(map[string]bool),
+	}
+}
+
+func (s *fakeManagedHostStore) Get(alias string) (sshconfig.ImportedHost, bool, error) {
+	host, ok := s.hosts[alias]
+	return host, ok, nil
+}
+
+func (s *fakeManagedHostStore) Upsert(host sshconfig.ImportedHost) error {
+	if s.upsertErr != nil {
+		return s.upsertErr
+	}
+	s.hosts[host.Alias] = host
+	return nil
+}
+
+func (s *fakeManagedHostStore) Delete(alias string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	delete(s.hosts, alias)
+	return nil
+}
+
+func (s *fakeManagedHostStore) HasAliasConflict(alias string) (bool, error) {
+	return s.conflicts[alias], nil
+}
+
+type fakePasswordStore struct {
+	values         map[string]string
+	failSetOnce    bool
+	failDeleteOnce bool
+}
+
+func newFakePasswordStore() *fakePasswordStore {
+	return &fakePasswordStore{values: make(map[string]string)}
+}
+
+func (s *fakePasswordStore) GetPasswordIfExists(alias string) (string, bool, error) {
+	value, ok := s.values[alias]
+	return value, ok, nil
+}
+
+func (s *fakePasswordStore) SetPassword(alias string, password string) error {
+	if s.failSetOnce {
+		s.failSetOnce = false
+		return errors.New("set password failed")
+	}
+	s.values[alias] = password
+	return nil
+}
+
+func (s *fakePasswordStore) DeletePassword(alias string) error {
+	if s.failDeleteOnce {
+		s.failDeleteOnce = false
+		return errors.New("delete password failed")
+	}
+	delete(s.values, alias)
+	return nil
+}
+
+type fakeMetadataStore struct {
+	hosts     map[string]model.Host
+	ensureErr error
+	updateErr error
+	deleteErr error
+}
+
+func newFakeMetadataStore() *fakeMetadataStore {
+	return &fakeMetadataStore{hosts: make(map[string]model.Host)}
+}
+
+func (s *fakeMetadataStore) GetHost(ctx context.Context, alias string) (model.Host, error) {
+	host, ok := s.hosts[alias]
+	if !ok {
+		return model.Host{}, sql.ErrNoRows
+	}
+	return host, nil
+}
+
+func (s *fakeMetadataStore) EnsureHost(ctx context.Context, alias string) error {
+	if s.ensureErr != nil {
+		return s.ensureErr
+	}
+	if _, ok := s.hosts[alias]; !ok {
+		s.hosts[alias] = model.Host{Alias: alias}
+	}
+	return nil
+}
+
+func (s *fakeMetadataStore) UpdateHost(ctx context.Context, alias string, patch store.HostPatch) (model.Host, error) {
+	if s.updateErr != nil {
+		return model.Host{}, s.updateErr
+	}
+	host, ok := s.hosts[alias]
+	if !ok {
+		return model.Host{}, sql.ErrNoRows
+	}
+	if patch.Favorite != nil {
+		host.Favorite = *patch.Favorite
+	}
+	s.hosts[alias] = host
+	return host, nil
+}
+
+func (s *fakeMetadataStore) DeleteMetadata(ctx context.Context, alias string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	delete(s.hosts, alias)
+	return nil
 }
