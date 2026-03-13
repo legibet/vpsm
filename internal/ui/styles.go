@@ -23,6 +23,7 @@ type styleSet struct {
 	value           lipgloss.Style
 	muted           lipgloss.Style
 	statusBar       lipgloss.Style
+	statusBarError  lipgloss.Style
 	footerBar       lipgloss.Style
 	errorText       lipgloss.Style
 	formLabel       lipgloss.Style
@@ -66,6 +67,7 @@ func newStyles() styleSet {
 		value:           lipgloss.NewStyle().Foreground(text),
 		muted:           lipgloss.NewStyle().Foreground(muted),
 		statusBar:       lipgloss.NewStyle().UnsetBackground().Foreground(warm).Padding(0, 1),
+		statusBarError:  lipgloss.NewStyle().UnsetBackground().Foreground(errorColor).Bold(true).Padding(0, 1),
 		footerBar:       lipgloss.NewStyle().UnsetBackground().Foreground(muted).Padding(0, 1),
 		errorText:       lipgloss.NewStyle().Foreground(errorColor).Bold(true),
 		formLabel:       lipgloss.NewStyle().Foreground(muted),

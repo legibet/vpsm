@@ -318,7 +318,7 @@ func TestSearchEnterConnectsSelectedHost(t *testing.T) {
 	}
 }
 
-func TestSearchEscClearsQueryAndExitsSearch(t *testing.T) {
+func TestSearchEscExitsSearchAndPreservesQuery(t *testing.T) {
 	t.Parallel()
 
 	m := searchModel()
@@ -331,11 +331,9 @@ func TestSearchEscClearsQueryAndExitsSearch(t *testing.T) {
 	if result.searchMode {
 		t.Fatal("expected searchMode to be false after Esc")
 	}
-	if result.query != "" {
-		t.Fatalf("expected query cleared after Esc, got %q", result.query)
-	}
-	if len(result.filtered) != len(testHosts()) {
-		t.Fatalf("expected all hosts after Esc clear, got %d", len(result.filtered))
+	// Esc exits search mode but preserves the query and filtered results (nvim-style)
+	if result.query != "prod" {
+		t.Fatalf("expected query preserved after Esc, got %q", result.query)
 	}
 }
 
@@ -390,7 +388,7 @@ func TestSearchFooterShowsSearchHints(t *testing.T) {
 	if !strings.Contains(footer, "enter connect") {
 		t.Fatalf("expected search footer to mention 'enter connect', got %q", footer)
 	}
-	if !strings.Contains(footer, "esc cancel") {
-		t.Fatalf("expected search footer to mention 'esc cancel', got %q", footer)
+	if !strings.Contains(footer, "esc exit") {
+		t.Fatalf("expected search footer to mention 'esc exit', got %q", footer)
 	}
 }

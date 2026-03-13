@@ -268,8 +268,6 @@ func (m tuiModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "esc":
 		m.searchMode = false
-		m.query = ""
-		m.applyFilter()
 	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
@@ -507,25 +505,7 @@ func (m tuiModel) View() tea.View {
 }
 
 func (m tuiModel) renderHeader(width int) string {
-	query := "all"
-	if strings.TrimSpace(m.query) != "" {
-		query = m.query
-	}
-	modeLabel := "browse"
-	if m.mode == modeAdd {
-		modeLabel = "add"
-	} else if m.mode == modeEdit {
-		modeLabel = "edit"
-	} else if m.mode == modeDeleteConfirm {
-		modeLabel = "delete"
-	} else if m.searchMode {
-		modeLabel = "search"
-	}
-
-	summary := fmt.Sprintf("hosts: %d | shown: %d | mode: %s | query: %s", len(m.hosts), len(m.filtered), modeLabel, query)
-	if m.isCompactLayout() && m.mode == modeBrowse {
-		summary += " | pane: " + m.browsePaneLabel()
-	}
+	summary := m.headerSummary()
 	if m.isCompactLayout() {
 		content := lipgloss.JoinVertical(lipgloss.Left,
 			m.styles.title.Render("vpsm"),
@@ -540,6 +520,29 @@ func (m tuiModel) renderHeader(width int) string {
 		m.styles.sectionMeta.Render(summary),
 	)
 	return m.styles.headBar.Width(width).Render(content)
+}
+
+func (m tuiModel) headerSummary() string {
+	hostCount := fmt.Sprintf("hosts: %d", len(m.hosts))
+
+	switch m.mode {
+	case modeAdd:
+		return hostCount + "  [add]"
+	case modeEdit:
+		return hostCount + "  [edit]"
+	case modeDeleteConfirm:
+		return hostCount + "  [delete]"
+	}
+
+	// browse / search mode
+	suffix := ""
+	if m.isCompactLayout() && m.mode == modeBrowse && !m.searchMode {
+		suffix = "  pane:" + m.browsePaneLabel()
+	}
+	if len(m.filtered) < len(m.hosts) {
+		return fmt.Sprintf("%s  (%d shown)%s", hostCount, len(m.filtered), suffix)
+	}
+	return hostCount + suffix
 }
 
 func (m tuiModel) renderListPanel(width int, height int) string {
@@ -595,12 +598,16 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	}
 
 	selected := m.filtered[m.cursor]
+	port := selected.Port
+	if port == 0 {
+		port = 22
+	}
 	rows = append(rows,
 		m.detailRow("Name", firstNonEmpty(selected.DisplayName, "-")),
 		m.detailRow("Alias", selected.Alias),
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
-		m.detailRow("Port", fmt.Sprintf("%d", selected.Port)),
+		m.detailRow("Port", fmt.Sprintf("%d", port)),
 		m.detailRow("Route", connectionMode(selected)),
 		m.detailRow("Auth", selected.AuthMethodsLabel()),
 		m.detailRow("Identity", selected.IdentityFileLabel()),
@@ -718,6 +725,12 @@ func (m tuiModel) bodyWidths(width int) (int, int) {
 }
 
 func (m tuiModel) renderStatusBar(width int) string {
+	if m.searchMode {
+		return m.styles.statusBar.Width(width).Render("/ " + m.query + "▌")
+	}
+	if strings.HasPrefix(m.status, "Error:") {
+		return m.styles.statusBarError.Width(width).Render(m.status)
+	}
 	return m.styles.statusBar.Width(width).Render(m.status)
 }
 
@@ -792,9 +805,9 @@ func (m tuiModel) footerText() string {
 	}
 	if m.searchMode {
 		if m.isCompactLayout() {
-			return "type to filter | up/down move | enter connect | ctrl+u clear | esc cancel"
+			return "type to filter | up/down move | enter connect | ctrl+u clear | esc exit"
 		}
-		return "type to filter | up/down move | enter connect | ctrl+u clear query | esc cancel search"
+		return "type to filter | up/down move | enter connect | ctrl+u clear | esc exit search"
 	}
 	if m.isCompactLayout() {
 		return "tab pane | j/k move | / search | n/e/d/f/r | enter connect | q quit"
