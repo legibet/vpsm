@@ -349,7 +349,7 @@ func (m tuiModel) updateDeleteConfirmMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deleteAlias = ""
 		m.status = "Delete canceled"
 		return m, nil
-	case "enter", "d":
+	case "y", "Y":
 		alias := m.deleteAlias
 		return m, deleteHostCmd(alias, m.deleteHost, m.refreshHosts)
 	default:
@@ -639,7 +639,7 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 		m.detailRow("Target", selected.TargetName()),
 	)
 	rows = append(rows, m.styles.sectionMeta.Render("This removes the entry from vpsm-managed SSH config."))
-	rows = append(rows, m.styles.errorText.Render("Press Enter or d to delete. Esc cancels."))
+	rows = append(rows, m.styles.errorText.Render("Press y to confirm delete. Esc cancels."))
 
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
@@ -801,7 +801,7 @@ func (m tuiModel) footerText() string {
 		return "tab/shift+tab move | cmd+v/ctrl+v paste | ctrl+s save | ctrl+x clear password | esc cancel"
 	}
 	if m.mode == modeDeleteConfirm {
-		return "enter or d delete | esc cancel"
+		return "y confirm delete | esc cancel"
 	}
 	if m.searchMode {
 		if m.isCompactLayout() {
