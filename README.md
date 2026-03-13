@@ -103,5 +103,6 @@ That keeps the list compact and easy to scan without hiding the technical alias 
 
 - If you already have a large `~/.ssh/config`, `vpsm` will not pull those hosts into its list automatically.
 - Passwords are stored in your system keychain, not in the SSH config.
+- On the first password-based connection to a new host, `vpsm` now lets the normal SSH host key confirmation happen before it auto-fills the password.
 - Favorites and connection history stay local to `vpsm`.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.

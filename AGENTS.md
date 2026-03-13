@@ -132,6 +132,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Keep using system `ssh`.
 - Build arguments through `internal/sshutil.BuildArgs`.
 - Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
+- For stored-password connections, run `internal/sshutil.EnsureHostKeyAcceptedContext` before askpass so first-connect host key confirmation happens explicitly.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password automation should continue to use the askpass helper path, not `sshpass`.
 

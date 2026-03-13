@@ -457,9 +457,14 @@ func connectHost(ctx context.Context, paths config.Paths, st *store.Store, alias
 		return err
 	}
 
-	password, _, err := secret.GetPasswordIfExists(alias)
+	password, hasPassword, err := secret.GetPasswordIfExists(alias)
 	if err != nil {
 		return err
+	}
+	if hasPassword && strings.TrimSpace(password) != "" {
+		if err := sshutil.EnsureHostKeyAcceptedContext(ctx, host, os.Stdin, os.Stdout, os.Stderr); err != nil {
+			return err
+		}
 	}
 
 	cmd, err := sshutil.BuildCommandWithPasswordContext(ctx, host, password)
