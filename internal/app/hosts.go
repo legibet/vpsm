@@ -248,9 +248,10 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 
 	// Migrate keychain: apply new password rules, then migrate the stored secret.
 	if err := s.migratePassword(ctx, oldAlias, newAlias, passwordState, input); err != nil {
-		// Rollback SSH config changes.
+		// Rollback SSH config changes and any partial keychain write for newAlias.
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
+		_ = s.passwords.DeletePassword(newAlias)
 		return err
 	}
 

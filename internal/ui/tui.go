@@ -910,9 +910,16 @@ func updateHostCmd(input UpdateHostInput, update func(UpdateHostInput) error, re
 			return hostsLoadedMsg{err: err}
 		}
 
-		status := "Updated " + input.Alias
+		// After a rename the effective alias is the new one; fall back to the
+		// original when no rename was requested.
+		effectiveAlias := input.Alias
+		if newAlias := strings.TrimSpace(input.NewAlias); newAlias != "" && newAlias != input.Alias {
+			effectiveAlias = newAlias
+		}
+
+		status := "Updated " + effectiveAlias
 		if refresh == nil {
-			return hostsLoadedMsg{status: status, selectAlias: input.Alias}
+			return hostsLoadedMsg{status: status, selectAlias: effectiveAlias}
 		}
 
 		items, refreshStatus, err := refresh()
@@ -922,7 +929,7 @@ func updateHostCmd(input UpdateHostInput, update func(UpdateHostInput) error, re
 		if strings.TrimSpace(refreshStatus) != "" {
 			status = status + "; " + refreshStatus
 		}
-		return hostsLoadedMsg{hosts: items, status: status, selectAlias: input.Alias}
+		return hostsLoadedMsg{hosts: items, status: status, selectAlias: effectiveAlias}
 	}
 }
 
