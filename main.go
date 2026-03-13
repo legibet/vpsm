@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -481,6 +482,9 @@ func connectHost(ctx context.Context, paths config.Paths, st *store.Store, alias
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		if isUserInterruptError(err) {
+			return nil
+		}
 		return fmt.Errorf("run ssh for %q: %w", alias, err)
 	}
 
@@ -489,6 +493,22 @@ func connectHost(ctx context.Context, paths config.Paths, st *store.Store, alias
 	}
 
 	return nil
+}
+
+func isUserInterruptError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 130 {
+		return true
+	}
+
+	return false
 }
 
 func connectionMode(host model.Host) string {
