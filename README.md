@@ -26,7 +26,13 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 ## Build
 
 ```bash
-go build -o vpsm .
+make build-bin
+```
+
+Recommended local workflow:
+
+```bash
+make check
 ```
 
 ## Quick start

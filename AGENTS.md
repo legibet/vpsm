@@ -42,22 +42,25 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## Build Commands
 
-- Build the main binary: `go build -o vpsm .`
-- Build all packages: `go build ./...`
-- Smoke-test help output: `go run . help`
+- Prefer `make` targets for routine repository-wide tasks.
+- Show the common task list: `make help`
+- Build the main binary with Make: `make build-bin`
+- Smoke-test help output with Make: `make smoke`
+- Run the full local validation baseline: `make check`
 - Run the app: `go run .`
 
 ## Formatting / Lint Commands
 
-- Format all Go files touched in your change: `gofmt -w <files...>`
-- Repository-wide vet baseline: `go vet ./...`
-- Repository-wide lint baseline: `golangci-lint run`
+- Format all Go files via Make: `make fmt`
+- Run lint via Make: `make lint`
+- Run vet via Make: `make vet`
 - Keep code clean for the current `golangci-lint` default checks unless an explicit repo config is added later.
 
 ## Test Commands
 
-- Run all tests: `go test ./...`
-- Disable test cache when needed: `go test ./... -count=1`
+- Run all checks with Make: `make check`
+- Run all tests with Make: `make test`
+- Disable test cache with Make: `make test-no-cache`
 - Run one package: `go test ./internal/sshconfig`
 - Run one specific test by name: `go test ./internal/sshconfig -run '^TestEnsureManagedConfigAddsIncludeAtTop$'`
 - Another single-test example: `go test ./internal/sshutil -run '^TestBuildCommandWithPasswordUsesAskpass$'`
@@ -182,9 +185,5 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## Before You Finish
 
-- Run `gofmt -w` on changed Go files.
-- Run `golangci-lint run`.
-- Run `go vet ./...`.
-- Run `go test ./...`.
-- Run `go build ./...` or `go build -o vpsm .`.
+- Run `make check`.
 - If behavior or commands changed, update `README.md` and keep this file accurate.
