@@ -152,6 +152,23 @@ func (f *RemoteFS) Rename(oldPath string, newPath string) error {
 	return nil
 }
 
+func (f *RemoteFS) replaceFile(oldPath string, newPath string) error {
+	if _, ok := f.client.HasExtension("posix-rename@openssh.com"); ok {
+		if err := f.client.PosixRename(oldPath, newPath); err != nil {
+			return fmt.Errorf("replace remote file %q with %q: %w", newPath, oldPath, err)
+		}
+		return nil
+	}
+
+	if err := f.client.Remove(newPath); err != nil && !isRemoteNotExist(err) {
+		return fmt.Errorf("remove existing remote file %q: %w", newPath, err)
+	}
+	if err := f.client.Rename(oldPath, newPath); err != nil {
+		return fmt.Errorf("replace remote file %q with %q: %w", newPath, oldPath, err)
+	}
+	return nil
+}
+
 func (f *RemoteFS) Remove(fullPath string) error {
 	if err := f.client.RemoveAll(fullPath); err != nil {
 		return fmt.Errorf("remove remote path %q: %w", fullPath, err)
@@ -195,4 +212,15 @@ func (f *RemoteFS) clientWriter(path string, mode os.FileMode) (io.WriteCloser, 
 		}
 	}
 	return file, nil
+}
+
+func isRemoteNotExist(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	statusErr, ok := err.(*sftp.StatusError)
+	return ok && statusErr.Code == 2
 }

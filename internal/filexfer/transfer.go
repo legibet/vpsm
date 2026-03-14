@@ -39,33 +39,7 @@ func (f *RemoteFS) UploadPathContext(ctx context.Context, localPath string, remo
 			return f.client.MkdirAll(item.remotePath)
 		}
 
-		if err := f.client.MkdirAll(path.Dir(item.remotePath)); err != nil {
-			return fmt.Errorf("create remote parent directory for %q: %w", item.remotePath, err)
-		}
-
-		source, err := os.Open(item.localPath)
-		if err != nil {
-			return fmt.Errorf("open local file %q: %w", item.localPath, err)
-		}
-		defer func() {
-			_ = source.Close()
-		}()
-
-		target, err := f.clientWriter(item.remotePath, item.mode)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = target.Close()
-		}()
-
-		if err := copyWithProgress(ctx, source, target, item.size, item.localPath, state); err != nil {
-			return err
-		}
-		if err := f.client.Chtimes(item.remotePath, item.modTime, item.modTime); err != nil {
-			return fmt.Errorf("set remote times for %q: %w", item.remotePath, err)
-		}
-		return nil
+		return f.uploadFileAtomically(ctx, item, state)
 	})
 }
 
@@ -83,34 +57,100 @@ func (f *RemoteFS) DownloadPathContext(ctx context.Context, remotePath string, l
 			return nil
 		}
 
-		if err := os.MkdirAll(filepath.Dir(item.localPath), 0o755); err != nil {
-			return fmt.Errorf("create local parent directory for %q: %w", item.localPath, err)
-		}
-
-		source, _, err := f.clientReader(item.remotePath)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = source.Close()
-		}()
-
-		target, err := os.OpenFile(item.localPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, item.mode.Perm())
-		if err != nil {
-			return fmt.Errorf("open local file %q for write: %w", item.localPath, err)
-		}
-		defer func() {
-			_ = target.Close()
-		}()
-
-		if err := copyWithProgress(ctx, source, target, item.size, item.remotePath, state); err != nil {
-			return err
-		}
-		if err := os.Chtimes(item.localPath, item.modTime, item.modTime); err != nil {
-			return fmt.Errorf("set local times for %q: %w", item.localPath, err)
-		}
-		return nil
+		return f.downloadFileAtomically(ctx, item, state)
 	})
+}
+
+func (f *RemoteFS) uploadFileAtomically(ctx context.Context, item transferItem, state *transferState) (err error) {
+	if err := f.client.MkdirAll(path.Dir(item.remotePath)); err != nil {
+		return fmt.Errorf("create remote parent directory for %q: %w", item.remotePath, err)
+	}
+
+	source, err := os.Open(item.localPath)
+	if err != nil {
+		return fmt.Errorf("open local file %q: %w", item.localPath, err)
+	}
+	defer func() {
+		_ = source.Close()
+	}()
+
+	tempPath := tempRemotePath(item.remotePath)
+	_ = f.client.Remove(tempPath)
+
+	target, err := f.clientWriter(tempPath, item.mode)
+	if err != nil {
+		return err
+	}
+
+	cleanupTemp := func(baseErr error) error {
+		removeErr := f.client.Remove(tempPath)
+		if removeErr != nil && !isRemoteNotExist(removeErr) {
+			return errors.Join(baseErr, fmt.Errorf("cleanup remote temp file %q: %w", tempPath, removeErr))
+		}
+		return baseErr
+	}
+
+	if err := copyWithProgress(ctx, source, target, item.size, item.localPath, state); err != nil {
+		_ = target.Close()
+		return cleanupTemp(err)
+	}
+	if err := target.Close(); err != nil {
+		return cleanupTemp(fmt.Errorf("close remote file %q: %w", tempPath, err))
+	}
+	if err := f.client.Chtimes(tempPath, item.modTime, item.modTime); err != nil {
+		return cleanupTemp(fmt.Errorf("set remote times for %q: %w", tempPath, err))
+	}
+	if err := f.replaceFile(tempPath, item.remotePath); err != nil {
+		return cleanupTemp(err)
+	}
+
+	return nil
+}
+
+func (f *RemoteFS) downloadFileAtomically(ctx context.Context, item transferItem, state *transferState) (err error) {
+	if err := os.MkdirAll(filepath.Dir(item.localPath), 0o755); err != nil {
+		return fmt.Errorf("create local parent directory for %q: %w", item.localPath, err)
+	}
+
+	source, _, err := f.clientReader(item.remotePath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = source.Close()
+	}()
+
+	tempPath := tempLocalPath(item.localPath)
+	_ = os.Remove(tempPath)
+
+	target, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, item.mode.Perm())
+	if err != nil {
+		return fmt.Errorf("open local temp file %q for write: %w", tempPath, err)
+	}
+
+	cleanupTemp := func(baseErr error) error {
+		removeErr := os.Remove(tempPath)
+		if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return errors.Join(baseErr, fmt.Errorf("cleanup local temp file %q: %w", tempPath, removeErr))
+		}
+		return baseErr
+	}
+
+	if err := copyWithProgress(ctx, source, target, item.size, item.remotePath, state); err != nil {
+		_ = target.Close()
+		return cleanupTemp(err)
+	}
+	if err := target.Close(); err != nil {
+		return cleanupTemp(fmt.Errorf("close local file %q: %w", tempPath, err))
+	}
+	if err := os.Chtimes(tempPath, item.modTime, item.modTime); err != nil {
+		return cleanupTemp(fmt.Errorf("set local times for %q: %w", tempPath, err))
+	}
+	if err := os.Rename(tempPath, item.localPath); err != nil {
+		return cleanupTemp(fmt.Errorf("replace local file %q with %q: %w", item.localPath, tempPath, err))
+	}
+
+	return nil
 }
 
 func buildUploadPlan(localPath string, remotePath string) (transferPlan, error) {
@@ -385,4 +425,14 @@ func pathLabel(direction string, item transferItem) string {
 		return item.remotePath
 	}
 	return item.localPath
+}
+
+func tempRemotePath(targetPath string) string {
+	base := path.Base(targetPath)
+	return path.Join(path.Dir(targetPath), fmt.Sprintf(".%s.vpsm-part-%d", base, time.Now().UnixNano()))
+}
+
+func tempLocalPath(targetPath string) string {
+	base := filepath.Base(targetPath)
+	return filepath.Join(filepath.Dir(targetPath), fmt.Sprintf(".%s.vpsm-part-%d", base, time.Now().UnixNano()))
 }
