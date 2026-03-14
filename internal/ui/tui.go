@@ -639,20 +639,18 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 	}
 
 	visible := m.visibleHosts()
-	for i, host := range visible {
+	for _, host := range visible {
 		rows = append(rows, m.renderListItem(host, width))
-		if i < len(visible)-1 {
-			rows = append(rows, "")
-		}
 	}
 
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
-// renderListItem returns a single-line representation of a host entry.
-// Layout: [▎ ][★ ]<primary>  <meta>  <source-tag>
+// renderListItem returns a two-line representation of a host entry.
+// Line 1: [▎ ][★ ]<primary>                       <source-tag>
+// Line 2:      [alias ·] <user@host:port>
 // Primary is DisplayName when available, otherwise Alias.
-// Meta shows the connection info (user@host:port).
+// Alias appears on line 2 only when DisplayName is set (avoids duplication).
 func (m tuiModel) renderListItem(host model.Host, width int) string {
 	contentWidth := m.listContentWidth(width)
 	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
@@ -680,29 +678,38 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	// Primary label: DisplayName if set, otherwise Alias.
 	displayName := strings.TrimSpace(host.DisplayName)
 	primary := host.Alias
-	if displayName != "" {
+	hasDisplayName := displayName != ""
+	if hasDisplayName {
 		primary = displayName
 	}
 
-	left := gutter + starPart + primaryStyle.Render(primary)
+	left1 := gutter + starPart + primaryStyle.Render(primary)
 
-	// Right side: meta + source tag.
-	meta := listMeta(host)
+	// Right side of line 1: source tag.
 	tag := sourceTag(host)
-	var right string
-	if meta != "" {
-		right = metaStyle.Render(meta + "  " + tag)
+	right1 := metaStyle.Render(tag)
+
+	gap1 := contentWidth - lipgloss.Width(left1) - lipgloss.Width(right1)
+	if gap1 < 2 {
+		gap1 = 2
+	}
+	line1 := left1 + strings.Repeat(" ", gap1) + right1
+
+	// Line 2: indented alias (if DisplayName is set) + connection meta.
+	indent := "     "
+	meta := listMeta(host)
+	var line2Content string
+	if hasDisplayName && meta != "" {
+		line2Content = metaStyle.Render(host.Alias + "  " + meta)
+	} else if hasDisplayName {
+		line2Content = metaStyle.Render(host.Alias)
 	} else {
-		right = metaStyle.Render(tag)
+		line2Content = metaStyle.Render(meta)
 	}
+	line2 := indent + line2Content
 
-	gap := contentWidth - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 2 {
-		gap = 2
-	}
-
-	line := left + strings.Repeat(" ", gap) + right
-	return m.styles.listItem.MaxWidth(contentWidth).Render(line)
+	return m.styles.listItem.MaxWidth(contentWidth).Render(line1) + "\n" +
+		m.styles.listItem.MaxWidth(contentWidth).Render(line2)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -902,15 +909,14 @@ func (m tuiModel) listContentWidth(panelWidth int) int {
 }
 
 // listRowsPerPage returns how many host entries fit in the list panel.
-// Each entry occupies 1 line with 1 blank separator between entries,
-// so N items take 2*N - 1 rows.
+// Each entry occupies 2 lines (primary + meta), no separators,
+// so N items take 2*N rows.
 func (m tuiModel) listRowsPerPage() int {
 	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	if available < 1 {
+	if available < 2 {
 		return 1
 	}
-	// 2*N - 1 <= available  =>  N <= (available + 1) / 2
-	n := (available + 1) / 2
+	n := available / 2
 	if n < 1 {
 		return 1
 	}
@@ -1089,6 +1095,7 @@ func (m tuiModel) footerHints() []footerHint {
 				{"d", "del"},
 				{"i", "key"},
 				{"f", "fav"},
+				{"r", "refresh"},
 				{"↵", "connect"},
 				{"q", "quit"},
 			}
@@ -1098,6 +1105,7 @@ func (m tuiModel) footerHints() []footerHint {
 			{"/", "search"},
 			{"n", "new"},
 			{"f", "fav"},
+			{"r", "refresh"},
 			{"↵", "connect"},
 			{"q", "quit"},
 		}
@@ -1110,6 +1118,7 @@ func (m tuiModel) footerHints() []footerHint {
 			{"d", "delete"},
 			{"i", "key"},
 			{"f", "fav"},
+			{"r", "refresh"},
 			{"↵", "connect"},
 			{"q", "quit"},
 		}
@@ -1118,6 +1127,7 @@ func (m tuiModel) footerHints() []footerHint {
 		{"/", "search"},
 		{"n", "new"},
 		{"f", "fav"},
+		{"r", "refresh"},
 		{"↵", "connect"},
 		{"q", "quit"},
 	}
