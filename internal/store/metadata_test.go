@@ -134,6 +134,108 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	}
 }
 
+func TestOpenSupportsLegacyWideSchema(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = legacyDB.Close()
+	})
+
+	_, err = legacyDB.Exec(`
+		CREATE TABLE hosts (
+			alias TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL DEFAULT '',
+			user_name TEXT NOT NULL DEFAULT '',
+			port INTEGER NOT NULL DEFAULT 22,
+			source TEXT NOT NULL DEFAULT '',
+			auth_mode TEXT NOT NULL DEFAULT '',
+			identity_file TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			region TEXT NOT NULL DEFAULT '',
+			tags_json TEXT NOT NULL DEFAULT '[]',
+			note TEXT NOT NULL DEFAULT '',
+			favorite INTEGER NOT NULL DEFAULT 0,
+			last_connected_at TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+
+		CREATE INDEX idx_hosts_favorite_alias
+		ON hosts (favorite DESC, alias ASC);
+	`)
+	if err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+
+	lastConnected := "2026-01-02T03:04:05Z"
+	createdAt := "2025-12-31T23:00:00Z"
+	updatedAt := "2026-01-01T00:00:00Z"
+	_, err = legacyDB.Exec(`
+		INSERT INTO hosts (
+			alias, hostname, user_name, port, source, auth_mode, identity_file,
+			provider, region, tags_json, note, favorite, last_connected_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"legacy-box", "203.0.113.10", "root", 22, "/tmp/config", "password", "~/.ssh/id_ed25519",
+		"Hetzner", "FSN1", `["prod"]`, "legacy host", 1, lastConnected, createdAt, updatedAt,
+	)
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	host, err := st.GetHost(ctx, "legacy-box")
+	if err != nil {
+		t.Fatalf("get legacy host: %v", err)
+	}
+	if host.Alias != "legacy-box" {
+		t.Fatalf("expected alias %q, got %q", "legacy-box", host.Alias)
+	}
+	if !host.Favorite {
+		t.Fatal("expected favorite flag to survive legacy schema")
+	}
+	if host.LastConnectedAt == nil {
+		t.Fatal("expected last connected timestamp to survive legacy schema")
+	}
+	if host.CreatedAt.IsZero() || host.UpdatedAt.IsZero() {
+		t.Fatal("expected timestamps to survive legacy schema")
+	}
+
+	hosts, err := st.ListHosts(ctx)
+	if err != nil {
+		t.Fatalf("list hosts from legacy schema: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host from legacy schema, got %d", len(hosts))
+	}
+
+	if err := st.MarkConnected(ctx, "legacy-box"); err != nil {
+		t.Fatalf("mark connected on legacy schema: %v", err)
+	}
+
+	host, err = st.GetHost(ctx, "legacy-box")
+	if err != nil {
+		t.Fatalf("get host after mark connected: %v", err)
+	}
+	if host.LastConnectedAt == nil {
+		t.Fatal("expected updated last connected timestamp after mark connected")
+	}
+}
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 

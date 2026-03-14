@@ -20,7 +20,7 @@ func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 
-	err := sshconfig.UpsertManagedHost(app.paths.ManagedConfigPath, sshconfig.ImportedHost{
+	err := sshconfig.UpsertManagedHost(app.testPaths.ManagedConfigPath, sshconfig.ImportedHost{
 		Alias:         "prod-1",
 		HostName:      "203.0.113.10",
 		User:          "root",
@@ -40,7 +40,7 @@ func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 		t.Fatalf("run set: %v", err)
 	}
 
-	managedHosts, err := sshconfig.ListManagedHosts(app.paths.ManagedConfigPath)
+	managedHosts, err := sshconfig.ListManagedHosts(app.testPaths.ManagedConfigPath)
 	if err != nil {
 		t.Fatalf("list managed hosts: %v", err)
 	}
@@ -69,7 +69,12 @@ func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 	}
 }
 
-func newTestApp(t *testing.T, ctx context.Context) App {
+type testApp struct {
+	App
+	testPaths config.Paths
+}
+
+func newTestApp(t *testing.T, ctx context.Context) testApp {
 	t.Helper()
 
 	paths := testPaths(t)
@@ -81,7 +86,10 @@ func newTestApp(t *testing.T, ctx context.Context) App {
 		_ = st.Close()
 	})
 
-	return NewApp(ctx, paths, st)
+	return testApp{
+		App:       NewApp(ctx, paths, st),
+		testPaths: paths,
+	}
 }
 
 func testPaths(t *testing.T) config.Paths {

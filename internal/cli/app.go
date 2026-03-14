@@ -26,7 +26,6 @@ import (
 
 type App struct {
 	ctx       context.Context
-	paths     config.Paths
 	store     *store.Store
 	inventory inventory.Service
 	hosts     hosts.HostService
@@ -63,7 +62,6 @@ func NewApp(ctx context.Context, paths config.Paths, st *store.Store) App {
 
 	return App{
 		ctx:       ctx,
-		paths:     paths,
 		store:     st,
 		inventory: inventoryService,
 		hosts:     hosts.NewHostService(paths, st),
