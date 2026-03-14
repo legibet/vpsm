@@ -6,68 +6,47 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
-
-	"vpsm/internal/sshconfig"
 )
+
+func TestEnsureHostCreatesMetadataRow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	st := openTestStore(t)
+
+	if err := st.EnsureHost(ctx, "web-1"); err != nil {
+		t.Fatalf("ensure host: %v", err)
+	}
+
+	host, err := st.GetHost(ctx, "web-1")
+	if err != nil {
+		t.Fatalf("get host: %v", err)
+	}
+	if host.Alias != "web-1" {
+		t.Fatalf("expected alias %q, got %q", "web-1", host.Alias)
+	}
+	if host.Favorite {
+		t.Fatal("expected favorite to default to false")
+	}
+}
 
 func TestUpdateHostAndToggleFavorite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
+	st := openTestStore(t)
 
-	_, err = st.SyncImportedHosts(ctx, []sshconfig.ImportedHost{{
-		Alias:    "web-1",
-		HostName: "10.0.0.11",
-		User:     "ubuntu",
-		Port:     22,
-		Source:   "/tmp/config",
-	}})
-	if err != nil {
-		t.Fatalf("sync imported hosts: %v", err)
+	if err := st.EnsureHost(ctx, "web-1"); err != nil {
+		t.Fatalf("ensure host: %v", err)
 	}
 
-	provider := "Hetzner"
-	region := "FSN1"
-	tags := []string{"Prod", "web", "prod"}
-	note := "primary app node"
-	authMode := "password"
-
-	host, err := st.UpdateHost(ctx, "web-1", HostPatch{
-		AuthMode: &authMode,
-		Provider: &provider,
-		Region:   &region,
-		Tags:     &tags,
-		Note:     &note,
-	})
+	favorite := true
+	host, err := st.UpdateHost(ctx, "web-1", HostPatch{Favorite: &favorite})
 	if err != nil {
 		t.Fatalf("update host: %v", err)
 	}
-
-	if host.Provider != "Hetzner" || host.Region != "FSN1" || host.Note != "primary app node" {
-		t.Fatalf("unexpected updated host: %+v", host)
-	}
-	if host.AuthMode != "password" {
-		t.Fatalf("expected auth mode password, got %q", host.AuthMode)
-	}
-
-	if len(host.Tags) != 2 || host.Tags[0] != "prod" || host.Tags[1] != "web" {
-		t.Fatalf("unexpected normalized tags: %+v", host.Tags)
-	}
-
-	host, err = st.ToggleFavorite(ctx, "web-1")
-	if err != nil {
-		t.Fatalf("toggle favorite on: %v", err)
-	}
 	if !host.Favorite {
-		t.Fatalf("expected favorite to be true")
+		t.Fatal("expected favorite to be true")
 	}
 
 	host, err = st.ToggleFavorite(ctx, "web-1")
@@ -75,138 +54,64 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 		t.Fatalf("toggle favorite off: %v", err)
 	}
 	if host.Favorite {
-		t.Fatalf("expected favorite to be false")
+		t.Fatal("expected favorite to be false")
+	}
+
+	host, err = st.ToggleFavorite(ctx, "web-1")
+	if err != nil {
+		t.Fatalf("toggle favorite on: %v", err)
+	}
+	if !host.Favorite {
+		t.Fatal("expected favorite to be true")
 	}
 }
 
-func TestCreateHost(t *testing.T) {
+func TestMarkConnectedUpdatesTimestamp(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
+	st := openTestStore(t)
 
-	host, err := st.CreateHost(ctx, NewHost{
-		Alias:        "manual-1",
-		HostName:     "203.0.113.10",
-		User:         "ubuntu",
-		Port:         2202,
-		AuthMode:     "password",
-		IdentityFile: "  ~/.ssh/id_ed25519  ",
-		Provider:     "Oracle",
-		Region:       "tokyo",
-		Tags:         []string{"Lab", "arm", "lab"},
-		Note:         "test host",
-		Favorite:     true,
-	})
-	if err != nil {
-		t.Fatalf("create host: %v", err)
+	if err := st.MarkConnected(ctx, "web-1"); err != nil {
+		t.Fatalf("mark connected: %v", err)
 	}
 
-	if host.Source != "manual" {
-		t.Fatalf("expected source manual, got %q", host.Source)
+	host, err := st.GetHost(ctx, "web-1")
+	if err != nil {
+		t.Fatalf("get host: %v", err)
 	}
-	if host.Port != 2202 || host.Provider != "Oracle" || host.Region != "tokyo" || !host.Favorite {
-		t.Fatalf("unexpected created host: %+v", host)
-	}
-	if host.AuthMode != "key" {
-		t.Fatalf("expected auth mode key when identity file is set, got %q", host.AuthMode)
-	}
-	if host.IdentityFile != "~/.ssh/id_ed25519" {
-		t.Fatalf("unexpected identity file: %q", host.IdentityFile)
-	}
-	if len(host.Tags) != 2 || host.Tags[0] != "lab" || host.Tags[1] != "arm" {
-		t.Fatalf("unexpected created host tags: %+v", host.Tags)
+	if host.LastConnectedAt == nil {
+		t.Fatal("expected last connected timestamp to be set")
 	}
 }
 
-func TestUpdateHostIdentityFileNormalizesAuthMode(t *testing.T) {
+func TestRenameHostMovesMetadataRow(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
+	st := openTestStore(t)
+
+	if err := st.MarkConnected(ctx, "old-alias"); err != nil {
+		t.Fatalf("mark connected: %v", err)
+	}
+
+	if err := st.RenameHost(ctx, "old-alias", "new-alias"); err != nil {
+		t.Fatalf("rename host: %v", err)
+	}
+
+	if _, err := st.GetHost(ctx, "old-alias"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected old alias to be gone, got %v", err)
+	}
+
+	host, err := st.GetHost(ctx, "new-alias")
 	if err != nil {
-		t.Fatalf("open store: %v", err)
+		t.Fatalf("get renamed host: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
-
-	host, err := st.CreateHost(ctx, NewHost{
-		Alias:    "manual-2",
-		HostName: "198.51.100.20",
-	})
-	if err != nil {
-		t.Fatalf("create host: %v", err)
+	if host.Alias != "new-alias" {
+		t.Fatalf("expected renamed alias, got %q", host.Alias)
 	}
-	if host.AuthMode != "" {
-		t.Fatalf("expected default auth mode, got %q", host.AuthMode)
-	}
-
-	identityFile := "~/.ssh/id_rsa"
-	host, err = st.UpdateHost(ctx, "manual-2", HostPatch{IdentityFile: &identityFile})
-	if err != nil {
-		t.Fatalf("update identity file: %v", err)
-	}
-	if host.AuthMode != "key" {
-		t.Fatalf("expected key auth mode, got %q", host.AuthMode)
-	}
-
-	cleared := ""
-	host, err = st.UpdateHost(ctx, "manual-2", HostPatch{IdentityFile: &cleared})
-	if err != nil {
-		t.Fatalf("clear identity file: %v", err)
-	}
-	if host.AuthMode != "" {
-		t.Fatalf("expected default auth mode after clearing identity file, got %q", host.AuthMode)
-	}
-}
-
-func TestDeleteImportedHostStaysHiddenAfterSync(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
-
-	imported := []sshconfig.ImportedHost{{
-		Alias:    "ssh-box",
-		HostName: "10.0.0.10",
-		User:     "root",
-		Port:     22,
-		Source:   "/tmp/config",
-	}}
-	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
-		t.Fatalf("initial sync: %v", err)
-	}
-
-	if err := st.DeleteHost(ctx, "ssh-box"); err != nil {
-		t.Fatalf("delete host: %v", err)
-	}
-
-	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
-		t.Fatalf("second sync: %v", err)
-	}
-
-	hosts, err := st.ListHosts(ctx)
-	if err != nil {
-		t.Fatalf("list hosts: %v", err)
-	}
-	if len(hosts) != 0 {
-		t.Fatalf("expected deleted imported host to stay hidden, got %+v", hosts)
+	if host.LastConnectedAt == nil {
+		t.Fatal("expected metadata to be preserved on rename")
 	}
 }
 
@@ -214,25 +119,10 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
+	st := openTestStore(t)
 
-	host, err := st.CreateHost(ctx, NewHost{
-		Alias:    "managed-box",
-		HostName: "203.0.113.10",
-		Favorite: true,
-	})
-	if err != nil {
-		t.Fatalf("create host: %v", err)
-	}
-	if !host.Favorite {
-		t.Fatal("expected favorite metadata to be stored")
+	if err := st.MarkConnected(ctx, "managed-box"); err != nil {
+		t.Fatalf("mark connected: %v", err)
 	}
 
 	if err := st.DeleteMetadata(ctx, "managed-box"); err != nil {
@@ -242,22 +132,12 @@ func TestDeleteMetadataRemovesLocalState(t *testing.T) {
 	if _, err := st.GetHost(ctx, "managed-box"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected sql.ErrNoRows after metadata delete, got %v", err)
 	}
-
-	ignored, err := loadIgnoredAliases(ctx, st.db)
-	if err != nil {
-		t.Fatalf("load ignored aliases: %v", err)
-	}
-	if _, exists := ignored["managed-box"]; exists {
-		t.Fatal("expected delete metadata to leave no ignored alias marker")
-	}
 }
 
-func TestManualOverrideSurvivesImportSync(t *testing.T) {
-	t.Parallel()
+func openTestStore(t *testing.T) *Store {
+	t.Helper()
 
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "vpsm.db")
-	st, err := Open(dbPath)
+	st, err := Open(filepath.Join(t.TempDir(), "vpsm.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -265,43 +145,5 @@ func TestManualOverrideSurvivesImportSync(t *testing.T) {
 		_ = st.Close()
 	})
 
-	imported := []sshconfig.ImportedHost{{
-		Alias:    "ssh-box",
-		HostName: "10.0.0.10",
-		User:     "root",
-		Port:     22,
-		Source:   "/tmp/config",
-	}}
-	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
-		t.Fatalf("initial sync: %v", err)
-	}
-
-	hostName := "198.51.100.20"
-	user := "ubuntu"
-	port := 2202
-	source := "manual-override"
-	host, err := st.UpdateHost(ctx, "ssh-box", HostPatch{
-		HostName: &hostName,
-		User:     &user,
-		Port:     &port,
-		Source:   &source,
-	})
-	if err != nil {
-		t.Fatalf("update host: %v", err)
-	}
-	if host.Source != "manual-override" {
-		t.Fatalf("expected manual override source, got %q", host.Source)
-	}
-
-	if _, err := st.SyncImportedHosts(ctx, imported); err != nil {
-		t.Fatalf("second sync: %v", err)
-	}
-
-	host, err = st.GetHost(ctx, "ssh-box")
-	if err != nil {
-		t.Fatalf("get host: %v", err)
-	}
-	if host.HostName != hostName || host.User != user || host.Port != port {
-		t.Fatalf("expected manual override values to persist, got %+v", host)
-	}
+	return st
 }

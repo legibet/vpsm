@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"vpsm/internal/model"
-	"vpsm/internal/sshconfig"
 
 	_ "modernc.org/sqlite"
 )
@@ -56,87 +54,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// SyncImportedHosts merges imported hosts into the local metadata store.
-func (s *Store) SyncImportedHosts(ctx context.Context, imported []sshconfig.ImportedHost) (int, error) {
-	if len(imported) == 0 {
-		return 0, nil
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin sync transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	ignored, err := loadIgnoredAliases(ctx, tx)
-	if err != nil {
-		return 0, err
-	}
-
-	statement, err := tx.PrepareContext(ctx, `
-		INSERT INTO hosts (
-			alias,
-			hostname,
-			user_name,
-			port,
-			source,
-			auth_mode,
-			identity_file,
-			tags_json,
-			created_at,
-			updated_at
-		) VALUES (?, ?, ?, ?, ?, '', '', '[]', ?, ?)
-		ON CONFLICT(alias) DO UPDATE SET
-			hostname = excluded.hostname,
-			user_name = excluded.user_name,
-			port = excluded.port,
-			source = excluded.source,
-			updated_at = excluded.updated_at
-		WHERE hosts.source <> 'manual' AND hosts.source <> 'manual-override'
-	`)
-	if err != nil {
-		return 0, fmt.Errorf("prepare upsert statement: %w", err)
-	}
-	defer func() {
-		_ = statement.Close()
-	}()
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	count := 0
-	for _, host := range imported {
-		if _, skip := ignored[host.Alias]; skip {
-			continue
-		}
-		if _, err := statement.ExecContext(ctx, host.Alias, host.HostName, host.User, host.Port, host.Source, now, now); err != nil {
-			return 0, fmt.Errorf("upsert imported host %q: %w", host.Alias, err)
-		}
-		count++
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit sync transaction: %w", err)
-	}
-
-	return count, nil
-}
-
 // ListHosts returns all locally stored host metadata rows.
 func (s *Store) ListHosts(ctx context.Context) ([]model.Host, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			alias,
-			hostname,
-			user_name,
-			port,
-			source,
-			auth_mode,
-			identity_file,
-			provider,
-			region,
-			tags_json,
-			note,
 			favorite,
 			last_connected_at,
 			created_at,
@@ -159,7 +81,6 @@ func (s *Store) ListHosts(ctx context.Context) ([]model.Host, error) {
 		}
 		hosts = append(hosts, host)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate hosts: %w", err)
 	}
@@ -172,23 +93,13 @@ func (s *Store) GetHost(ctx context.Context, alias string) (model.Host, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			alias,
-			hostname,
-			user_name,
-			port,
-			source,
-			auth_mode,
-			identity_file,
-			provider,
-			region,
-			tags_json,
-			note,
 			favorite,
 			last_connected_at,
 			created_at,
 			updated_at
 		FROM hosts
 		WHERE alias = ?
-	`, alias)
+	`, strings.TrimSpace(alias))
 
 	host, err := scanHost(row)
 	if err != nil {
@@ -209,7 +120,7 @@ func (s *Store) MarkConnected(ctx context.Context, alias string) error {
 		UPDATE hosts
 		SET last_connected_at = ?, updated_at = ?
 		WHERE alias = ?
-	`, now, now, alias); err != nil {
+	`, now, now, strings.TrimSpace(alias)); err != nil {
 		return fmt.Errorf("mark host connected: %w", err)
 	}
 
@@ -225,8 +136,8 @@ func (s *Store) EnsureHost(ctx context.Context, alias string) error {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO hosts (alias, created_at, updated_at)
-		VALUES (?, ?, ?)
+		INSERT INTO hosts (alias, favorite, created_at, updated_at)
+		VALUES (?, 0, ?, ?)
 		ON CONFLICT(alias) DO NOTHING
 	`, alias, now, now); err != nil {
 		return fmt.Errorf("ensure host %q: %w", alias, err)
@@ -236,8 +147,7 @@ func (s *Store) EnsureHost(ctx context.Context, alias string) error {
 }
 
 // RenameHost updates the alias primary key for an existing metadata row.
-// If no row exists for oldAlias the call is a no-op (the row may not have been
-// created yet, which is fine; the new alias will be created on first connect).
+// If no row exists for oldAlias the call is a no-op.
 func (s *Store) RenameHost(ctx context.Context, oldAlias, newAlias string) error {
 	oldAlias = strings.TrimSpace(oldAlias)
 	newAlias = strings.TrimSpace(newAlias)
@@ -260,16 +170,6 @@ func (s *Store) migrate() error {
 	const schema = `
 		CREATE TABLE IF NOT EXISTS hosts (
 			alias TEXT PRIMARY KEY,
-			hostname TEXT NOT NULL DEFAULT '',
-			user_name TEXT NOT NULL DEFAULT '',
-			port INTEGER NOT NULL DEFAULT 22,
-			source TEXT NOT NULL DEFAULT '',
-			auth_mode TEXT NOT NULL DEFAULT '',
-			identity_file TEXT NOT NULL DEFAULT '',
-			provider TEXT NOT NULL DEFAULT '',
-			region TEXT NOT NULL DEFAULT '',
-			tags_json TEXT NOT NULL DEFAULT '[]',
-			note TEXT NOT NULL DEFAULT '',
 			favorite INTEGER NOT NULL DEFAULT 0,
 			last_connected_at TEXT,
 			created_at TEXT NOT NULL,
@@ -278,51 +178,27 @@ func (s *Store) migrate() error {
 
 		CREATE INDEX IF NOT EXISTS idx_hosts_favorite_alias
 		ON hosts (favorite DESC, alias ASC);
-
-		CREATE TABLE IF NOT EXISTS ignored_hosts (
-			alias TEXT PRIMARY KEY,
-			created_at TEXT NOT NULL
-		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
 
-	if err := s.ensureColumn("auth_mode", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("identity_file", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{name: "favorite", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{name: "last_connected_at", definition: "TEXT"},
+		{name: "created_at", definition: "TEXT NOT NULL DEFAULT ''"},
+		{name: "updated_at", definition: "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := s.ensureColumn(column.name, column.definition); err != nil {
+			return err
+		}
 	}
 
 	return nil
-}
-
-func loadIgnoredAliases(ctx context.Context, query interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}) (map[string]struct{}, error) {
-	rows, err := query.QueryContext(ctx, `SELECT alias FROM ignored_hosts`)
-	if err != nil {
-		return nil, fmt.Errorf("query ignored hosts: %w", err)
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	ignored := make(map[string]struct{})
-	for rows.Next() {
-		var alias string
-		if err := rows.Scan(&alias); err != nil {
-			return nil, fmt.Errorf("scan ignored host: %w", err)
-		}
-		ignored[alias] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate ignored hosts: %w", err)
-	}
-
-	return ignored, nil
 }
 
 func (s *Store) ensureColumn(name string, definition string) error {
@@ -348,7 +224,6 @@ type scanner interface {
 
 func scanHost(row scanner) (model.Host, error) {
 	var host model.Host
-	var tagsJSON string
 	var favorite int
 	var lastConnected sql.NullString
 	var createdAt string
@@ -356,16 +231,6 @@ func scanHost(row scanner) (model.Host, error) {
 
 	err := row.Scan(
 		&host.Alias,
-		&host.HostName,
-		&host.User,
-		&host.Port,
-		&host.Source,
-		&host.AuthMode,
-		&host.IdentityFile,
-		&host.Provider,
-		&host.Region,
-		&tagsJSON,
-		&host.Note,
 		&favorite,
 		&lastConnected,
 		&createdAt,
@@ -376,18 +241,19 @@ func scanHost(row scanner) (model.Host, error) {
 	}
 
 	host.Favorite = favorite == 1
-	if err := json.Unmarshal([]byte(tagsJSON), &host.Tags); err != nil {
-		return model.Host{}, fmt.Errorf("decode tags for %q: %w", host.Alias, err)
+
+	if strings.TrimSpace(createdAt) != "" {
+		host.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+		if err != nil {
+			return model.Host{}, fmt.Errorf("parse created_at for %q: %w", host.Alias, err)
+		}
 	}
 
-	host.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
-	if err != nil {
-		return model.Host{}, fmt.Errorf("parse created_at for %q: %w", host.Alias, err)
-	}
-
-	host.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return model.Host{}, fmt.Errorf("parse updated_at for %q: %w", host.Alias, err)
+	if strings.TrimSpace(updatedAt) != "" {
+		host.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+		if err != nil {
+			return model.Host{}, fmt.Errorf("parse updated_at for %q: %w", host.Alias, err)
+		}
 	}
 
 	if lastConnected.Valid {

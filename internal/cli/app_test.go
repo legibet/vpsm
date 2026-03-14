@@ -1,65 +1,26 @@
-package main
+package cli
 
 import (
 	"context"
-	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"vpsm/internal/config"
 	"vpsm/internal/sshconfig"
 	"vpsm/internal/store"
 )
-
-func TestIsUserInterruptErrorReturnsTrueForContextCanceled(t *testing.T) {
-	t.Parallel()
-
-	if !isUserInterruptError(context.Canceled) {
-		t.Fatal("expected context.Canceled to be treated as user interrupt")
-	}
-}
-
-func TestIsUserInterruptErrorReturnsTrueForExit130(t *testing.T) {
-	t.Parallel()
-
-	err := exec.Command("sh", "-c", "exit 130").Run()
-	if err == nil {
-		t.Fatal("expected exit 130 error")
-	}
-	if !isUserInterruptError(err) {
-		t.Fatalf("expected exit 130 to be treated as user interrupt, got %v", err)
-	}
-}
-
-func TestIsUserInterruptErrorReturnsFalseForOtherExitCodes(t *testing.T) {
-	t.Parallel()
-
-	err := exec.Command("sh", "-c", "exit 255").Run()
-	if err == nil {
-		t.Fatal("expected exit 255 error")
-	}
-	if isUserInterruptError(err) {
-		t.Fatalf("did not expect exit 255 to be treated as user interrupt: %v", err)
-	}
-}
 
 func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	paths := testPaths(t)
+	app := newTestApp(t, ctx)
 
-	st, err := store.Open(paths.DatabasePath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
-
-	if err := ensureManagedSetup(paths); err != nil {
+	if err := app.inventory.EnsureManagedSetup(); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
 	}
 
-	err = sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+	err := sshconfig.UpsertManagedHost(app.paths.ManagedConfigPath, sshconfig.ImportedHost{
 		Alias:         "prod-1",
 		HostName:      "203.0.113.10",
 		User:          "root",
@@ -75,19 +36,19 @@ func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 		t.Fatalf("upsert managed host: %v", err)
 	}
 
-	if err := runSet(ctx, paths, st, "prod-1", []string{"--user", "ubuntu"}); err != nil {
+	if err := app.runSet("prod-1", []string{"--user", "ubuntu"}); err != nil {
 		t.Fatalf("run set: %v", err)
 	}
 
-	hosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
+	managedHosts, err := sshconfig.ListManagedHosts(app.paths.ManagedConfigPath)
 	if err != nil {
 		t.Fatalf("list managed hosts: %v", err)
 	}
-	if len(hosts) != 1 {
-		t.Fatalf("expected 1 host, got %d", len(hosts))
+	if len(managedHosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(managedHosts))
 	}
 
-	host := hosts[0]
+	host := managedHosts[0]
 	if host.User != "ubuntu" {
 		t.Fatalf("expected updated user %q, got %q", "ubuntu", host.User)
 	}
@@ -105,5 +66,35 @@ func TestRunSetPreservesNetworkDirectives(t *testing.T) {
 	}
 	if len(host.RemoteForward) != 1 || host.RemoteForward[0] != "9090:localhost:9090" {
 		t.Fatalf("expected RemoteForward to be preserved, got %v", host.RemoteForward)
+	}
+}
+
+func newTestApp(t *testing.T, ctx context.Context) App {
+	t.Helper()
+
+	paths := testPaths(t)
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	return NewApp(ctx, paths, st)
+}
+
+func testPaths(t *testing.T) config.Paths {
+	t.Helper()
+
+	root := t.TempDir()
+	appDir := filepath.Join(root, "app")
+	sshDir := filepath.Join(root, ".ssh")
+
+	return config.Paths{
+		AppDir:            appDir,
+		DatabasePath:      filepath.Join(appDir, "vpsm.db"),
+		SSHConfigPath:     filepath.Join(sshDir, "config"),
+		ManagedConfigPath: filepath.Join(sshDir, "vpsm.conf"),
 	}
 }

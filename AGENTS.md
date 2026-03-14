@@ -15,12 +15,13 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## Current Architecture
 
-- `main.go`: CLI entrypoint, root context setup, and command routing.
-- `hostsource.go`: builds the display host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates metadata.
-- `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
-- `internal/app/keysetup.go`: orchestrates managed-host SSH key setup and `IdentityFile` write-back.
+- `main.go`: thin CLI entrypoint that delegates to `internal/cli`.
+- `internal/cli/`: command bootstrap, argument dispatch, CLI output, and TUI wiring.
+- `internal/inventory/`: builds the visible host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates local metadata.
+- `internal/hosts/`: thin use-case layer for managed-host add/update/delete and key-setup workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
+- `internal/session/`: SSH connect flow, file-browser session setup, and interrupt handling.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
-- `internal/store/`: SQLite metadata only, not the source of truth for hosts.
+- `internal/store/`: SQLite metadata only, not the source of truth for hosts. It now stores only local favorites and last-connected timestamps.
 - `internal/sshutil/`: builds `ssh` commands, askpass handling, host-key checks, and public-key install helpers.
 - `internal/filexfer/`: opens remote SFTP sessions over system `ssh -s sftp`, reads local/remote directories, and handles recursive upload/download helpers with progress callbacks.
 - `internal/secret/`: keychain-backed password helpers.
@@ -101,7 +102,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - Prefer concrete structs over interfaces unless an interface is clearly useful for a boundary.
 - Small local interfaces are acceptable for testing or scanning helpers; see `scanner` in `internal/store/store.go`.
-- Use pointers in patch/update structs when “unset vs empty value” matters; see `store.HostPatch`.
+- Keep patch structs narrow and task-oriented; `store.HostPatch` is intentionally limited to the metadata fields that still exist.
 - Use zero values deliberately, especially for optional fields.
 
 ## Error Handling
@@ -123,7 +124,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## SSH Config Editing Rules
 
-- Route managed-host create/update/delete flows through `internal/app/hosts.go` so SSH config, keychain, and metadata stay consistent.
+- Route managed-host create/update/delete flows through `internal/hosts/hosts.go` so SSH config, keychain, and metadata stay consistent.
 - For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers.
 - Validate managed host aliases through `internal/sshconfig.ValidateAlias` before writing `Host` entries.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
@@ -178,8 +179,9 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - SQLite is for local metadata only.
 - Main store operations now take `context.Context`; propagate the caller context on blocking DB paths.
-- Before updating metadata for a managed host, call `EnsureHost` when appropriate.
-- `MarkConnected` and favorites should continue to work for managed hosts.
+- The store only tracks `favorite`, `last_connected_at`, `created_at`, and `updated_at` per alias.
+- Before updating metadata for a host, call `EnsureHost` when appropriate.
+- `MarkConnected` and favorites should continue to work for both managed and system hosts.
 - Deleting a managed host should remove its local metadata; it should not leave behind a stale row that can resurrect old state later.
 - Avoid expanding metadata scope unless the data truly cannot live in SSH config or keychain.
 - Do not treat SQLite-only rows as inventory candidates; managed hosts must already exist in `~/.ssh/vpsm.conf`.
@@ -187,7 +189,7 @@ Automately update this file when you make changes to the codebase, architecture,
 ## Documentation / CLI Behavior
 
 - If you change commands or stage-1 limitations, update `README.md`.
-- Keep CLI help text in `main.go` aligned with actual behavior.
+- Keep CLI help text in `internal/cli/output.go` aligned with actual behavior.
 - If a compatibility command remains for UX reasons, explain that clearly instead of removing it silently.
 
 ## Commit Style

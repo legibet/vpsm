@@ -13,7 +13,6 @@ type Host struct {
 	Port            int
 	Source          string
 	Managed         bool
-	AuthMode        string
 	IdentityFile    string
 	ProxyJump       string
 	ProxyCommand    string
@@ -21,10 +20,6 @@ type Host struct {
 	LocalForward    []string
 	RemoteForward   []string
 	PasswordStored  bool
-	Provider        string
-	Region          string
-	Tags            []string
-	Note            string
 	Favorite        bool
 	LastConnectedAt *time.Time
 	CreatedAt       time.Time
@@ -40,8 +35,8 @@ func (h Host) SearchText() string {
 		h.IdentityFile,
 		h.ProxyJump,
 		h.ProxyCommand,
-		h.Note,
-		strings.Join(h.Tags, " "),
+		strings.Join(h.LocalForward, " "),
+		strings.Join(h.RemoteForward, " "),
 	}
 
 	return strings.ToLower(strings.Join(parts, " "))
@@ -73,14 +68,6 @@ func (h Host) LastConnectedLabel() string {
 	}
 
 	return h.LastConnectedAt.Local().Format(time.DateTime)
-}
-
-func (h Host) TagsLabel() string {
-	if len(h.Tags) == 0 {
-		return "-"
-	}
-
-	return strings.Join(h.Tags, ", ")
 }
 
 func (h Host) IdentityFileLabel() string {
