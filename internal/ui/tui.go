@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +24,7 @@ type Options struct {
 	UpdateHost     func(input UpdateHostInput) error
 	DeleteHost     func(alias string) error
 	SetupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
+	OpenFiles      func(alias string) (*exec.Cmd, error)
 	InitialStatus  string
 	InitialQuery   string
 }
@@ -91,6 +93,7 @@ type tuiModel struct {
 	updateHost     func(input UpdateHostInput) error
 	deleteHost     func(alias string) error
 	setupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
+	openFiles      func(alias string) (*exec.Cmd, error)
 }
 
 func Run(options Options) (string, error) {
@@ -106,6 +109,7 @@ func Run(options Options) (string, error) {
 		updateHost:     options.UpdateHost,
 		deleteHost:     options.DeleteHost,
 		setupHostKey:   options.SetupHostKey,
+		openFiles:      options.OpenFiles,
 	}
 	m.applyFilter()
 
@@ -268,6 +272,13 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.keySetupPlan = plan
 		m.setStatus("", statusInfo)
 		return m, nil
+	case "o":
+		if len(m.filtered) == 0 || m.openFiles == nil {
+			return m, nil
+		}
+		alias := m.currentAlias()
+		m.setStatus("Opening files for "+alias+"...", statusInfo)
+		return m, openFilesCmd(alias, m.openFiles)
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -1094,6 +1105,7 @@ func (m tuiModel) footerHints() []footerHint {
 				{"e", "edit"},
 				{"d", "del"},
 				{"i", "key"},
+				{"o", "files"},
 				{"f", "fav"},
 				{"r", "refresh"},
 				{"↵", "connect"},
@@ -1104,6 +1116,7 @@ func (m tuiModel) footerHints() []footerHint {
 			{"tab", "pane"},
 			{"/", "search"},
 			{"n", "new"},
+			{"o", "files"},
 			{"f", "fav"},
 			{"r", "refresh"},
 			{"↵", "connect"},
@@ -1117,6 +1130,7 @@ func (m tuiModel) footerHints() []footerHint {
 			{"e", "edit"},
 			{"d", "delete"},
 			{"i", "key"},
+			{"o", "files"},
 			{"f", "fav"},
 			{"r", "refresh"},
 			{"↵", "connect"},
@@ -1126,6 +1140,7 @@ func (m tuiModel) footerHints() []footerHint {
 	return []footerHint{
 		{"/", "search"},
 		{"n", "new"},
+		{"o", "files"},
 		{"f", "fav"},
 		{"r", "refresh"},
 		{"↵", "connect"},
@@ -1159,13 +1174,6 @@ func (m tuiModel) formPanelWidth() int {
 
 func (m tuiModel) isCompactLayout() bool {
 	return m.viewWidth() < 96
-}
-
-func (m tuiModel) browsePaneLabel() string {
-	if m.browsePane == browsePaneDetails {
-		return "details"
-	}
-	return "inventory"
 }
 
 func formInputWidth(panelWidth int) int {
@@ -1346,6 +1354,26 @@ func setupHostKeyCmd(alias string, setup func(string, io.Reader, io.Writer, io.W
 		}
 		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
 	})
+}
+
+func openFilesCmd(alias string, build func(string) (*exec.Cmd, error)) tea.Cmd {
+	return func() tea.Msg {
+		if build == nil {
+			return hostsLoadedMsg{err: fmt.Errorf("files action is unavailable")}
+		}
+
+		cmd, err := build(alias)
+		if err != nil {
+			return hostsLoadedMsg{err: err}
+		}
+
+		return tea.ExecProcess(cmd, func(err error) tea.Msg {
+			if err != nil {
+				return hostsLoadedMsg{err: err}
+			}
+			return hostsLoadedMsg{status: "Closed files for " + alias, selectAlias: alias}
+		})()
+	}
 }
 
 type keySetupExecCommand struct {

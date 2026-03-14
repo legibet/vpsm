@@ -50,6 +50,17 @@ func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host,
 	return buildSSHCommandContext(ctx, host, password, extraArgs)
 }
 
+// BuildSubsystemCommandWithPasswordContext builds an ssh command that requests a
+// remote subsystem such as "sftp".
+func BuildSubsystemCommandWithPasswordContext(ctx context.Context, host model.Host, password string, subsystem string) (*exec.Cmd, error) {
+	subsystem = strings.TrimSpace(subsystem)
+	if subsystem == "" {
+		return nil, fmt.Errorf("ssh subsystem is required")
+	}
+
+	return buildSSHCommandContext(ctx, host, password, []string{"-s", subsystem})
+}
+
 func buildSSHCommandContext(ctx context.Context, host model.Host, password string, extraArgs []string) (*exec.Cmd, error) {
 	args, err := BuildArgs(host)
 	if err != nil {

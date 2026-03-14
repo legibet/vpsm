@@ -22,6 +22,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts.
 - `internal/sshutil/`: builds `ssh` commands, askpass handling, host-key checks, and public-key install helpers.
+- `internal/filexfer/`: opens remote SFTP sessions over system `ssh -s sftp`, reads local/remote directories, and handles recursive upload/download helpers with progress callbacks.
 - `internal/secret/`: keychain-backed password helpers.
 - `internal/ui/`: Bubble Tea TUI and forms.
 - `internal/model/`: core `Host` type and display helpers.
@@ -141,12 +142,15 @@ Automately update this file when you make changes to the codebase, architecture,
 - Keep using system `ssh`.
 - Build arguments through `internal/sshutil.BuildArgs`.
 - Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
+- Files mode opens a remote SFTP subsystem through system `ssh` using `internal/sshutil.BuildSubsystemCommandWithPasswordContext`; do not replace this with a Go SSH client transport.
 - For stored-password connections, run `internal/sshutil.EnsureHostKeyAcceptedContext` before askpass so first-connect host key confirmation happens explicitly.
 - TUI key setup should reuse an existing `IdentityFile` when possible; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
 - TUI key setup only supports concrete local `IdentityFile` paths (absolute or `~/...`); reject SSH token or environment-variable forms instead of guessing a filesystem location.
 - Public-key install flows must append idempotently to remote `authorized_keys`; do not overwrite the file.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password automation should continue to use the askpass helper path, not `sshpass`.
+- The file browser (`vpsm files <alias>`) uses `github.com/pkg/sftp` only as a protocol client on top of system `ssh -s sftp`. Keep authentication and host-key handling on the system `ssh` side.
+- Because `ssh -s sftp` uses stdin/stdout as protocol pipes, file mode cannot rely on in-session interactive password or key-passphrase prompts. Prefer stored passwords or non-interactive key auth (for example `ssh-agent`).
 
 ## TUI Rules
 
@@ -160,7 +164,9 @@ Automately update this file when you make changes to the codebase, architecture,
 - The list view should stay compact and easy to scan.
 - The server list currently renders one host per row: display name and alias on the left, target meta and source tag (e.g. `vpsm`, `config`, `work`) on the same line.
 - Footer hints are dynamic: managed hosts show edit/delete/key actions; system hosts omit those and only show new/fav/refresh.
+- Browse mode now also includes an `o` action to open the split-pane file browser for the selected host.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
+- The file browser is a separate full-screen Bubble Tea interface with local/remote panes, `hjkl` navigation, direct `t` transfer to the opposite pane, and modal prompts for mkdir/rename/delete confirmations.
 - Interactive key-setup work that needs terminal control should pause Bubble Tea with `tea.Exec`/`tea.ExecProcess`; do not try to run first-time host-key confirmation in a background `tea.Cmd`.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.

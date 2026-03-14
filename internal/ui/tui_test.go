@@ -115,6 +115,25 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 	}
 }
 
+func TestFooterIncludesFilesHint(t *testing.T) {
+	t.Parallel()
+
+	m := tuiModel{
+		width:  120,
+		height: 24,
+		hosts: []model.Host{
+			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
+		},
+		styles: newStyles(true),
+	}
+	m.applyFilter()
+
+	footer := m.footerText()
+	if !strings.Contains(footer, "o files") {
+		t.Fatalf("expected files hint in footer, got %q", footer)
+	}
+}
+
 func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	t.Parallel()
 

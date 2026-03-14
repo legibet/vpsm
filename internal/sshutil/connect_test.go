@@ -137,3 +137,20 @@ func TestBuildRemoteCommandWithPasswordIncludesRemoteCommand(t *testing.T) {
 		t.Fatalf("expected remote command at the end, got %q", got)
 	}
 }
+
+func TestBuildSubsystemCommandWithPasswordIncludesSubsystemRequest(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := BuildSubsystemCommandWithPasswordContext(context.Background(), model.Host{
+		Alias:    "demo",
+		HostName: "10.0.0.5",
+		User:     "root",
+	}, "s3cr3t", "sftp")
+	if err != nil {
+		t.Fatalf("build subsystem command: %v", err)
+	}
+
+	if got := cmd.Args[len(cmd.Args)-2:]; !reflect.DeepEqual(got, []string{"-s", "sftp"}) {
+		t.Fatalf("expected subsystem args at the end, got %#v", got)
+	}
+}

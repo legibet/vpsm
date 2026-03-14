@@ -11,6 +11,7 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 - searching by name, alias, host, or user
 - storing SSH passwords in the system keychain
 - generating or reusing SSH keys and installing the public key from the TUI
+- browsing local and remote files in a split-pane file browser
 - launching your normal `ssh` command without replacing your workflow
 
 ## What to expect
@@ -79,6 +80,7 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 ./vpsm favorite my-box on
 ./vpsm import-ssh
 ./vpsm ssh my-box
+./vpsm files my-box
 ./vpsm delete my-box
 ```
 
@@ -91,6 +93,7 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 - `e`: edit
 - `d`: delete
 - `i`: configure SSH key for the selected host
+- `o`: open the file browser for the selected host
 - `f`: favorite
 - `r`: refresh
 - `tab`: switch panes in compact layout
@@ -109,6 +112,8 @@ Hong Kong Production · hk-prod-01  root @ 203.0.113.10
 
 That keeps the list compact and easy to scan without hiding the technical alias you need for commands.
 
+The file browser opens as a separate full-screen interface. It uses `hjkl` and `tab` for navigation, supports local/remote split-pane browsing, and transfers the selected file or directory directly with `t` to the opposite pane. It can create directories, rename entries, delete entries, refresh, and transfer files or directories recursively.
+
 ## A few useful notes
 
 - If you already have a large `~/.ssh/config`, `vpsm` will not pull those hosts into its list automatically.
@@ -120,3 +125,4 @@ That keeps the list compact and easy to scan without hiding the technical alias 
 - Reusing an existing `IdentityFile` for TUI key setup currently requires a concrete local path such as `~/.ssh/id_ed25519` or an absolute path.
 - Favorites and connection history stay local to `vpsm`.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.
+- `vpsm files <alias>` uses system `ssh -s sftp` under the hood. Because that session uses stdin/stdout for the SFTP protocol, file mode currently needs either a stored password or non-interactive key authentication (for example an agent-backed key).

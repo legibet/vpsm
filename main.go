@@ -19,6 +19,7 @@ import (
 	"vpsm/internal/app"
 	"vpsm/internal/cmdutil"
 	"vpsm/internal/config"
+	"vpsm/internal/filexfer"
 	"vpsm/internal/model"
 	"vpsm/internal/secret"
 	"vpsm/internal/sshutil"
@@ -108,6 +109,11 @@ func run(args []string) error {
 			return errors.New("usage: vpsm ssh <alias>")
 		}
 		return connectHost(ctx, paths, st, args[1])
+	case "files":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm files <alias>")
+		}
+		return runFiles(ctx, paths, st, args[1])
 	case "help", "-h", "--help":
 		printHelp()
 		return nil
@@ -185,6 +191,9 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 		},
 		SetupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return hostService.SetupManagedHostKey(ctx, alias, stdin, stdout, stderr)
+		},
+		OpenFiles: func(alias string) (*exec.Cmd, error) {
+			return buildFilesCommand(alias)
 		},
 	})
 	if err != nil {
@@ -560,6 +569,59 @@ func connectHost(ctx context.Context, paths config.Paths, st *store.Store, alias
 	return nil
 }
 
+func runFiles(ctx context.Context, paths config.Paths, st *store.Store, alias string) error {
+	alias = app.NormalizeAlias(alias)
+	host, err := getHostForDisplay(ctx, paths, st, alias)
+	if err != nil {
+		return err
+	}
+
+	password, hasPassword, err := secret.GetPasswordIfExists(alias)
+	if err != nil {
+		return err
+	}
+
+	if err := sshutil.EnsureHostKeyAcceptedContext(ctx, host, os.Stdin, os.Stdout, os.Stderr); err != nil {
+		return err
+	}
+
+	remoteFS, err := filexfer.OpenRemoteFSContext(ctx, host, password)
+	if err != nil {
+		if !hasPassword || strings.TrimSpace(password) == "" {
+			return fmt.Errorf("%w; files mode needs a stored password or non-interactive key auth", err)
+		}
+		return err
+	}
+	defer func() {
+		_ = remoteFS.Close()
+	}()
+
+	remoteDir, err := remoteFS.Getwd()
+	if err != nil {
+		return err
+	}
+
+	if err := st.MarkConnected(ctx, alias); err != nil {
+		return err
+	}
+
+	return ui.RunFileBrowser(ui.FileBrowserOptions{
+		Context:   ctx,
+		Alias:     alias,
+		RemoteDir: remoteDir,
+		Remote:    remoteFS,
+	})
+}
+
+func buildFilesCommand(alias string) (*exec.Cmd, error) {
+	bin, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve vpsm binary: %w", err)
+	}
+
+	return exec.Command(bin, "files", alias), nil
+}
+
 func isUserInterruptError(err error) bool {
 	if err == nil {
 		return false
@@ -616,6 +678,7 @@ Usage:
   vpsm favorite <alias> off   Remove favorite mark
   vpsm import-ssh             Explain the current managed-only workflow
   vpsm ssh <alias>            Connect with system ssh
+  vpsm files <alias>          Open the file browser
   vpsm help                   Show this help
 `))
 }
