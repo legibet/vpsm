@@ -62,6 +62,7 @@ type AddManagedHostInput struct {
 	User          string
 	Port          int
 	ProxyJump     string
+	ProxyCommand  string
 	ForwardAgent  string
 	LocalForward  string
 	RemoteForward string
@@ -79,6 +80,7 @@ type UpdateManagedHostInput struct {
 	User          string
 	Port          int
 	ProxyJump     string
+	ProxyCommand  string
 	ForwardAgent  string
 	LocalForward  string
 	RemoteForward string
@@ -136,6 +138,7 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		Port:          input.Port,
 		IdentityFile:  input.IdentityFile,
 		ProxyJump:     input.ProxyJump,
+		ProxyCommand:  input.ProxyCommand,
 		ForwardAgent:  input.ForwardAgent,
 		LocalForward:  splitForwardValue(input.LocalForward),
 		RemoteForward: splitForwardValue(input.RemoteForward),
@@ -209,6 +212,7 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 		Port:          input.Port,
 		IdentityFile:  input.IdentityFile,
 		ProxyJump:     input.ProxyJump,
+		ProxyCommand:  input.ProxyCommand,
 		ForwardAgent:  input.ForwardAgent,
 		LocalForward:  splitForwardValue(input.LocalForward),
 		RemoteForward: splitForwardValue(input.RemoteForward),
@@ -254,6 +258,7 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 		Port:          input.Port,
 		IdentityFile:  input.IdentityFile,
 		ProxyJump:     input.ProxyJump,
+		ProxyCommand:  input.ProxyCommand,
 		ForwardAgent:  input.ForwardAgent,
 		LocalForward:  splitForwardValue(input.LocalForward),
 		RemoteForward: splitForwardValue(input.RemoteForward),

@@ -72,7 +72,7 @@ func run(args []string) error {
 		return runAdd(ctx, paths, st, args[1:])
 	case "set":
 		if len(args) < 2 {
-			return errors.New("usage: vpsm set <alias> [--name ...] [--host ...] [--user ...] [--port ...] [--identity-file ...]")
+			return errors.New("usage: vpsm set <alias> [--name ...] [--host ...] [--user ...] [--port ...] [--proxy-jump ...] [--proxy-command ...] [--forward-agent ...] [--local-forward ...] [--remote-forward ...] [--identity-file ...]")
 		}
 		return runSet(ctx, paths, st, args[1], args[2:])
 	case "set-password":
@@ -154,6 +154,7 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 				User:          input.User,
 				Port:          input.Port,
 				ProxyJump:     input.ProxyJump,
+				ProxyCommand:  input.ProxyCommand,
 				ForwardAgent:  input.ForwardAgent,
 				LocalForward:  input.LocalForward,
 				RemoteForward: input.RemoteForward,
@@ -170,6 +171,7 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 				User:          input.User,
 				Port:          input.Port,
 				ProxyJump:     input.ProxyJump,
+				ProxyCommand:  input.ProxyCommand,
 				ForwardAgent:  input.ForwardAgent,
 				LocalForward:  input.LocalForward,
 				RemoteForward: input.RemoteForward,
@@ -261,6 +263,11 @@ func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []str
 	var user string
 	var port int
 	var favorite bool
+	var proxyJump string
+	var proxyCommand string
+	var forwardAgent string
+	var localForward string
+	var remoteForward string
 	var identityFile string
 	var password string
 
@@ -269,6 +276,11 @@ func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []str
 	fs.StringVar(&hostName, "host", "", "Host or IP")
 	fs.StringVar(&user, "user", "", "SSH user")
 	fs.IntVar(&port, "port", 22, "SSH port")
+	fs.StringVar(&proxyJump, "proxy-jump", "", "SSH ProxyJump value")
+	fs.StringVar(&proxyCommand, "proxy-command", "", "SSH ProxyCommand value")
+	fs.StringVar(&forwardAgent, "forward-agent", "", "SSH ForwardAgent value")
+	fs.StringVar(&localForward, "local-forward", "", "Comma-separated SSH LocalForward values")
+	fs.StringVar(&remoteForward, "remote-forward", "", "Comma-separated SSH RemoteForward values")
 	fs.StringVar(&identityFile, "identity-file", "", "SSH private key path")
 	fs.StringVar(&password, "password", "", "SSH password to store in keychain")
 	fs.BoolVar(&favorite, "favorite", false, "Mark as favorite")
@@ -279,14 +291,19 @@ func runAdd(ctx context.Context, paths config.Paths, st *store.Store, args []str
 
 	alias = app.NormalizeAlias(alias)
 	if err := hostService.AddManagedHost(ctx, app.AddManagedHostInput{
-		Alias:        alias,
-		DisplayName:  displayName,
-		HostName:     hostName,
-		User:         user,
-		Port:         port,
-		IdentityFile: identityFile,
-		Password:     password,
-		Favorite:     favorite,
+		Alias:         alias,
+		DisplayName:   displayName,
+		HostName:      hostName,
+		User:          user,
+		Port:          port,
+		ProxyJump:     proxyJump,
+		ProxyCommand:  proxyCommand,
+		ForwardAgent:  forwardAgent,
+		LocalForward:  localForward,
+		RemoteForward: remoteForward,
+		IdentityFile:  identityFile,
+		Password:      password,
+		Favorite:      favorite,
 	}); err != nil {
 		return err
 	}
@@ -305,12 +322,22 @@ func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias stri
 	var hostName cmdutil.OptionalString
 	var user cmdutil.OptionalString
 	var portValue string
+	var proxyJump cmdutil.OptionalString
+	var proxyCommand cmdutil.OptionalString
+	var forwardAgent cmdutil.OptionalString
+	var localForward cmdutil.OptionalString
+	var remoteForward cmdutil.OptionalString
 	var identityFile cmdutil.OptionalString
 
 	fs.Var(&displayName, "name", "Display name")
 	fs.Var(&hostName, "host", "Host or IP")
 	fs.Var(&user, "user", "SSH user")
 	fs.StringVar(&portValue, "port", "", "SSH port")
+	fs.Var(&proxyJump, "proxy-jump", "SSH ProxyJump value")
+	fs.Var(&proxyCommand, "proxy-command", "SSH ProxyCommand value")
+	fs.Var(&forwardAgent, "forward-agent", "SSH ForwardAgent value")
+	fs.Var(&localForward, "local-forward", "Comma-separated SSH LocalForward values")
+	fs.Var(&remoteForward, "remote-forward", "Comma-separated SSH RemoteForward values")
 	fs.Var(&identityFile, "identity-file", "SSH private key path")
 
 	if err := fs.Parse(args); err != nil {
@@ -324,12 +351,17 @@ func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias stri
 	}
 
 	next := ui.UpdateHostInput{
-		Alias:        alias,
-		DisplayName:  host.DisplayName,
-		HostName:     host.HostName,
-		User:         host.User,
-		Port:         host.Port,
-		IdentityFile: host.IdentityFile,
+		Alias:         alias,
+		DisplayName:   host.DisplayName,
+		HostName:      host.HostName,
+		User:          host.User,
+		Port:          host.Port,
+		ProxyJump:     host.ProxyJump,
+		ProxyCommand:  host.ProxyCommand,
+		ForwardAgent:  host.ForwardAgent,
+		LocalForward:  joinForwardValues(host.LocalForward),
+		RemoteForward: joinForwardValues(host.RemoteForward),
+		IdentityFile:  host.IdentityFile,
 	}
 	changed := false
 	if displayName.IsSet() {
@@ -352,6 +384,26 @@ func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias stri
 		next.Port = parsed
 		changed = true
 	}
+	if proxyJump.IsSet() {
+		next.ProxyJump = proxyJump.Value()
+		changed = true
+	}
+	if proxyCommand.IsSet() {
+		next.ProxyCommand = proxyCommand.Value()
+		changed = true
+	}
+	if forwardAgent.IsSet() {
+		next.ForwardAgent = forwardAgent.Value()
+		changed = true
+	}
+	if localForward.IsSet() {
+		next.LocalForward = localForward.Value()
+		changed = true
+	}
+	if remoteForward.IsSet() {
+		next.RemoteForward = remoteForward.Value()
+		changed = true
+	}
 	if identityFile.IsSet() {
 		next.IdentityFile = identityFile.Value()
 		changed = true
@@ -362,12 +414,17 @@ func runSet(ctx context.Context, paths config.Paths, st *store.Store, alias stri
 	}
 
 	if err := hostService.UpdateManagedHost(ctx, app.UpdateManagedHostInput{
-		Alias:        alias,
-		DisplayName:  next.DisplayName,
-		HostName:     next.HostName,
-		User:         next.User,
-		Port:         next.Port,
-		IdentityFile: next.IdentityFile,
+		Alias:         alias,
+		DisplayName:   next.DisplayName,
+		HostName:      next.HostName,
+		User:          next.User,
+		Port:          next.Port,
+		ProxyJump:     next.ProxyJump,
+		ProxyCommand:  next.ProxyCommand,
+		ForwardAgent:  next.ForwardAgent,
+		LocalForward:  next.LocalForward,
+		RemoteForward: next.RemoteForward,
+		IdentityFile:  next.IdentityFile,
 	}); err != nil {
 		return err
 	}
@@ -549,8 +606,8 @@ Usage:
   vpsm tui                    Open the TUI
   vpsm list                   Print vpsm-managed hosts
   vpsm show <alias>           Show one managed host
-  vpsm add --alias ...        Add a vpsm-managed host (optional --name)
-  vpsm set <alias>            Update a vpsm-managed host (optional --name)
+  vpsm add --alias ...        Add a vpsm-managed host (optional --name/--proxy-*)
+  vpsm set <alias>            Update a vpsm-managed host (optional --name/--proxy-*)
   vpsm set-password <alias>   Store an SSH password in the system keychain
   vpsm clear-password <alias> Delete a stored SSH password
   vpsm delete <alias>         Delete a vpsm-managed host
@@ -604,4 +661,11 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func joinForwardValues(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.Join(values, ", ")
 }

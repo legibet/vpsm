@@ -17,6 +17,7 @@ type CreateHostInput struct {
 	User          string
 	Port          int
 	ProxyJump     string
+	ProxyCommand  string
 	ForwardAgent  string
 	LocalForward  string
 	RemoteForward string
@@ -39,6 +40,7 @@ const (
 	fieldUser
 	fieldPort
 	fieldProxyJump
+	fieldProxyCommand
 	fieldForwardAgent
 	fieldLocalForward
 	fieldRemoteForward
@@ -52,7 +54,7 @@ const (
 var addFormFocusOrder = []int{
 	fieldAlias, fieldDisplayName, fieldHostName, fieldUser, fieldPort,
 	fieldIdentityFile, fieldPassword,
-	fieldProxyJump, fieldForwardAgent, fieldLocalForward, fieldRemoteForward,
+	fieldProxyJump, fieldProxyCommand, fieldForwardAgent, fieldLocalForward, fieldRemoteForward,
 }
 
 var addFormFields = []formField{
@@ -64,6 +66,7 @@ var addFormFields = []formField{
 	{fieldIdentityFile, "Key file", "── Auth ──", false},
 	{fieldPassword, "Password", "", false},
 	{fieldProxyJump, "ProxyJump", "── Network ──", false},
+	{fieldProxyCommand, "ProxyCommand", "", false},
 	{fieldForwardAgent, "ForwardAgent", "", false},
 	{fieldLocalForward, "LocalForward", "", false},
 	{fieldRemoteForward, "RemoteFwd", "", false},
@@ -84,6 +87,7 @@ func newAddForm() addForm {
 	inputs[fieldUser] = newTextInput("root", 24)
 	inputs[fieldPort] = newTextInput("22", 8)
 	inputs[fieldProxyJump] = newTextInput("bastion.example.com", 48)
+	inputs[fieldProxyCommand] = newTextInput("ssh -W %h:%p bastion", 48)
 	inputs[fieldForwardAgent] = newTextInput("yes or no", 8)
 	inputs[fieldLocalForward] = newTextInput("8080:localhost:80, 9090:...", 48)
 	inputs[fieldRemoteForward] = newTextInput("9090:localhost:9090, ...", 48)
@@ -219,6 +223,7 @@ func (f *addForm) values() (CreateHostInput, error) {
 		User:          strings.TrimSpace(f.inputs[fieldUser].Value()),
 		Port:          port,
 		ProxyJump:     strings.TrimSpace(f.inputs[fieldProxyJump].Value()),
+		ProxyCommand:  strings.TrimSpace(f.inputs[fieldProxyCommand].Value()),
 		ForwardAgent:  strings.TrimSpace(f.inputs[fieldForwardAgent].Value()),
 		LocalForward:  strings.TrimSpace(f.inputs[fieldLocalForward].Value()),
 		RemoteForward: strings.TrimSpace(f.inputs[fieldRemoteForward].Value()),

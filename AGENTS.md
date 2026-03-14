@@ -128,6 +128,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
 - Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
 - Managed hosts support extended directives: ProxyJump, ProxyCommand, ForwardAgent, LocalForward, RemoteForward. These are written after IdentityFile in the managed config.
+- CLI and TUI managed-host update flows must round-trip all configured network directives on partial edits; do not silently drop ProxyCommand or forwarding settings when only one field changes.
 - The parser (`importer.go`) recognizes these directives for both managed and system hosts. Strings use fill-if-empty merge; forward slices use first-block-wins.
 - Managed aliases must round-trip safely through SSH config parsing: reject whitespace, wildcard, negation, and quoted aliases.
 - Preserve the main SSH config and only ensure the managed `Include` is present.
@@ -163,7 +164,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Interactive key-setup work that needs terminal control should pause Bubble Tea with `tea.Exec`/`tea.ExecProcess`; do not try to run first-time host-key confirmation in a background `tea.Cmd`.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
-- The detail panel shows a Source row and a Network section (ProxyJump, ForwardAgent, LocalForward, RemoteForward) when directives are present.
+- The detail panel shows a Source row and a Network section (ProxyJump, ProxyCommand, ForwardAgent, LocalForward, RemoteForward) when directives are present.
 - If a display name exists, show it without hiding the technical alias completely.
 - Keep key hints accurate when you change interactions.
 

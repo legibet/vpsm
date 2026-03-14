@@ -115,6 +115,51 @@ func TestAddManagedHostPreservesMultipleForwardRules(t *testing.T) {
 	}
 }
 
+func TestUpdateManagedHostPersistsProxyCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "root",
+		ProxyCommand: "ssh -W %h:%p old-bastion",
+	}
+	passwords := newFakePasswordStore()
+	metadata := newFakeMetadataStore()
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		metadata:     metadata,
+	}
+
+	err := svc.UpdateManagedHost(ctx, UpdateManagedHostInput{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "ubuntu",
+		ProxyCommand: "ssh -W %h:%p bastion",
+	})
+	if err != nil {
+		t.Fatalf("update managed host: %v", err)
+	}
+
+	host, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get managed host: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected managed host to still exist")
+	}
+	if host.ProxyCommand != "ssh -W %h:%p bastion" {
+		t.Fatalf("expected ProxyCommand to be updated, got %q", host.ProxyCommand)
+	}
+	if host.User != "ubuntu" {
+		t.Fatalf("expected updated user %q, got %q", "ubuntu", host.User)
+	}
+}
+
 func TestAddManagedHostRejectsInvalidAliasBeforeWriting(t *testing.T) {
 	t.Parallel()
 

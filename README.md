@@ -63,6 +63,8 @@ Open the TUI:
 
 If the list is empty, press `n` in the TUI to add your first managed host.
 
+`vpsm add` and `vpsm set` also accept optional `--proxy-jump`, `--proxy-command`, `--forward-agent`, `--local-forward`, and `--remote-forward` flags. Forward flags take comma-separated SSH forward rules.
+
 ## Common commands
 
 ```bash

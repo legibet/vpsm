@@ -46,6 +46,29 @@ func TestUpdateForwardsPasteToEditForm(t *testing.T) {
 	}
 }
 
+func TestEditFormRoundTripsProxyCommand(t *testing.T) {
+	t.Parallel()
+
+	form := newEditForm(model.Host{
+		Alias:        "demo",
+		HostName:     "203.0.113.10",
+		Port:         22,
+		ProxyCommand: "ssh -W %h:%p bastion",
+	})
+
+	if got := form.inputs[editFieldProxyCommand].Value(); got != "ssh -W %h:%p bastion" {
+		t.Fatalf("expected ProxyCommand input to be prefilled, got %q", got)
+	}
+
+	values, err := form.values()
+	if err != nil {
+		t.Fatalf("form values: %v", err)
+	}
+	if values.ProxyCommand != "ssh -W %h:%p bastion" {
+		t.Fatalf("expected ProxyCommand to round-trip, got %q", values.ProxyCommand)
+	}
+}
+
 func TestCompactBrowseViewDefaultsToServers(t *testing.T) {
 	t.Parallel()
 

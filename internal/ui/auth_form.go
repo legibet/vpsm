@@ -20,6 +20,7 @@ type UpdateHostInput struct {
 	User          string
 	Port          int
 	ProxyJump     string
+	ProxyCommand  string
 	ForwardAgent  string
 	LocalForward  string
 	RemoteForward string
@@ -43,6 +44,7 @@ const (
 	editFieldUser
 	editFieldPort
 	editFieldProxyJump
+	editFieldProxyCommand
 	editFieldForwardAgent
 	editFieldLocalForward
 	editFieldRemoteForward
@@ -55,7 +57,7 @@ const (
 var editFormFocusOrder = []int{
 	editFieldAlias, editFieldDisplayName, editFieldHostName, editFieldUser, editFieldPort,
 	editFieldIdentity, editFieldPassword,
-	editFieldProxyJump, editFieldForwardAgent, editFieldLocalForward, editFieldRemoteForward,
+	editFieldProxyJump, editFieldProxyCommand, editFieldForwardAgent, editFieldLocalForward, editFieldRemoteForward,
 }
 
 var editFormFields = []formField{
@@ -67,6 +69,7 @@ var editFormFields = []formField{
 	{editFieldIdentity, "Key file", "── Auth ──", false},
 	{editFieldPassword, "Password", "", false},
 	{editFieldProxyJump, "ProxyJump", "── Network ──", false},
+	{editFieldProxyCommand, "ProxyCommand", "", false},
 	{editFieldForwardAgent, "ForwardAgent", "", false},
 	{editFieldLocalForward, "LocalForward", "", false},
 	{editFieldRemoteForward, "RemoteFwd", "", false},
@@ -95,6 +98,8 @@ func newEditForm(host model.Host) editForm {
 	inputs[editFieldPort].SetValue(strconv.Itoa(max(host.Port, 22)))
 	inputs[editFieldProxyJump] = newTextInput("bastion.example.com", 48)
 	inputs[editFieldProxyJump].SetValue(host.ProxyJump)
+	inputs[editFieldProxyCommand] = newTextInput("ssh -W %h:%p bastion", 48)
+	inputs[editFieldProxyCommand].SetValue(host.ProxyCommand)
 	inputs[editFieldForwardAgent] = newTextInput("yes or no", 8)
 	inputs[editFieldForwardAgent].SetValue(host.ForwardAgent)
 	inputs[editFieldLocalForward] = newTextInput("8080:localhost:80, 9090:...", 48)
@@ -239,6 +244,7 @@ func (f *editForm) values() (UpdateHostInput, error) {
 		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
 		Port:          port,
 		ProxyJump:     strings.TrimSpace(f.inputs[editFieldProxyJump].Value()),
+		ProxyCommand:  strings.TrimSpace(f.inputs[editFieldProxyCommand].Value()),
 		ForwardAgent:  strings.TrimSpace(f.inputs[editFieldForwardAgent].Value()),
 		LocalForward:  strings.TrimSpace(f.inputs[editFieldLocalForward].Value()),
 		RemoteForward: strings.TrimSpace(f.inputs[editFieldRemoteForward].Value()),
