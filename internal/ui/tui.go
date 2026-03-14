@@ -45,8 +45,8 @@ const (
 )
 
 const (
-	compactFormLabelWidth = 13
-	listPanelHeaderRows   = 2
+	formLabelWidth      = 15
+	listPanelHeaderRows = 2
 )
 
 type hostsLoadedMsg struct {
@@ -1023,16 +1023,7 @@ func (m tuiModel) bodyHeight() int {
 }
 
 func (m tuiModel) formWidth() int {
-	panelWidth := m.formPanelWidth()
-	bodyHeight := m.bodyHeight()
-	if useCompactFormLayout(panelWidth, bodyHeight) {
-		return compactFormInputWidth(panelWidth)
-	}
-	width := panelWidth - 6
-	if width < 16 {
-		width = 16
-	}
-	return width
+	return formInputWidth(m.formPanelWidth())
 }
 
 func (m tuiModel) footerHints() []footerHint {
@@ -1170,20 +1161,49 @@ func (m tuiModel) browsePaneLabel() string {
 	return "inventory"
 }
 
-func useCompactFormLayout(panelWidth int, panelHeight int) bool {
-	contentWidth := panelWidth - 6
-	if contentWidth < 36 {
-		return false
-	}
-	return panelWidth < 72 || panelHeight < 24
-}
-
-func compactFormInputWidth(panelWidth int) int {
-	width := panelWidth - 6 - compactFormLabelWidth - 1
+func formInputWidth(panelWidth int) int {
+	// 6 = panel border+padding, 2 = indicator column ("* "), formLabelWidth = label
+	width := panelWidth - 6 - 2 - formLabelWidth
 	if width < 16 {
 		width = 16
 	}
 	return width
+}
+
+// formField defines a field in the add/edit form with its rendering order.
+type formField struct {
+	index    int
+	label    string
+	section  string // section header rendered before this field; empty for none
+	required bool
+}
+
+// scrollFormContent scrolls the joined body string so that focusLine is visible
+// within the given available height. Returns the (possibly trimmed) body.
+func scrollFormContent(body string, focusLine int, availableHeight int) string {
+	lines := strings.Split(body, "\n")
+	total := len(lines)
+	if total <= availableHeight {
+		return body
+	}
+
+	start := focusLine - availableHeight/2
+	if start < 0 {
+		start = 0
+	}
+	if start+availableHeight > total {
+		start = total - availableHeight
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	end := start + availableHeight
+	if end > total {
+		end = total
+	}
+
+	return strings.Join(lines[start:end], "\n")
 }
 
 func listMeta(host model.Host) string {

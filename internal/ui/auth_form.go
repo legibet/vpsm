@@ -51,6 +51,27 @@ const (
 	editFieldCount
 )
 
+// editFormFocusOrder defines the Tab traversal order to match the visual layout.
+var editFormFocusOrder = []int{
+	editFieldAlias, editFieldDisplayName, editFieldHostName, editFieldUser, editFieldPort,
+	editFieldIdentity, editFieldPassword,
+	editFieldProxyJump, editFieldForwardAgent, editFieldLocalForward, editFieldRemoteForward,
+}
+
+var editFormFields = []formField{
+	{editFieldAlias, "Alias", "", true},
+	{editFieldDisplayName, "Name", "", false},
+	{editFieldHostName, "Host / IP", "", true},
+	{editFieldUser, "User", "", false},
+	{editFieldPort, "Port", "", false},
+	{editFieldIdentity, "Key file", "── Auth ──", false},
+	{editFieldPassword, "Password", "", false},
+	{editFieldProxyJump, "ProxyJump", "── Network ──", false},
+	{editFieldForwardAgent, "ForwardAgent", "", false},
+	{editFieldLocalForward, "LocalForward", "", false},
+	{editFieldRemoteForward, "RemoteFwd", "", false},
+}
+
 type editForm struct {
 	alias          string
 	passwordStored bool
@@ -96,7 +117,7 @@ func newEditForm(host model.Host) editForm {
 }
 
 func (f *editForm) init() tea.Cmd {
-	return f.setFocus(0)
+	return f.setFocus(editFormFocusOrder[0])
 }
 
 func (f *editForm) setWidth(width int) {
@@ -143,29 +164,40 @@ func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 }
 
 func (f *editForm) handleFocusKey(key string) (tea.Cmd, editFormAction) {
+	pos := editFormFocusPos(f.focusIndex)
 	switch key {
 	case "up", "shift+tab":
-		return f.setFocus(f.focusIndex - 1), editFormNone
+		pos--
+		if pos < 0 {
+			pos = len(editFormFocusOrder) - 1
+		}
+		return f.setFocus(editFormFocusOrder[pos]), editFormNone
 	case "down", "tab":
-		return f.setFocus(f.focusIndex + 1), editFormNone
+		pos++
+		if pos >= len(editFormFocusOrder) {
+			pos = 0
+		}
+		return f.setFocus(editFormFocusOrder[pos]), editFormNone
 	case "enter":
-		if f.focusIndex == len(f.inputs)-1 {
+		if pos == len(editFormFocusOrder)-1 {
 			return nil, editFormSave
 		}
-		return f.setFocus(f.focusIndex + 1), editFormNone
+		return f.setFocus(editFormFocusOrder[pos+1]), editFormNone
 	default:
 		return nil, editFormNone
 	}
 }
 
-func (f *editForm) setFocus(index int) tea.Cmd {
-	if index < 0 {
-		index = len(f.inputs) - 1
+func editFormFocusPos(inputIndex int) int {
+	for i, idx := range editFormFocusOrder {
+		if idx == inputIndex {
+			return i
+		}
 	}
-	if index >= len(f.inputs) {
-		index = 0
-	}
+	return 0
+}
 
+func (f *editForm) setFocus(index int) tea.Cmd {
 	f.focusIndex = index
 	cmds := make([]tea.Cmd, 0, len(f.inputs))
 	for i := range f.inputs {
@@ -175,7 +207,6 @@ func (f *editForm) setFocus(index int) tea.Cmd {
 		}
 		f.inputs[i].Blur()
 	}
-
 	return tea.Batch(cmds...)
 }
 
@@ -232,75 +263,62 @@ func (f editForm) passwordStatusText() string {
 }
 
 func (f editForm) view(styles styleSet, width int, height int) string {
-	contentWidth := width - 6
-	if contentWidth < 24 {
-		contentWidth = 24
-	}
-	compact := useCompactFormLayout(width, height)
-	fieldWidth := contentWidth
-	if compact {
-		fieldWidth = compactFormInputWidth(width)
-	}
+	fieldWidth := formInputWidth(width)
 
 	rows := []string{
 		styles.sectionTitle.Render("Edit Server"),
-	}
-	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Editing: "+f.alias))
-	} else {
-		rows = append(rows, styles.sectionMeta.Render("Update alias, name, host, user, port, key path, or stored password."))
+		styles.sectionMeta.Render("Editing: " + f.alias),
 	}
 
-	labels := []string{
-		"* Alias", "Name", "* Host / IP", "User", "Port",
-		"ProxyJump", "ForwardAgent", "LocalForward", "RemoteForward",
-		"Identity file", "Password",
-	}
-	for i := range f.inputs {
-		if i == editFieldProxyJump {
-			rows = append(rows, styles.separator.Render("── Network ──"))
+	focusLine := 0
+	currentLine := 2 // title + description
+
+	for _, ff := range editFormFields {
+		if ff.section != "" {
+			rows = append(rows, styles.separator.Render(ff.section))
+			currentLine++
 		}
-		if i == editFieldIdentity {
-			rows = append(rows, styles.separator.Render("── Authentication ──"))
+
+		indicator := "  "
+		if ff.required {
+			indicator = "* "
 		}
 
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
-		if i == f.focusIndex {
+		ulStyle := styles.formUnderlineDim
+		if ff.index == f.focusIndex {
 			labelStyle = styles.formLabelActive
 			inputStyle = styles.inputBoxActive
+			ulStyle = styles.formUnderline
+			focusLine = currentLine
 		}
 
-		if compact {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				labelStyle.Width(compactFormLabelWidth).Render(labels[i]),
-				inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
-			))
-			continue
-		}
+		row := lipgloss.JoinHorizontal(lipgloss.Top,
+			labelStyle.Render(indicator),
+			labelStyle.Width(formLabelWidth).Render(ff.label),
+			inputStyle.Width(fieldWidth).Render(f.inputs[ff.index].View()),
+		)
+		rows = append(rows, row)
+		currentLine++
 
-		rows = append(rows, lipgloss.JoinVertical(lipgloss.Left,
-			labelStyle.Render(labels[i]),
-			inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
-		))
+		pad := strings.Repeat(" ", formLabelWidth+2)
+		ul := ulStyle.Render(strings.Repeat("─", fieldWidth))
+		rows = append(rows, pad+ul)
+		currentLine++
 	}
 
 	rows = append(rows, styles.sectionMeta.Render(f.passwordStatusText()))
-	if !compact {
-		rows = append(rows, styles.sectionMeta.Render("Ctrl+X clears the stored password on save."))
-	}
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))
 	}
 
-	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Tab move  Ctrl+S save  Ctrl+X clear  Esc cancel"))
-	} else {
-		rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Ctrl+X clear password  Esc cancel"))
-	}
-
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	availableHeight := height - styles.panelActive.GetVerticalFrameSize()
+	body = scrollFormContent(body, focusLine, availableHeight)
+
 	return styles.panelActive.Width(width).Height(height).Render(body)
 }
 

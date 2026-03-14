@@ -47,9 +47,31 @@ const (
 	fieldCount
 )
 
+// addFormFocusOrder defines the Tab traversal order to match the visual layout
+// (Basic → Auth → Network).
+var addFormFocusOrder = []int{
+	fieldAlias, fieldDisplayName, fieldHostName, fieldUser, fieldPort,
+	fieldIdentityFile, fieldPassword,
+	fieldProxyJump, fieldForwardAgent, fieldLocalForward, fieldRemoteForward,
+}
+
+var addFormFields = []formField{
+	{fieldAlias, "Alias", "", true},
+	{fieldDisplayName, "Name", "", false},
+	{fieldHostName, "Host / IP", "", true},
+	{fieldUser, "User", "", false},
+	{fieldPort, "Port", "", false},
+	{fieldIdentityFile, "Key file", "── Auth ──", false},
+	{fieldPassword, "Password", "", false},
+	{fieldProxyJump, "ProxyJump", "── Network ──", false},
+	{fieldForwardAgent, "ForwardAgent", "", false},
+	{fieldLocalForward, "LocalForward", "", false},
+	{fieldRemoteForward, "RemoteFwd", "", false},
+}
+
 type addForm struct {
 	inputs     []textinput.Model
-	focusIndex int
+	focusIndex int // index into inputs (not into focusOrder)
 	errorText  string
 }
 
@@ -89,7 +111,7 @@ func newPasswordInput(placeholder string, width int) textinput.Model {
 }
 
 func (f *addForm) init() tea.Cmd {
-	return f.setFocus(0)
+	return f.setFocus(addFormFocusOrder[0])
 }
 
 func (f *addForm) setWidth(width int) {
@@ -124,29 +146,40 @@ func (f *addForm) update(msg tea.Msg) (tea.Cmd, addFormAction) {
 }
 
 func (f *addForm) handleFocusKey(key string) (tea.Cmd, addFormAction) {
+	pos := addFormFocusPos(f.focusIndex)
 	switch key {
 	case "up", "shift+tab":
-		return f.setFocus(f.focusIndex - 1), addFormNone
+		pos--
+		if pos < 0 {
+			pos = len(addFormFocusOrder) - 1
+		}
+		return f.setFocus(addFormFocusOrder[pos]), addFormNone
 	case "down", "tab":
-		return f.setFocus(f.focusIndex + 1), addFormNone
+		pos++
+		if pos >= len(addFormFocusOrder) {
+			pos = 0
+		}
+		return f.setFocus(addFormFocusOrder[pos]), addFormNone
 	case "enter":
-		if f.focusIndex == len(f.inputs)-1 {
+		if pos == len(addFormFocusOrder)-1 {
 			return nil, addFormSave
 		}
-		return f.setFocus(f.focusIndex + 1), addFormNone
+		return f.setFocus(addFormFocusOrder[pos+1]), addFormNone
 	default:
 		return nil, addFormNone
 	}
 }
 
-func (f *addForm) setFocus(index int) tea.Cmd {
-	if index < 0 {
-		index = len(f.inputs) - 1
+func addFormFocusPos(inputIndex int) int {
+	for i, idx := range addFormFocusOrder {
+		if idx == inputIndex {
+			return i
+		}
 	}
-	if index >= len(f.inputs) {
-		index = 0
-	}
+	return 0
+}
 
+func (f *addForm) setFocus(index int) tea.Cmd {
 	f.focusIndex = index
 	cmds := make([]tea.Cmd, 0, len(f.inputs))
 	for i := range f.inputs {
@@ -156,7 +189,6 @@ func (f *addForm) setFocus(index int) tea.Cmd {
 		}
 		f.inputs[i].Blur()
 	}
-
 	return tea.Batch(cmds...)
 }
 
@@ -196,69 +228,58 @@ func (f *addForm) values() (CreateHostInput, error) {
 }
 
 func (f addForm) view(styles styleSet, width int, height int) string {
-	contentWidth := width - 6
-	if contentWidth < 24 {
-		contentWidth = 24
-	}
-	compact := useCompactFormLayout(width, height)
-	fieldWidth := contentWidth
-	if compact {
-		fieldWidth = compactFormInputWidth(width)
-	}
+	fieldWidth := formInputWidth(width)
 
 	rows := []string{
 		styles.sectionTitle.Render("New Server"),
 	}
-	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Name is optional."))
-	} else {
-		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Name and password are optional."))
-	}
 
-	labels := []string{
-		"* Alias", "Name", "* Host / IP", "User", "Port",
-		"ProxyJump", "ForwardAgent", "LocalForward", "RemoteForward",
-		"Identity file", "Password",
-	}
-	for i := range f.inputs {
-		if i == fieldProxyJump {
-			rows = append(rows, styles.separator.Render("── Network ──"))
+	focusLine := 0
+	currentLine := 1 // title
+
+	for _, ff := range addFormFields {
+		if ff.section != "" {
+			rows = append(rows, styles.separator.Render(ff.section))
+			currentLine++
 		}
-		if i == fieldIdentityFile {
-			rows = append(rows, styles.separator.Render("── Authentication ──"))
+
+		indicator := "  "
+		if ff.required {
+			indicator = "* "
 		}
 
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
-		if i == f.focusIndex {
+		ulStyle := styles.formUnderlineDim
+		if ff.index == f.focusIndex {
 			labelStyle = styles.formLabelActive
 			inputStyle = styles.inputBoxActive
+			ulStyle = styles.formUnderline
+			focusLine = currentLine
 		}
 
-		if compact {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				labelStyle.Width(compactFormLabelWidth).Render(labels[i]),
-				inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
-			))
-			continue
-		}
+		row := lipgloss.JoinHorizontal(lipgloss.Top,
+			labelStyle.Render(indicator),
+			labelStyle.Width(formLabelWidth).Render(ff.label),
+			inputStyle.Width(fieldWidth).Render(f.inputs[ff.index].View()),
+		)
+		rows = append(rows, row)
+		currentLine++
 
-		rows = append(rows, lipgloss.JoinVertical(lipgloss.Left,
-			labelStyle.Render(labels[i]),
-			inputStyle.Width(fieldWidth).Render(f.inputs[i].View()),
-		))
+		pad := strings.Repeat(" ", formLabelWidth+2)
+		ul := ulStyle.Render(strings.Repeat("─", fieldWidth))
+		rows = append(rows, pad+ul)
+		currentLine++
 	}
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))
 	}
 
-	if compact {
-		rows = append(rows, styles.sectionMeta.Render("Tab move  Ctrl+S save  Esc cancel"))
-	} else {
-		rows = append(rows, styles.sectionMeta.Render("Tab/Shift+Tab move  Paste with Cmd+V/Ctrl+V  Ctrl+S save  Esc cancel"))
-	}
-
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	availableHeight := height - styles.panelActive.GetVerticalFrameSize()
+	body = scrollFormContent(body, focusLine, availableHeight)
+
 	return styles.panelActive.Width(width).Height(height).Render(body)
 }
