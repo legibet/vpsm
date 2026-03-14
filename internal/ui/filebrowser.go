@@ -106,11 +106,15 @@ type filePane struct {
 }
 
 func newFilePane(side browserSide, cwd string) filePane {
-	return filePane{
+	pane := filePane{
 		side:        side,
 		cwd:         cwd,
 		selectByDir: make(map[string]string),
 	}
+	if parentPath, ok := parentDir(side, cwd); ok {
+		pane.selectByDir[parentPath] = baseName(side, cwd)
+	}
+	return pane
 }
 
 func (p *filePane) currentEntry() (filexfer.Entry, bool) {
@@ -313,12 +317,16 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case paneLoadedMsg:
 		pane := m.pane(msg.side)
 		pane.loading = false
-		pane.cwd = msg.dir
 		if msg.err != nil {
-			pane.errText = msg.err.Error()
+			if len(pane.entries) == 0 {
+				pane.errText = msg.err.Error()
+			} else {
+				pane.errText = ""
+			}
 			m.setStatus(msg.err.Error(), statusError)
 			return m, nil
 		}
+		pane.cwd = msg.dir
 
 		entries := append(make([]filexfer.Entry, 0, len(msg.entries)+1), msg.entries...)
 		if parentPath, ok := parentDir(msg.side, msg.dir); ok {
@@ -326,6 +334,9 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		pane.setEntries(entries, msg.selectName)
 		pane.ensureVisible(m.entriesViewportHeight())
+		if m.statusType == statusInfo && (m.status == "Loading directories..." || m.status == "Refreshing directories...") {
+			m.setStatus("", statusInfo)
+		}
 		return m, nil
 	case opResultMsg:
 		if msg.err != nil {
