@@ -63,9 +63,9 @@ var addFormFields = []formField{
 	{fieldHostName, "Host / IP", "", true},
 	{fieldUser, "User", "", false},
 	{fieldPort, "Port", "", false},
-	{fieldIdentityFile, "Key file", "── Auth ──", false},
+	{fieldIdentityFile, "Key file", "Auth", false},
 	{fieldPassword, "Password", "", false},
-	{fieldProxyJump, "ProxyJump", "── Network ──", false},
+	{fieldProxyJump, "ProxyJump", "Network", false},
 	{fieldProxyCommand, "ProxyCommand", "", false},
 	{fieldForwardAgent, "ForwardAgent", "", false},
 	{fieldLocalForward, "LocalForward", "", false},
@@ -237,48 +237,53 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 
 	rows := []string{
 		styles.sectionTitle.Render("New Server"),
+		"", // breathing room: title-to-first-field > inter-field
 	}
 
 	focusLine := 0
-	currentLine := 1 // title
+	currentLine := 2 // title + blank
 
 	for _, ff := range addFormFields {
 		if ff.section != "" {
-			rows = append(rows, styles.separator.Render(ff.section))
-			currentLine++
+			rows = append(rows, "", styles.formSection.Render(ff.section), "")
+			currentLine += 3
 		}
 
-		indicator := "  "
+		labelText := ff.label
 		if ff.required {
-			indicator = "* "
+			labelText += " *"
 		}
 
+		focused := ff.index == f.focusIndex
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
-		ulStyle := styles.formUnderlineDim
-		if ff.index == f.focusIndex {
+		if focused {
 			labelStyle = styles.formLabelActive
 			inputStyle = styles.inputBoxActive
-			ulStyle = styles.formUnderline
 			focusLine = currentLine
 		}
 
 		row := lipgloss.JoinHorizontal(lipgloss.Top,
-			labelStyle.Render(indicator),
-			labelStyle.Width(formLabelWidth).Render(ff.label),
+			labelStyle.Width(formLabelWidth).Render(labelText),
 			inputStyle.Width(fieldWidth).Render(f.inputs[ff.index].View()),
 		)
 		rows = append(rows, row)
 		currentLine++
 
-		pad := strings.Repeat(" ", formLabelWidth+2)
-		ul := ulStyle.Render(strings.Repeat("─", fieldWidth))
-		rows = append(rows, pad+ul)
+		// Every field reserves a second row to keep layout stable.
+		// Focused field shows an accent underline; others get a blank line.
+		if focused {
+			pad := strings.Repeat(" ", formLabelWidth)
+			ul := styles.formUnderline.Render(strings.Repeat("─", fieldWidth))
+			rows = append(rows, pad+ul)
+		} else {
+			rows = append(rows, "")
+		}
 		currentLine++
 	}
 
 	if strings.TrimSpace(f.errorText) != "" {
-		rows = append(rows, styles.errorText.Render(f.errorText))
+		rows = append(rows, "", styles.errorText.Render(f.errorText))
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)

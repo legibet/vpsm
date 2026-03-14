@@ -83,8 +83,8 @@ func TestCompactBrowseViewDefaultsToServers(t *testing.T) {
 	m.applyFilter()
 
 	view := m.View().Content
-	if !strings.Contains(view, "Servers") {
-		t.Fatalf("expected servers panel in compact view")
+	if !strings.Contains(view, "vpsm") {
+		t.Fatalf("expected list panel (vpsm title) in compact view")
 	}
 	if strings.Contains(view, "Details") {
 		t.Fatalf("did not expect details panel in compact inventory view")
@@ -105,12 +105,13 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 	m.applyFilter()
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	view := updated.(tuiModel).View().Content
+	result := updated.(tuiModel)
+	if result.browsePane != browsePaneDetails {
+		t.Fatalf("expected details pane after tab, got %v", result.browsePane)
+	}
+	view := result.View().Content
 	if !strings.Contains(view, "Details") {
 		t.Fatalf("expected details panel after tab switch in compact view")
-	}
-	if strings.Contains(view, "Servers") {
-		t.Fatalf("did not expect servers panel after tab switch in compact view")
 	}
 }
 
@@ -153,7 +154,7 @@ func TestListMetaShowsUserTargetAndPortOnly(t *testing.T) {
 	}
 }
 
-func TestRenderListItemShowsSingleLineWithNameAndMeta(t *testing.T) {
+func TestRenderListItemShowsDisplayNameAsPrimary(t *testing.T) {
 	t.Parallel()
 
 	host := model.Host{
@@ -176,18 +177,11 @@ func TestRenderListItemShowsSingleLineWithNameAndMeta(t *testing.T) {
 	m.applyFilter()
 
 	rendered := ansi.Strip(m.renderListItem(host, 80))
-	lines := strings.Split(strings.TrimRight(rendered, "\n "), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d: %q", len(lines), rendered)
+	if !strings.Contains(rendered, host.DisplayName) {
+		t.Fatalf("expected display name as primary label, got %q", rendered)
 	}
-	if !strings.Contains(lines[0], host.DisplayName) {
-		t.Fatalf("expected display name in line, got %q", lines[0])
-	}
-	if !strings.Contains(lines[0], host.Alias) {
-		t.Fatalf("expected alias in line, got %q", lines[0])
-	}
-	if !strings.Contains(lines[0], "root @ 10.0.0.1:2201") {
-		t.Fatalf("expected meta in line, got %q", lines[0])
+	if !strings.Contains(rendered, "root @ 10.0.0.1:2201") {
+		t.Fatalf("expected meta info, got %q", rendered)
 	}
 	if strings.Contains(rendered, "managed") || strings.Contains(rendered, "default") || strings.Contains(rendered, "password") || strings.Contains(rendered, "key") {
 		t.Fatalf("expected list item to omit auth summary, got %q", rendered)
@@ -214,13 +208,9 @@ func TestRenderListItemTruncatesToListContentWidth(t *testing.T) {
 	m.applyFilter()
 
 	rendered := ansi.Strip(m.renderListItem(host, 38))
-	lines := strings.Split(strings.TrimRight(rendered, "\n "), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 line, got %d: %q", len(lines), rendered)
-	}
-
-	if got, want := lipgloss.Width(lines[0]), m.listContentWidth(38); got > want {
-		t.Fatalf("expected rendered width <= %d, got %d in %q", want, got, lines[0])
+	maxWidth := m.listContentWidth(38)
+	if got := lipgloss.Width(rendered); got > maxWidth {
+		t.Fatalf("expected rendered width <= %d, got %d in %q", maxWidth, got, rendered)
 	}
 }
 
@@ -245,7 +235,10 @@ func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
 	}
 	m.applyFilter()
 
-	want := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
+	// Each item takes 1 line + 1 blank separator between items,
+	// so N items occupy 2*N - 1 rows.
+	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
+	want := (available + 1) / 2
 	if want < 1 {
 		want = 1
 	}

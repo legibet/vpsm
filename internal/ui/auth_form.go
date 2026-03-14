@@ -66,9 +66,9 @@ var editFormFields = []formField{
 	{editFieldHostName, "Host / IP", "", true},
 	{editFieldUser, "User", "", false},
 	{editFieldPort, "Port", "", false},
-	{editFieldIdentity, "Key file", "── Auth ──", false},
+	{editFieldIdentity, "Key file", "Auth", false},
 	{editFieldPassword, "Password", "", false},
-	{editFieldProxyJump, "ProxyJump", "── Network ──", false},
+	{editFieldProxyJump, "ProxyJump", "Network", false},
 	{editFieldProxyCommand, "ProxyCommand", "", false},
 	{editFieldForwardAgent, "ForwardAgent", "", false},
 	{editFieldLocalForward, "LocalForward", "", false},
@@ -274,47 +274,52 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 	rows := []string{
 		styles.sectionTitle.Render("Edit Server"),
 		styles.sectionMeta.Render("Editing: " + f.alias),
+		"", // breathing room: header-to-first-field > inter-field
 	}
 
 	focusLine := 0
-	currentLine := 2 // title + description
+	currentLine := 3 // title + description + blank
 
 	for _, ff := range editFormFields {
 		if ff.section != "" {
-			rows = append(rows, styles.separator.Render(ff.section))
-			currentLine++
+			rows = append(rows, "", styles.formSection.Render(ff.section), "")
+			currentLine += 3
 		}
 
-		indicator := "  "
+		labelText := ff.label
 		if ff.required {
-			indicator = "* "
+			labelText += " *"
 		}
 
+		focused := ff.index == f.focusIndex
 		labelStyle := styles.formLabel
 		inputStyle := styles.inputBox
-		ulStyle := styles.formUnderlineDim
-		if ff.index == f.focusIndex {
+		if focused {
 			labelStyle = styles.formLabelActive
 			inputStyle = styles.inputBoxActive
-			ulStyle = styles.formUnderline
 			focusLine = currentLine
 		}
 
 		row := lipgloss.JoinHorizontal(lipgloss.Top,
-			labelStyle.Render(indicator),
-			labelStyle.Width(formLabelWidth).Render(ff.label),
+			labelStyle.Width(formLabelWidth).Render(labelText),
 			inputStyle.Width(fieldWidth).Render(f.inputs[ff.index].View()),
 		)
 		rows = append(rows, row)
 		currentLine++
 
-		pad := strings.Repeat(" ", formLabelWidth+2)
-		ul := ulStyle.Render(strings.Repeat("─", fieldWidth))
-		rows = append(rows, pad+ul)
+		// Every field reserves a second row to keep layout stable.
+		// Focused field shows an accent underline; others get a blank line.
+		if focused {
+			pad := strings.Repeat(" ", formLabelWidth)
+			ul := styles.formUnderline.Render(strings.Repeat("─", fieldWidth))
+			rows = append(rows, pad+ul)
+		} else {
+			rows = append(rows, "")
+		}
 		currentLine++
 	}
 
-	rows = append(rows, styles.sectionMeta.Render(f.passwordStatusText()))
+	rows = append(rows, "", styles.sectionMeta.Render(f.passwordStatusText()))
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))

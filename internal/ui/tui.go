@@ -552,10 +552,9 @@ func (m tuiModel) View() tea.View {
 	}
 
 	width := m.viewWidth()
-	header := m.renderHeader(width)
 	status := m.renderStatusBar(width)
 	footer := m.renderFooterBar(width)
-	bodyHeight := m.availableBodyHeight(header, status, footer)
+	bodyHeight := m.availableBodyHeight(status, footer)
 
 	var body string
 	if m.isCompactLayout() {
@@ -579,7 +578,7 @@ func (m tuiModel) View() tea.View {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, sidePanel)
 	}
 
-	content := m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer))
+	content := m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, body, status, footer))
 	if m.width > 0 && m.height > 0 {
 		content = m.styles.canvas.Width(m.width).Height(m.height).Render(content)
 	}
@@ -588,77 +587,42 @@ func (m tuiModel) View() tea.View {
 	return view
 }
 
-func (m tuiModel) renderHeader(width int) string {
-	summary := m.headerSummary()
-	if m.isCompactLayout() {
-		content := lipgloss.JoinVertical(lipgloss.Left,
-			m.styles.title.Render("vpsm"),
-			m.styles.sectionMeta.Render(summary),
-		)
-		return m.styles.headBar.Width(width).Render(content)
-	}
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		m.styles.title.Render("vpsm"),
-		m.styles.subtitle.Render("local-first VPS manager"),
-		m.styles.sectionMeta.Render(summary),
-	)
-	return m.styles.headBar.Width(width).Render(content)
-}
-
-func (m tuiModel) headerSummary() string {
-	hostCount := fmt.Sprintf("hosts: %d", len(m.hosts))
-
-	switch m.mode {
-	case modeAdd:
-		return hostCount + "  [add]"
-	case modeEdit:
-		return hostCount + "  [edit]"
-	case modeDeleteConfirm:
-		return hostCount + "  [delete]"
-	case modeKeySetupConfirm:
-		return hostCount + "  [key setup]"
-	}
-
-	// browse / search mode
-	suffix := ""
-	if m.isCompactLayout() && m.mode == modeBrowse && !m.searchMode {
-		suffix = "  pane:" + m.browsePaneLabel()
-	}
-	if len(m.filtered) < len(m.hosts) {
-		return fmt.Sprintf("%s  (%d shown)%s", hostCount, len(m.filtered), suffix)
-	}
-	return hostCount + suffix
-}
-
 func (m tuiModel) renderListPanel(width int, height int) string {
 	contentWidth := m.listContentWidth(width)
-	titleLine := m.styles.sectionTitle.Render("Servers")
+
+	// Title line: "vpsm" on the left, position/count on the right.
+	titleLeft := m.styles.title.Render("vpsm")
+	var titleRight string
 	if len(m.filtered) > 0 {
-		pos := m.styles.sectionMeta.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(m.filtered)))
-		titleLine += pos
+		titleRight = m.styles.sectionMeta.Render(fmt.Sprintf("%d/%d", m.cursor+1, len(m.filtered)))
+	} else {
+		titleRight = m.styles.sectionMeta.Render(fmt.Sprintf("%d hosts", len(m.hosts)))
 	}
 	if m.searchMode && m.query != "" {
-		remaining := contentWidth - lipgloss.Width(titleLine) - 5
+		remaining := contentWidth - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight) - 6
 		q := m.query
 		if remaining > 0 {
 			if runeCount := len([]rune(q)); runeCount > remaining {
 				q = string([]rune(q)[:remaining]) + "…"
 			}
-			titleLine += m.styles.statusBar.Render(fmt.Sprintf("  \"%s\"", q))
+			titleRight = m.styles.statusBar.Render(fmt.Sprintf("\"%s\"", q)) + "  " + titleRight
 		}
 	}
+	gap := contentWidth - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight)
+	if gap < 1 {
+		gap = 1
+	}
+	titleLine := titleLeft + strings.Repeat(" ", gap) + titleRight
 
 	rows := []string{
 		titleLine,
-		m.styles.sectionMeta.Render("/ search  enter connect"),
+		"",
 	}
 
 	if len(m.filtered) == 0 {
 		if len(m.hosts) == 0 {
 			keyN := m.styles.footerKey.Render("n")
 			rows = append(rows,
-				"",
 				m.styles.muted.Render("No hosts found."),
 				m.styles.muted.Render("Press "+keyN+m.styles.muted.Render(" to add your first server.")),
 			)
@@ -668,48 +632,71 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 		return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
-	for _, host := range m.visibleHosts() {
+	visible := m.visibleHosts()
+	for i, host := range visible {
 		rows = append(rows, m.renderListItem(host, width))
+		if i < len(visible)-1 {
+			rows = append(rows, "")
+		}
 	}
 
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
+// renderListItem returns a single-line representation of a host entry.
+// Layout: [▎ ][★ ]<primary>  <meta>  <source-tag>
+// Primary is DisplayName when available, otherwise Alias.
+// Meta shows the connection info (user@host:port).
 func (m tuiModel) renderListItem(host model.Host, width int) string {
+	contentWidth := m.listContentWidth(width)
 	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
 	primaryStyle := m.styles.alias
 	metaStyle := m.styles.meta
 	starStyle := m.styles.star
+
 	if selected {
-		bg := lipgloss.Color("236")
-		primaryStyle = m.styles.aliasActive.Background(bg)
-		metaStyle = m.styles.metaActive.Background(bg)
-		starStyle = m.styles.star.Background(bg)
+		primaryStyle = m.styles.aliasActive
+		metaStyle = m.styles.metaActive
 	}
 
-	cursor := " "
+	// Left gutter: indicator bar or spaces.
+	gutter := "  "
 	if selected {
-		cursor = "▸"
+		gutter = m.styles.indicator.Render("▎") + " "
 	}
 
-	var parts []string
+	// Star or blank spacer.
+	starPart := "  "
 	if host.Favorite {
-		parts = append(parts, primaryStyle.Render(cursor), starStyle.Render("★"), primaryStyle.Render(" "))
-	} else {
-		parts = append(parts, primaryStyle.Render(cursor+"  "))
+		starPart = starStyle.Render("★") + " "
 	}
 
+	// Primary label: DisplayName if set, otherwise Alias.
 	displayName := strings.TrimSpace(host.DisplayName)
+	primary := host.Alias
 	if displayName != "" {
-		parts = append(parts, primaryStyle.Render(displayName), metaStyle.Render(" · "+host.Alias))
-	} else {
-		parts = append(parts, primaryStyle.Render(host.Alias))
+		primary = displayName
 	}
 
-	parts = append(parts, metaStyle.Render("  "+listMeta(host)+"  "+sourceTag(host)))
+	left := gutter + starPart + primaryStyle.Render(primary)
 
-	line := strings.Join(parts, "")
-	return m.styles.listItem.MaxWidth(m.listContentWidth(width)).Render(line)
+	// Right side: meta + source tag.
+	meta := listMeta(host)
+	tag := sourceTag(host)
+	var right string
+	if meta != "" {
+		right = metaStyle.Render(meta + "  " + tag)
+	} else {
+		right = metaStyle.Render(tag)
+	}
+
+	gap := contentWidth - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		gap = 2
+	}
+
+	line := left + strings.Repeat(" ", gap) + right
+	return m.styles.listItem.MaxWidth(contentWidth).Render(line)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -756,7 +743,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	if hasNetworkDirectives(selected) {
 		rows = append(rows,
 			"",
-			m.styles.separator.Render("── Network ──"),
+			m.styles.formSection.Render("Network"),
 		)
 		if selected.ProxyJump != "" {
 			rows = append(rows, m.detailRow("ProxyJump", selected.ProxyJump))
@@ -785,7 +772,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 
 	rows = append(rows,
 		"",
-		m.styles.separator.Render("── Auth ──"),
+		m.styles.formSection.Render("Auth"),
 		m.detailRow("Method", selected.AuthMethodsLabel()),
 		m.detailRow("Identity", selected.IdentityFileLabel()),
 		m.detailRow("Password", selected.PasswordStoredLabel()),
@@ -854,7 +841,7 @@ func (m tuiModel) renderKeySetupConfirmPanel(width int, height int) string {
 
 	rows = append(rows,
 		"",
-		m.styles.separator.Render("── Plan ──"),
+		m.styles.formSection.Render("Plan"),
 		m.detailRow("Local", keyAction),
 		m.detailRow("Remote", "append the public key if missing"),
 		m.detailRow("Config", updateAction),
@@ -908,12 +895,20 @@ func (m tuiModel) listContentWidth(panelWidth int) int {
 	return width
 }
 
+// listRowsPerPage returns how many host entries fit in the list panel.
+// Each entry occupies 1 line with 1 blank separator between entries,
+// so N items take 2*N - 1 rows.
 func (m tuiModel) listRowsPerPage() int {
-	rows := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	if rows < 1 {
+	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
+	if available < 1 {
 		return 1
 	}
-	return rows
+	// 2*N - 1 <= available  =>  N <= (available + 1) / 2
+	n := (available + 1) / 2
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (m tuiModel) renderCompactBody(width int, height int) string {
@@ -1016,7 +1011,6 @@ func (m tuiModel) viewWidth() int {
 func (m tuiModel) bodyHeight() int {
 	width := m.viewWidth()
 	return m.availableBodyHeight(
-		m.renderHeader(width),
 		m.renderStatusBar(width),
 		m.renderFooterBar(width),
 	)
@@ -1083,45 +1077,42 @@ func (m tuiModel) footerHints() []footerHint {
 		if managed {
 			return []footerHint{
 				{"tab", "pane"},
-				{"j/k", "move"},
 				{"/", "search"},
-				{"n/e/d/i/f/r", ""},
-				{"enter", "connect"},
+				{"n", "new"},
+				{"e", "edit"},
+				{"d", "del"},
+				{"i", "key"},
+				{"f", "fav"},
+				{"↵", "connect"},
 				{"q", "quit"},
 			}
 		}
 		return []footerHint{
 			{"tab", "pane"},
-			{"j/k", "move"},
 			{"/", "search"},
-			{"n/f/r", ""},
-			{"enter", "connect"},
+			{"n", "new"},
+			{"f", "fav"},
+			{"↵", "connect"},
 			{"q", "quit"},
 		}
 	}
 	if managed {
 		return []footerHint{
-			{"j/k", "move"},
-			{"pgup/dn", "page"},
 			{"/", "search"},
 			{"n", "new"},
 			{"e", "edit"},
 			{"d", "delete"},
 			{"i", "key"},
 			{"f", "fav"},
-			{"r", "refresh"},
-			{"enter", "connect"},
+			{"↵", "connect"},
 			{"q", "quit"},
 		}
 	}
 	return []footerHint{
-		{"j/k", "move"},
-		{"pgup/dn", "page"},
 		{"/", "search"},
 		{"n", "new"},
 		{"f", "fav"},
-		{"r", "refresh"},
-		{"enter", "connect"},
+		{"↵", "connect"},
 		{"q", "quit"},
 	}
 }
@@ -1162,8 +1153,8 @@ func (m tuiModel) browsePaneLabel() string {
 }
 
 func formInputWidth(panelWidth int) int {
-	// 6 = panel border+padding, 2 = indicator column ("* "), formLabelWidth = label
-	width := panelWidth - 6 - 2 - formLabelWidth
+	// 6 = panel border+padding, formLabelWidth = label column
+	width := panelWidth - 6 - formLabelWidth
 	if width < 16 {
 		width = 16
 	}
