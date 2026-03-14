@@ -1,6 +1,10 @@
 package ui
 
-import lipgloss "charm.land/lipgloss/v2"
+import (
+	"image/color"
+
+	lipgloss "charm.land/lipgloss/v2"
+)
 
 type styleSet struct {
 	canvas          lipgloss.Style
@@ -36,14 +40,31 @@ type styleSet struct {
 	formSection     lipgloss.Style
 }
 
-func newStyles() styleSet {
-	accent := lipgloss.Color("75")
-	warm := lipgloss.Color("214")
-	success := lipgloss.Color("114")
-	text := lipgloss.Color("252")
-	muted := lipgloss.Color("244")
-	border := lipgloss.Color("241")
-	errorColor := lipgloss.Color("203")
+func newStyles(isDark bool) styleSet {
+	var accent, warm, success, text, mutedColor, border, errorColor,
+		metaActiveColor, formSectionColor color.Color
+
+	if isDark {
+		accent = lipgloss.Color("75")
+		warm = lipgloss.Color("214")
+		success = lipgloss.Color("114")
+		text = lipgloss.Color("252")
+		mutedColor = lipgloss.Color("244")
+		border = lipgloss.Color("241")
+		errorColor = lipgloss.Color("203")
+		metaActiveColor = lipgloss.Color("248")
+		formSectionColor = lipgloss.Color("248")
+	} else {
+		accent = lipgloss.Color("33")
+		warm = lipgloss.Color("172")
+		success = lipgloss.Color("28")
+		text = lipgloss.Color("236")
+		mutedColor = lipgloss.Color("243")
+		border = lipgloss.Color("250")
+		errorColor = lipgloss.Color("160")
+		metaActiveColor = lipgloss.Color("240")
+		formSectionColor = lipgloss.Color("240")
+	}
 
 	basePanel := lipgloss.NewStyle().
 		UnsetBackground().
@@ -58,30 +79,30 @@ func newStyles() styleSet {
 		panel:           basePanel,
 		panelActive:     basePanel.BorderForeground(accent),
 		sectionTitle:    lipgloss.NewStyle().Bold(true).Foreground(text),
-		sectionMeta:     lipgloss.NewStyle().Foreground(muted),
+		sectionMeta:     lipgloss.NewStyle().Foreground(mutedColor),
 		listItem:        lipgloss.NewStyle().UnsetBackground(),
 		alias:           lipgloss.NewStyle().Bold(true).Foreground(text),
 		aliasActive:     lipgloss.NewStyle().Bold(true).Foreground(accent),
-		meta:            lipgloss.NewStyle().Foreground(muted),
-		metaActive:      lipgloss.NewStyle().Foreground(lipgloss.Color("248")),
-		label:           lipgloss.NewStyle().Foreground(muted).Width(14),
+		meta:            lipgloss.NewStyle().Foreground(mutedColor),
+		metaActive:      lipgloss.NewStyle().Foreground(metaActiveColor),
+		label:           lipgloss.NewStyle().Foreground(mutedColor).Width(14),
 		value:           lipgloss.NewStyle().Foreground(text),
-		muted:           lipgloss.NewStyle().Foreground(muted),
+		muted:           lipgloss.NewStyle().Foreground(mutedColor),
 		statusBar:       lipgloss.NewStyle().UnsetBackground().Foreground(warm).Padding(0, 1),
 		statusBarError:  lipgloss.NewStyle().UnsetBackground().Foreground(errorColor).Bold(true).Padding(0, 1),
 		statusBarOK:     lipgloss.NewStyle().UnsetBackground().Foreground(success).Padding(0, 1),
-		footerBar:       lipgloss.NewStyle().UnsetBackground().Foreground(muted).Padding(0, 1),
+		footerBar:       lipgloss.NewStyle().UnsetBackground().Foreground(mutedColor).Padding(0, 1),
 		footerKey:       lipgloss.NewStyle().Foreground(accent),
 		errorText:       lipgloss.NewStyle().Foreground(errorColor).Bold(true),
-		formLabel:       lipgloss.NewStyle().Foreground(muted),
+		formLabel:       lipgloss.NewStyle().Foreground(mutedColor),
 		formLabelActive: lipgloss.NewStyle().Foreground(accent).Bold(true),
 		inputBox:        lipgloss.NewStyle().UnsetBackground(),
 		inputBoxActive:  lipgloss.NewStyle().UnsetBackground(),
 		formUnderline:   lipgloss.NewStyle().Foreground(accent),
 		star:            lipgloss.NewStyle().Foreground(warm),
 		detailName:      lipgloss.NewStyle().Bold(true).Foreground(accent),
-		separator:       lipgloss.NewStyle().Foreground(muted),
+		separator:       lipgloss.NewStyle().Foreground(mutedColor),
 		indicator:       lipgloss.NewStyle().Foreground(accent),
-		formSection:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("248")),
+		formSection:     lipgloss.NewStyle().Bold(true).Foreground(formSectionColor),
 	}
 }

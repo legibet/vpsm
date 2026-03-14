@@ -78,7 +78,7 @@ func TestCompactBrowseViewDefaultsToServers(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
 		},
-		styles: newStyles(),
+		styles: newStyles(true),
 	}
 	m.applyFilter()
 
@@ -100,7 +100,7 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
 		},
-		styles: newStyles(),
+		styles: newStyles(true),
 	}
 	m.applyFilter()
 
@@ -119,7 +119,7 @@ func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	t.Parallel()
 
 	m := tuiModel{
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -170,7 +170,7 @@ func TestRenderListItemShowsDisplayNameAsPrimary(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -201,7 +201,7 @@ func TestRenderListItemTruncatesToListContentWidth(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -229,7 +229,7 @@ func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  hosts,
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -271,7 +271,7 @@ func TestDetailsPanelShowsSourceRow(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -301,7 +301,7 @@ func searchModel() tuiModel {
 	m := tuiModel{
 		hosts:      testHosts(),
 		searchMode: true,
-		styles:     newStyles(),
+		styles:     newStyles(true),
 		width:      120,
 		height:     24,
 	}
@@ -426,7 +426,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "prod/api", HostName: "203.0.113.10", User: "root", Port: 22, Managed: true},
 		},
-		styles:       newStyles(),
+		styles:       newStyles(true),
 		width:        120,
 		height:       24,
 		setupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error { return nil },
@@ -462,7 +462,7 @@ func TestFooterHintsDifferForManagedVsSystemHost(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{managedHost, systemHost},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 24,
 	}
@@ -495,7 +495,7 @@ func TestEditDeleteKeyShowStatusOnSystemHost(t *testing.T) {
 	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
 	m := tuiModel{
 		hosts:      []model.Host{systemHost},
-		styles:     newStyles(),
+		styles:     newStyles(true),
 		width:      120,
 		height:     24,
 		updateHost: func(input UpdateHostInput) error { return nil },
@@ -552,7 +552,7 @@ func TestDetailsPanelShowsNetworkSection(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 40,
 	}
@@ -585,7 +585,7 @@ func TestDetailsPanelHidesNetworkSectionWhenEmpty(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(),
+		styles: newStyles(true),
 		width:  120,
 		height: 40,
 	}
@@ -626,7 +626,7 @@ func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
 
 	m := tuiModel{
 		mode:   modeKeySetupConfirm,
-		styles: newStyles(),
+		styles: newStyles(true),
 	}
 
 	footer := m.footerText()

@@ -83,6 +83,7 @@ type tuiModel struct {
 	deleteAlias    string
 	keySetupAlias  string
 	keySetupPlan   sshutil.KeySetupPlan
+	isDark         bool
 	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
@@ -97,7 +98,8 @@ func Run(options Options) (string, error) {
 		hosts:          options.Hosts,
 		query:          options.InitialQuery,
 		status:         options.InitialStatus,
-		styles:         newStyles(),
+		isDark:         true,
+		styles:         newStyles(true),
 		toggleFavorite: options.ToggleFavorite,
 		refreshHosts:   options.RefreshHosts,
 		createHost:     options.CreateHost,
@@ -122,11 +124,15 @@ func Run(options Options) (string, error) {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return nil
+	return tea.RequestBackgroundColor
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+		m.styles = newStyles(m.isDark)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -949,7 +955,7 @@ func (m tuiModel) bodyWidths(width int) (int, int) {
 
 func (m tuiModel) renderStatusBar(width int) string {
 	if m.searchMode {
-		slash := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("75")).Render("/")
+		slash := m.styles.title.Render("/")
 		return m.styles.statusBar.Width(width).Render(slash + " " + m.query + "▌")
 	}
 	switch m.statusType {
