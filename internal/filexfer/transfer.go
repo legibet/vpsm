@@ -44,7 +44,7 @@ func (f *RemoteFS) UploadPathContext(ctx context.Context, localPath string, remo
 }
 
 func (f *RemoteFS) DownloadPathContext(ctx context.Context, remotePath string, localPath string, progress func(TransferProgress)) error {
-	plan, err := f.buildDownloadPlan(remotePath, localPath)
+	plan, err := f.buildDownloadPlan(ctx, remotePath, localPath)
 	if err != nil {
 		return err
 	}
@@ -234,25 +234,44 @@ func buildUploadPlan(localPath string, remotePath string) (transferPlan, error) 
 	}, nil
 }
 
-func (f *RemoteFS) buildDownloadPlan(remotePath string, localPath string) (transferPlan, error) {
+func (f *RemoteFS) buildDownloadPlan(ctx context.Context, remotePath string, localPath string) (transferPlan, error) {
 	entry, err := f.Stat(remotePath)
 	if err != nil {
 		return transferPlan{}, err
 	}
-	if entry.Mode&os.ModeSymlink != 0 {
+	return buildDownloadPlanWithReader(ctx, entry, localPath, func(ctx context.Context, remoteBase string) ([]Entry, error) {
+		children, err := f.client.ReadDirContext(ctx, remoteBase)
+		if err != nil {
+			return nil, fmt.Errorf("read remote directory %q: %w", remoteBase, err)
+		}
+
+		entries := make([]Entry, 0, len(children))
+		for _, child := range children {
+			entries = append(entries, EntryFromFileInfo(path.Join(remoteBase, child.Name()), child))
+		}
+		SortEntries(entries)
+		return entries, nil
+	})
+}
+
+type remoteDirReader func(context.Context, string) ([]Entry, error)
+
+func buildDownloadPlanWithReader(ctx context.Context, root Entry, localPath string, readDir remoteDirReader) (transferPlan, error) {
+	remotePath := root.Path
+	if root.Mode&os.ModeSymlink != 0 {
 		return transferPlan{}, fmt.Errorf("symlink transfers are not supported yet: %s", remotePath)
 	}
 
-	if !entry.IsDir {
+	if !root.IsDir {
 		return transferPlan{
 			items: []transferItem{{
 				localPath:  localPath,
 				remotePath: remotePath,
-				mode:       entry.Mode,
-				modTime:    entry.ModTime,
-				size:       entry.Size,
+				mode:       root.Mode,
+				modTime:    root.ModTime,
+				size:       root.Size,
 			}},
-			bytesTotal: entry.Size,
+			bytesTotal: root.Size,
 			filesTotal: 1,
 		}, nil
 	}
@@ -260,8 +279,8 @@ func (f *RemoteFS) buildDownloadPlan(remotePath string, localPath string) (trans
 	items := []transferItem{{
 		localPath:  localPath,
 		remotePath: remotePath,
-		mode:       entry.Mode,
-		modTime:    entry.ModTime,
+		mode:       root.Mode,
+		modTime:    root.ModTime,
 		dir:        true,
 	}}
 
@@ -270,18 +289,19 @@ func (f *RemoteFS) buildDownloadPlan(remotePath string, localPath string) (trans
 
 	var walk func(remoteBase string, localBase string) error
 	walk = func(remoteBase string, localBase string) error {
-		children, err := f.client.ReadDir(remoteBase)
-		if err != nil {
-			return fmt.Errorf("read remote directory %q: %w", remoteBase, err)
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
-		entries := make([]Entry, 0, len(children))
-		for _, child := range children {
-			entries = append(entries, EntryFromFileInfo(path.Join(remoteBase, child.Name()), child))
+		entries, err := readDir(ctx, remoteBase)
+		if err != nil {
+			return err
 		}
-		SortEntries(entries)
 
 		for _, child := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if child.Mode&os.ModeSymlink != 0 {
 				return fmt.Errorf("symlink transfers are not supported yet: %s", child.Path)
 			}

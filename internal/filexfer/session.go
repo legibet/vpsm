@@ -126,9 +126,6 @@ func (f *RemoteFS) Exists(fullPath string) (bool, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	if statusErr, ok := err.(*sftp.StatusError); ok && statusErr.Code == 2 {
-		return false, nil
-	}
 	return false, fmt.Errorf("stat remote path %q: %w", fullPath, err)
 }
 
@@ -218,9 +215,5 @@ func isRemoteNotExist(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return true
-	}
-	statusErr, ok := err.(*sftp.StatusError)
-	return ok && statusErr.Code == 2
+	return errors.Is(err, os.ErrNotExist)
 }
