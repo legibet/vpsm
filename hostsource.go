@@ -29,6 +29,16 @@ func listHostsForDisplay(ctx context.Context, paths config.Paths, st *store.Stor
 		return nil, err
 	}
 
+	managedAliasSet := make(map[string]struct{}, len(managedHosts))
+	for _, mh := range managedHosts {
+		managedAliasSet[mh.Alias] = struct{}{}
+	}
+
+	allHosts, err := sshconfig.ParsePath(paths.SSHConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
 	metadataRows, err := st.ListHosts(ctx)
 	if err != nil {
 		return nil, err
@@ -38,26 +48,21 @@ func listHostsForDisplay(ctx context.Context, paths config.Paths, st *store.Stor
 		metadataByAlias[host.Alias] = host
 	}
 
-	hosts := make([]model.Host, 0, len(managedHosts))
+	hosts := make([]model.Host, 0, len(managedHosts)+len(allHosts))
+
 	for _, managedHost := range managedHosts {
-		host := model.Host{
-			Alias:        managedHost.Alias,
-			DisplayName:  managedHost.DisplayName,
-			HostName:     managedHost.HostName,
-			User:         managedHost.User,
-			Port:         managedHost.Port,
-			Source:       managedHost.Source,
-			Managed:      true,
-			IdentityFile: managedHost.IdentityFile,
-		}
+		host := importedToModel(managedHost, true)
+		hydrateMetadata(&host, metadataByAlias)
+		hydratePasswordStatus(&host)
+		hosts = append(hosts, host)
+	}
 
-		if metadata, ok := metadataByAlias[host.Alias]; ok {
-			host.Favorite = metadata.Favorite
-			host.LastConnectedAt = metadata.LastConnectedAt
-			host.CreatedAt = metadata.CreatedAt
-			host.UpdatedAt = metadata.UpdatedAt
+	for _, sysHost := range allHosts {
+		if _, managed := managedAliasSet[sysHost.Alias]; managed {
+			continue
 		}
-
+		host := importedToModel(sysHost, false)
+		hydrateMetadata(&host, metadataByAlias)
 		hydratePasswordStatus(&host)
 		hosts = append(hosts, host)
 	}
@@ -73,6 +78,33 @@ func listHostsForDisplay(ctx context.Context, paths config.Paths, st *store.Stor
 	})
 
 	return hosts, nil
+}
+
+func importedToModel(ih sshconfig.ImportedHost, managed bool) model.Host {
+	return model.Host{
+		Alias:         ih.Alias,
+		DisplayName:   ih.DisplayName,
+		HostName:      ih.HostName,
+		User:          ih.User,
+		Port:          ih.Port,
+		Source:        ih.Source,
+		Managed:       managed,
+		IdentityFile:  ih.IdentityFile,
+		ProxyJump:     ih.ProxyJump,
+		ProxyCommand:  ih.ProxyCommand,
+		ForwardAgent:  ih.ForwardAgent,
+		LocalForward:  ih.LocalForward,
+		RemoteForward: ih.RemoteForward,
+	}
+}
+
+func hydrateMetadata(host *model.Host, metadataByAlias map[string]model.Host) {
+	if metadata, ok := metadataByAlias[host.Alias]; ok {
+		host.Favorite = metadata.Favorite
+		host.LastConnectedAt = metadata.LastConnectedAt
+		host.CreatedAt = metadata.CreatedAt
+		host.UpdatedAt = metadata.UpdatedAt
+	}
 }
 
 func getHostForDisplay(ctx context.Context, paths config.Paths, st *store.Store, alias string) (model.Host, error) {

@@ -12,13 +12,18 @@ import (
 )
 
 type ImportedHost struct {
-	Alias        string
-	DisplayName  string
-	HostName     string
-	User         string
-	Port         int
-	IdentityFile string
-	Source       string
+	Alias         string
+	DisplayName   string
+	HostName      string
+	User          string
+	Port          int
+	IdentityFile  string
+	ProxyJump     string
+	ProxyCommand  string
+	ForwardAgent  string
+	LocalForward  []string
+	RemoteForward []string
+	Source        string
 }
 
 type parser struct {
@@ -27,25 +32,35 @@ type parser struct {
 }
 
 type hostBlock struct {
-	aliases      []string
-	displayName  string
-	hostName     string
-	user         string
-	port         int
-	portSet      bool
-	identityFile string
-	source       string
+	aliases       []string
+	displayName   string
+	hostName      string
+	user          string
+	port          int
+	portSet       bool
+	identityFile  string
+	proxyJump     string
+	proxyCommand  string
+	forwardAgent  string
+	localForward  []string
+	remoteForward []string
+	source        string
 }
 
 type parsedHost struct {
-	alias        string
-	displayName  string
-	hostName     string
-	user         string
-	port         int
-	portSet      bool
-	identityFile string
-	source       string
+	alias         string
+	displayName   string
+	hostName      string
+	user          string
+	port          int
+	portSet       bool
+	identityFile  string
+	proxyJump     string
+	proxyCommand  string
+	forwardAgent  string
+	localForward  []string
+	remoteForward []string
+	source        string
 }
 
 func ParsePath(path string) ([]ImportedHost, error) {
@@ -108,14 +123,19 @@ func (p *parser) parseFile(path string) error {
 			}
 
 			host := parsedHost{
-				alias:        alias,
-				displayName:  current.displayName,
-				hostName:     current.hostName,
-				user:         current.user,
-				port:         current.port,
-				portSet:      current.portSet,
-				identityFile: current.identityFile,
-				source:       current.source,
+				alias:         alias,
+				displayName:   current.displayName,
+				hostName:      current.hostName,
+				user:          current.user,
+				port:          current.port,
+				portSet:       current.portSet,
+				identityFile:  current.identityFile,
+				proxyJump:     current.proxyJump,
+				proxyCommand:  current.proxyCommand,
+				forwardAgent:  current.forwardAgent,
+				localForward:  current.localForward,
+				remoteForward: current.remoteForward,
+				source:        current.source,
 			}
 
 			if existing, exists := p.hosts[alias]; exists {
@@ -203,6 +223,31 @@ func (p *parser) parseFile(path string) error {
 			pendingDisplayName = ""
 			if len(current.aliases) > 0 && current.identityFile == "" {
 				current.identityFile = firstValue(value)
+			}
+		case "proxyjump":
+			pendingDisplayName = ""
+			if len(current.aliases) > 0 && current.proxyJump == "" {
+				current.proxyJump = firstValue(value)
+			}
+		case "proxycommand":
+			pendingDisplayName = ""
+			if len(current.aliases) > 0 && current.proxyCommand == "" {
+				current.proxyCommand = value
+			}
+		case "forwardagent":
+			pendingDisplayName = ""
+			if len(current.aliases) > 0 && current.forwardAgent == "" {
+				current.forwardAgent = firstValue(value)
+			}
+		case "localforward":
+			pendingDisplayName = ""
+			if len(current.aliases) > 0 {
+				current.localForward = append(current.localForward, value)
+			}
+		case "remoteforward":
+			pendingDisplayName = ""
+			if len(current.aliases) > 0 {
+				current.remoteForward = append(current.remoteForward, value)
 			}
 		default:
 			pendingDisplayName = ""
@@ -336,6 +381,21 @@ func mergeParsedHost(existing parsedHost, next parsedHost) parsedHost {
 	if existing.identityFile == "" && next.identityFile != "" {
 		existing.identityFile = next.identityFile
 	}
+	if existing.proxyJump == "" && next.proxyJump != "" {
+		existing.proxyJump = next.proxyJump
+	}
+	if existing.proxyCommand == "" && next.proxyCommand != "" {
+		existing.proxyCommand = next.proxyCommand
+	}
+	if existing.forwardAgent == "" && next.forwardAgent != "" {
+		existing.forwardAgent = next.forwardAgent
+	}
+	if len(existing.localForward) == 0 && len(next.localForward) > 0 {
+		existing.localForward = next.localForward
+	}
+	if len(existing.remoteForward) == 0 && len(next.remoteForward) > 0 {
+		existing.remoteForward = next.remoteForward
+	}
 	if existing.source == "" && next.source != "" {
 		existing.source = next.source
 	}
@@ -344,13 +404,18 @@ func mergeParsedHost(existing parsedHost, next parsedHost) parsedHost {
 
 func (h parsedHost) export() ImportedHost {
 	return ImportedHost{
-		Alias:        h.alias,
-		DisplayName:  h.displayName,
-		HostName:     firstNonEmpty(h.hostName, h.alias),
-		User:         h.user,
-		Port:         defaultPort(h.port),
-		IdentityFile: h.identityFile,
-		Source:       h.source,
+		Alias:         h.alias,
+		DisplayName:   h.displayName,
+		HostName:      firstNonEmpty(h.hostName, h.alias),
+		User:          h.user,
+		Port:          defaultPort(h.port),
+		IdentityFile:  h.identityFile,
+		ProxyJump:     h.proxyJump,
+		ProxyCommand:  h.proxyCommand,
+		ForwardAgent:  h.forwardAgent,
+		LocalForward:  h.localForward,
+		RemoteForward: h.remoteForward,
+		Source:        h.source,
 	}
 }
 

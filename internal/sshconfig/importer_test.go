@@ -45,6 +45,109 @@ func TestParsePathReadsHostBlocksAndIncludes(t *testing.T) {
 	}
 }
 
+func TestParsePathReadsNetworkDirectives(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	mainPath := filepath.Join(tempDir, "config")
+	content := strings.Join([]string{
+		"Host bastion",
+		"  HostName jump.example.com",
+		"  User admin",
+		"  ForwardAgent yes",
+		"",
+		"Host app",
+		"  HostName 10.0.0.5",
+		"  User deploy",
+		"  ProxyJump bastion",
+		"  ProxyCommand ssh -W %h:%p bastion",
+		"  LocalForward 8080:localhost:80",
+		"  LocalForward 9090:localhost:9090",
+		"  RemoteForward 3000:localhost:3000",
+		"",
+	}, "\n")
+	if err := os.WriteFile(mainPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	hosts, err := ParsePath(mainPath)
+	if err != nil {
+		t.Fatalf("parse path: %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(hosts))
+	}
+
+	appHost := hosts[0]
+	if appHost.ProxyJump != "bastion" {
+		t.Fatalf("expected ProxyJump %q, got %q", "bastion", appHost.ProxyJump)
+	}
+	if appHost.ProxyCommand != "ssh -W %h:%p bastion" {
+		t.Fatalf("expected ProxyCommand %q, got %q", "ssh -W %h:%p bastion", appHost.ProxyCommand)
+	}
+	if len(appHost.LocalForward) != 2 {
+		t.Fatalf("expected 2 LocalForward entries, got %d", len(appHost.LocalForward))
+	}
+	if appHost.LocalForward[0] != "8080:localhost:80" {
+		t.Fatalf("unexpected LocalForward[0]: %q", appHost.LocalForward[0])
+	}
+	if appHost.LocalForward[1] != "9090:localhost:9090" {
+		t.Fatalf("unexpected LocalForward[1]: %q", appHost.LocalForward[1])
+	}
+	if len(appHost.RemoteForward) != 1 || appHost.RemoteForward[0] != "3000:localhost:3000" {
+		t.Fatalf("unexpected RemoteForward: %v", appHost.RemoteForward)
+	}
+
+	bastion := hosts[1]
+	if bastion.ForwardAgent != "yes" {
+		t.Fatalf("expected ForwardAgent %q, got %q", "yes", bastion.ForwardAgent)
+	}
+}
+
+func TestParsePathMergesNetworkDirectivesByFillIfEmpty(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	mainPath := filepath.Join(tempDir, "config")
+	content := strings.Join([]string{
+		"Host app",
+		"  HostName 10.0.0.5",
+		"  ProxyJump bastion1",
+		"  LocalForward 8080:localhost:80",
+		"",
+		"Host app",
+		"  ProxyJump bastion2",
+		"  ForwardAgent yes",
+		"  LocalForward 9090:localhost:9090",
+		"",
+	}, "\n")
+	if err := os.WriteFile(mainPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	hosts, err := ParsePath(mainPath)
+	if err != nil {
+		t.Fatalf("parse path: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+
+	host := hosts[0]
+	// first concrete value wins for strings
+	if host.ProxyJump != "bastion1" {
+		t.Fatalf("expected ProxyJump %q, got %q", "bastion1", host.ProxyJump)
+	}
+	// second block fills missing ForwardAgent
+	if host.ForwardAgent != "yes" {
+		t.Fatalf("expected ForwardAgent %q, got %q", "yes", host.ForwardAgent)
+	}
+	// slices: first block's values win (not appended)
+	if len(host.LocalForward) != 1 || host.LocalForward[0] != "8080:localhost:80" {
+		t.Fatalf("expected first block's LocalForward, got %v", host.LocalForward)
+	}
+}
+
 func TestParsePathMergesDuplicateAliasesByMissingFields(t *testing.T) {
 	t.Parallel()
 

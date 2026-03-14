@@ -144,17 +144,21 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 
 			items := append(make([]ui.HostItem, 0, len(hosts)), hosts...)
 
-			return items, fmt.Sprintf("Reloaded %d managed host(s)", len(hosts)), nil
+			return items, fmt.Sprintf("Reloaded %d host(s)", len(hosts)), nil
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
 			return hostService.AddManagedHost(ctx, app.AddManagedHostInput{
-				Alias:        input.Alias,
-				DisplayName:  input.DisplayName,
-				HostName:     input.HostName,
-				User:         input.User,
-				Port:         input.Port,
-				IdentityFile: input.IdentityFile,
-				Password:     input.Password,
+				Alias:         input.Alias,
+				DisplayName:   input.DisplayName,
+				HostName:      input.HostName,
+				User:          input.User,
+				Port:          input.Port,
+				ProxyJump:     input.ProxyJump,
+				ForwardAgent:  input.ForwardAgent,
+				LocalForward:  input.LocalForward,
+				RemoteForward: input.RemoteForward,
+				IdentityFile:  input.IdentityFile,
+				Password:      input.Password,
 			})
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
@@ -165,6 +169,10 @@ func runTUI(ctx context.Context, paths config.Paths, st *store.Store) error {
 				HostName:      input.HostName,
 				User:          input.User,
 				Port:          input.Port,
+				ProxyJump:     input.ProxyJump,
+				ForwardAgent:  input.ForwardAgent,
+				LocalForward:  input.LocalForward,
+				RemoteForward: input.RemoteForward,
 				IdentityFile:  input.IdentityFile,
 				Password:      input.Password,
 				ClearPassword: input.ClearPassword,

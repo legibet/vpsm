@@ -156,6 +156,9 @@ func normalizeManagedHost(managedConfigPath string, host ImportedHost) ImportedH
 	host.HostName = strings.TrimSpace(host.HostName)
 	host.User = strings.TrimSpace(host.User)
 	host.IdentityFile = strings.TrimSpace(host.IdentityFile)
+	host.ProxyJump = strings.TrimSpace(host.ProxyJump)
+	host.ProxyCommand = strings.TrimSpace(host.ProxyCommand)
+	host.ForwardAgent = strings.TrimSpace(host.ForwardAgent)
 	host.Port = defaultPort(host.Port)
 	return host
 }
@@ -197,6 +200,31 @@ func writeManagedHosts(managedConfigPath string, hosts []ImportedHost) error {
 		if host.IdentityFile != "" {
 			b.WriteString("  IdentityFile ")
 			b.WriteString(host.IdentityFile)
+			b.WriteByte('\n')
+		}
+		if host.ProxyJump != "" {
+			b.WriteString("  ProxyJump ")
+			b.WriteString(host.ProxyJump)
+			b.WriteByte('\n')
+		}
+		if host.ProxyCommand != "" {
+			b.WriteString("  ProxyCommand ")
+			b.WriteString(host.ProxyCommand)
+			b.WriteByte('\n')
+		}
+		if host.ForwardAgent != "" {
+			b.WriteString("  ForwardAgent ")
+			b.WriteString(host.ForwardAgent)
+			b.WriteByte('\n')
+		}
+		for _, lf := range host.LocalForward {
+			b.WriteString("  LocalForward ")
+			b.WriteString(lf)
+			b.WriteByte('\n')
+		}
+		for _, rf := range host.RemoteForward {
+			b.WriteString("  RemoteForward ")
+			b.WriteString(rf)
 			b.WriteByte('\n')
 		}
 		if i < len(hosts)-1 {

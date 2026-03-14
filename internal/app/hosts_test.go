@@ -62,6 +62,59 @@ func TestAddManagedHostTrimsAliasBeforeDuplicateCheck(t *testing.T) {
 	}
 }
 
+func TestAddManagedHostPreservesMultipleForwardRules(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	if err := sshconfig.EnsureManagedConfig(paths.SSHConfigPath, paths.ManagedConfigPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	svc := NewHostService(paths, st)
+
+	// Simulate form input with comma-separated forward rules
+	err = svc.AddManagedHost(ctx, AddManagedHostInput{
+		Alias:         "fwd-test",
+		HostName:      "10.0.0.5",
+		LocalForward:  "8080:localhost:80, 9090:localhost:9090",
+		RemoteForward: "3000:localhost:3000, 4000:localhost:4000",
+	})
+	if err != nil {
+		t.Fatalf("add managed host: %v", err)
+	}
+
+	hosts, err := sshconfig.ListManagedHosts(paths.ManagedConfigPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+
+	h := hosts[0]
+	if len(h.LocalForward) != 2 {
+		t.Fatalf("expected 2 LocalForward entries, got %d: %v", len(h.LocalForward), h.LocalForward)
+	}
+	if h.LocalForward[0] != "8080:localhost:80" || h.LocalForward[1] != "9090:localhost:9090" {
+		t.Fatalf("unexpected LocalForward: %v", h.LocalForward)
+	}
+	if len(h.RemoteForward) != 2 {
+		t.Fatalf("expected 2 RemoteForward entries, got %d: %v", len(h.RemoteForward), h.RemoteForward)
+	}
+	if h.RemoteForward[0] != "3000:localhost:3000" || h.RemoteForward[1] != "4000:localhost:4000" {
+		t.Fatalf("unexpected RemoteForward: %v", h.RemoteForward)
+	}
+}
+
 func TestAddManagedHostRejectsInvalidAliasBeforeWriting(t *testing.T) {
 	t.Parallel()
 

@@ -15,6 +15,11 @@ type Host struct {
 	Managed         bool
 	AuthMode        string
 	IdentityFile    string
+	ProxyJump       string
+	ProxyCommand    string
+	ForwardAgent    string
+	LocalForward    []string
+	RemoteForward   []string
 	PasswordStored  bool
 	Provider        string
 	Region          string
@@ -33,6 +38,8 @@ func (h Host) SearchText() string {
 		h.HostName,
 		h.User,
 		h.IdentityFile,
+		h.ProxyJump,
+		h.ProxyCommand,
 		h.Note,
 		strings.Join(h.Tags, " "),
 	}
@@ -57,7 +64,7 @@ func (h Host) DisplayLabel() string {
 }
 
 func (h Host) IsConfigBacked() bool {
-	return h.Managed
+	return h.Source != ""
 }
 
 func (h Host) LastConnectedLabel() string {

@@ -19,6 +19,10 @@ type UpdateHostInput struct {
 	HostName      string
 	User          string
 	Port          int
+	ProxyJump     string
+	ForwardAgent  string
+	LocalForward  string
+	RemoteForward string
 	IdentityFile  string
 	Password      string
 	ClearPassword bool
@@ -38,6 +42,10 @@ const (
 	editFieldHostName
 	editFieldUser
 	editFieldPort
+	editFieldProxyJump
+	editFieldForwardAgent
+	editFieldLocalForward
+	editFieldRemoteForward
 	editFieldIdentity
 	editFieldPassword
 	editFieldCount
@@ -64,6 +72,18 @@ func newEditForm(host model.Host) editForm {
 	inputs[editFieldUser].SetValue(host.User)
 	inputs[editFieldPort] = newTextInput("22", 8)
 	inputs[editFieldPort].SetValue(strconv.Itoa(max(host.Port, 22)))
+	inputs[editFieldProxyJump] = newTextInput("bastion.example.com", 48)
+	inputs[editFieldProxyJump].SetValue(host.ProxyJump)
+	inputs[editFieldForwardAgent] = newTextInput("yes or no", 8)
+	inputs[editFieldForwardAgent].SetValue(host.ForwardAgent)
+	inputs[editFieldLocalForward] = newTextInput("8080:localhost:80, 9090:...", 48)
+	if len(host.LocalForward) > 0 {
+		inputs[editFieldLocalForward].SetValue(strings.Join(host.LocalForward, ", "))
+	}
+	inputs[editFieldRemoteForward] = newTextInput("9090:localhost:9090, ...", 48)
+	if len(host.RemoteForward) > 0 {
+		inputs[editFieldRemoteForward].SetValue(strings.Join(host.RemoteForward, ", "))
+	}
 	inputs[editFieldIdentity] = newTextInput("~/.ssh/id_ed25519", 48)
 	inputs[editFieldIdentity].SetValue(host.IdentityFile)
 	inputs[editFieldPassword] = newPasswordInput("leave blank to keep current password", 48)
@@ -89,6 +109,7 @@ func (f *editForm) setWidth(width int) {
 	}
 	if width > 8 {
 		f.inputs[editFieldPort].SetWidth(8)
+		f.inputs[editFieldForwardAgent].SetWidth(8)
 	}
 }
 
@@ -186,6 +207,10 @@ func (f *editForm) values() (UpdateHostInput, error) {
 		HostName:      hostName,
 		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
 		Port:          port,
+		ProxyJump:     strings.TrimSpace(f.inputs[editFieldProxyJump].Value()),
+		ForwardAgent:  strings.TrimSpace(f.inputs[editFieldForwardAgent].Value()),
+		LocalForward:  strings.TrimSpace(f.inputs[editFieldLocalForward].Value()),
+		RemoteForward: strings.TrimSpace(f.inputs[editFieldRemoteForward].Value()),
 		IdentityFile:  strings.TrimSpace(f.inputs[editFieldIdentity].Value()),
 		Password:      f.inputs[editFieldPassword].Value(),
 		ClearPassword: f.clearPassword,
@@ -226,8 +251,15 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		rows = append(rows, styles.sectionMeta.Render("Update alias, name, host, user, port, key path, or stored password."))
 	}
 
-	labels := []string{"* Alias", "Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
+	labels := []string{
+		"* Alias", "Name", "* Host / IP", "User", "Port",
+		"ProxyJump", "ForwardAgent", "LocalForward", "RemoteForward",
+		"Identity file", "Password",
+	}
 	for i := range f.inputs {
+		if i == editFieldProxyJump {
+			rows = append(rows, styles.separator.Render("── Network ──"))
+		}
 		if i == editFieldIdentity {
 			rows = append(rows, styles.separator.Render("── Authentication ──"))
 		}

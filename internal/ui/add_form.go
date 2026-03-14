@@ -11,13 +11,17 @@ import (
 )
 
 type CreateHostInput struct {
-	Alias        string
-	DisplayName  string
-	HostName     string
-	User         string
-	Port         int
-	IdentityFile string
-	Password     string
+	Alias         string
+	DisplayName   string
+	HostName      string
+	User          string
+	Port          int
+	ProxyJump     string
+	ForwardAgent  string
+	LocalForward  string
+	RemoteForward string
+	IdentityFile  string
+	Password      string
 }
 
 type addFormAction int
@@ -34,6 +38,10 @@ const (
 	fieldHostName
 	fieldUser
 	fieldPort
+	fieldProxyJump
+	fieldForwardAgent
+	fieldLocalForward
+	fieldRemoteForward
 	fieldIdentityFile
 	fieldPassword
 	fieldCount
@@ -53,6 +61,10 @@ func newAddForm() addForm {
 	inputs[fieldHostName] = newTextInput("203.0.113.10", 48)
 	inputs[fieldUser] = newTextInput("root", 24)
 	inputs[fieldPort] = newTextInput("22", 8)
+	inputs[fieldProxyJump] = newTextInput("bastion.example.com", 48)
+	inputs[fieldForwardAgent] = newTextInput("yes or no", 8)
+	inputs[fieldLocalForward] = newTextInput("8080:localhost:80, 9090:...", 48)
+	inputs[fieldRemoteForward] = newTextInput("9090:localhost:9090, ...", 48)
 	inputs[fieldIdentityFile] = newTextInput("~/.ssh/id_ed25519", 48)
 	inputs[fieldPassword] = newPasswordInput("optional, saved to system keychain", 48)
 	inputs[fieldPort].SetValue("22")
@@ -90,6 +102,7 @@ func (f *addForm) setWidth(width int) {
 	}
 	if width > 8 {
 		f.inputs[fieldPort].SetWidth(8)
+		f.inputs[fieldForwardAgent].SetWidth(8)
 	}
 }
 
@@ -168,13 +181,17 @@ func (f *addForm) values() (CreateHostInput, error) {
 	}
 
 	return CreateHostInput{
-		Alias:        alias,
-		DisplayName:  strings.TrimSpace(f.inputs[fieldDisplayName].Value()),
-		HostName:     hostName,
-		User:         strings.TrimSpace(f.inputs[fieldUser].Value()),
-		Port:         port,
-		IdentityFile: strings.TrimSpace(f.inputs[fieldIdentityFile].Value()),
-		Password:     f.inputs[fieldPassword].Value(),
+		Alias:         alias,
+		DisplayName:   strings.TrimSpace(f.inputs[fieldDisplayName].Value()),
+		HostName:      hostName,
+		User:          strings.TrimSpace(f.inputs[fieldUser].Value()),
+		Port:          port,
+		ProxyJump:     strings.TrimSpace(f.inputs[fieldProxyJump].Value()),
+		ForwardAgent:  strings.TrimSpace(f.inputs[fieldForwardAgent].Value()),
+		LocalForward:  strings.TrimSpace(f.inputs[fieldLocalForward].Value()),
+		RemoteForward: strings.TrimSpace(f.inputs[fieldRemoteForward].Value()),
+		IdentityFile:  strings.TrimSpace(f.inputs[fieldIdentityFile].Value()),
+		Password:      f.inputs[fieldPassword].Value(),
 	}, nil
 }
 
@@ -198,8 +215,15 @@ func (f addForm) view(styles styleSet, width int, height int) string {
 		rows = append(rows, styles.sectionMeta.Render("Required: alias and host. Name and password are optional."))
 	}
 
-	labels := []string{"* Alias", "Name", "* Host / IP", "User", "Port", "Identity file", "Password"}
+	labels := []string{
+		"* Alias", "Name", "* Host / IP", "User", "Port",
+		"ProxyJump", "ForwardAgent", "LocalForward", "RemoteForward",
+		"Identity file", "Password",
+	}
 	for i := range f.inputs {
+		if i == fieldProxyJump {
+			rows = append(rows, styles.separator.Render("── Network ──"))
+		}
 		if i == fieldIdentityFile {
 			rows = append(rows, styles.separator.Render("── Authentication ──"))
 		}

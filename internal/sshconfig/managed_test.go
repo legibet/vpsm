@@ -130,6 +130,70 @@ func TestUpsertAndDeleteManagedHost(t *testing.T) {
 	}
 }
 
+func TestUpsertManagedHostWritesNetworkDirectives(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	if err := UpsertManagedHost(managedPath, ImportedHost{
+		Alias:         "app-1",
+		HostName:      "10.0.0.5",
+		User:          "deploy",
+		ProxyJump:     "bastion",
+		ForwardAgent:  "yes",
+		LocalForward:  []string{"8080:localhost:80"},
+		RemoteForward: []string{"9090:localhost:9090"},
+	}); err != nil {
+		t.Fatalf("upsert managed host: %v", err)
+	}
+
+	content, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read managed config: %v", err)
+	}
+
+	text := string(content)
+	if !strings.Contains(text, "ProxyJump bastion") {
+		t.Fatalf("expected ProxyJump in config, got %q", text)
+	}
+	if !strings.Contains(text, "ForwardAgent yes") {
+		t.Fatalf("expected ForwardAgent in config, got %q", text)
+	}
+	if !strings.Contains(text, "LocalForward 8080:localhost:80") {
+		t.Fatalf("expected LocalForward in config, got %q", text)
+	}
+	if !strings.Contains(text, "RemoteForward 9090:localhost:9090") {
+		t.Fatalf("expected RemoteForward in config, got %q", text)
+	}
+
+	// Round-trip: parse and verify
+	hosts, err := ListManagedHosts(managedPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	h := hosts[0]
+	if h.ProxyJump != "bastion" {
+		t.Fatalf("expected ProxyJump %q, got %q", "bastion", h.ProxyJump)
+	}
+	if h.ForwardAgent != "yes" {
+		t.Fatalf("expected ForwardAgent %q, got %q", "yes", h.ForwardAgent)
+	}
+	if len(h.LocalForward) != 1 || h.LocalForward[0] != "8080:localhost:80" {
+		t.Fatalf("unexpected LocalForward: %v", h.LocalForward)
+	}
+	if len(h.RemoteForward) != 1 || h.RemoteForward[0] != "9090:localhost:9090" {
+		t.Fatalf("unexpected RemoteForward: %v", h.RemoteForward)
+	}
+}
+
 func TestUpsertManagedHostRejectsInvalidAlias(t *testing.T) {
 	t.Parallel()
 

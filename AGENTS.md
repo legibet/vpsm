@@ -16,7 +16,7 @@ Automately update this file when you make changes to the codebase, architecture,
 ## Current Architecture
 
 - `main.go`: CLI entrypoint, root context setup, and command routing.
-- `hostsource.go`: builds the display host list from `~/.ssh/vpsm.conf` plus local metadata.
+- `hostsource.go`: builds the display host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates metadata.
 - `internal/app/`: thin use-case layer for managed-host add/update/delete workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
 - `internal/app/keysetup.go`: orchestrates managed-host SSH key setup and `IdentityFile` write-back.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
@@ -29,15 +29,17 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## Source of Truth Rules
 
-- Visible host inventory comes from `~/.ssh/vpsm.conf`.
+- Visible host inventory merges managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes). Managed hosts appear with `Managed: true`; system hosts with `Managed: false`.
 - `vpsm` manages its own writable include file at `~/.ssh/vpsm.conf`.
 - Optional display names live with managed hosts in `~/.ssh/vpsm.conf` comments.
 - The main `~/.ssh/config` is still used to ensure the managed `Include` exists and to detect alias conflicts.
-- Favorites and last-connected timestamps are local metadata in SQLite.
+- When a host alias exists in both managed and system config, the managed entry takes precedence (system duplicate is skipped).
+- `IsConfigBacked()` now returns true when `Source != ""` (not just `Managed`), so system hosts from SSH config also use alias-based connections.
+- Favorites and last-connected timestamps are local metadata in SQLite; they apply to both managed and system hosts.
 - Passwords are stored in keychain only.
 - Do not store passwords in SSH config.
 - Do not store passwords in SQLite.
-- Existing hand-written SSH config entries are not imported into the `vpsm` inventory automatically.
+- System hosts are read-only in the TUI: edit/delete/key-setup actions show status bar hints instead.
 - Read-only flows must not migrate or resurrect hosts from SQLite metadata into `~/.ssh/vpsm.conf`.
 
 ## Build Commands
@@ -125,6 +127,8 @@ Automately update this file when you make changes to the codebase, architecture,
 - Validate managed host aliases through `internal/sshconfig.ValidateAlias` before writing `Host` entries.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
 - Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
+- Managed hosts support extended directives: ProxyJump, ProxyCommand, ForwardAgent, LocalForward, RemoteForward. These are written after IdentityFile in the managed config.
+- The parser (`importer.go`) recognizes these directives for both managed and system hosts. Strings use fill-if-empty merge; forward slices use first-block-wins.
 - Managed aliases must round-trip safely through SSH config parsing: reject whitespace, wildcard, negation, and quoted aliases.
 - Preserve the main SSH config and only ensure the managed `Include` is present.
 - Read-only flows must not rewrite `~/.ssh/config` when the managed `Include` already exists.
@@ -153,11 +157,13 @@ Automately update this file when you make changes to the codebase, architecture,
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
-- The server list currently renders one host per row: display name and alias on the left, target meta on the same line.
+- The server list currently renders one host per row: display name and alias on the left, target meta and source tag (e.g. `vpsm`, `config`, `work`) on the same line.
+- Footer hints are dynamic: managed hosts show edit/delete/key actions; system hosts omit those and only show new/fav/refresh.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
 - Interactive key-setup work that needs terminal control should pause Bubble Tea with `tea.Exec`/`tea.ExecProcess`; do not try to run first-time host-key confirmation in a background `tea.Cmd`.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
+- The detail panel shows a Source row and a Network section (ProxyJump, ForwardAgent, LocalForward, RemoteForward) when directives are present.
 - If a display name exists, show it without hiding the technical alias completely.
 - Keep key hints accurate when you change interactions.
 

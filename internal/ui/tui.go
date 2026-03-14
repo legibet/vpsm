@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -222,6 +223,10 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.filtered) == 0 || m.updateHost == nil {
 			return m, nil
 		}
+		if !m.filtered[m.cursor].Managed {
+			m.setStatus("system host — edit "+sourceTag(m.filtered[m.cursor])+" directly", statusInfo)
+			return m, nil
+		}
 		m.mode = modeEdit
 		m.editForm = newEditForm(m.filtered[m.cursor])
 		m.editForm.setWidth(m.formWidth())
@@ -231,12 +236,20 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.filtered) == 0 || m.deleteHost == nil {
 			return m, nil
 		}
+		if !m.filtered[m.cursor].Managed {
+			m.setStatus("system host — edit "+sourceTag(m.filtered[m.cursor])+" directly", statusInfo)
+			return m, nil
+		}
 		m.mode = modeDeleteConfirm
 		m.deleteAlias = m.currentAlias()
 		m.setStatus("", statusInfo)
 		return m, nil
 	case "i":
 		if len(m.filtered) == 0 || m.setupHostKey == nil {
+			return m, nil
+		}
+		if !m.filtered[m.cursor].Managed {
+			m.setStatus("key setup is only available for managed hosts", statusInfo)
 			return m, nil
 		}
 		plan, err := sshutil.PlanKeySetup(m.filtered[m.cursor].Alias, m.filtered[m.cursor].IdentityFile)
@@ -453,6 +466,13 @@ func (m *tuiModel) selectAlias(alias string) {
 	}
 }
 
+func (m tuiModel) selectedIsManaged() bool {
+	if len(m.filtered) == 0 {
+		return false
+	}
+	return m.filtered[m.cursor].Managed
+}
+
 func (m tuiModel) currentAlias() string {
 	if len(m.filtered) == 0 {
 		return ""
@@ -631,7 +651,7 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 
 	rows := []string{
 		titleLine,
-		m.styles.sectionMeta.Render("/ search  n add  e edit  d delete  i key  enter connect"),
+		m.styles.sectionMeta.Render("/ search  enter connect"),
 	}
 
 	if len(m.filtered) == 0 {
@@ -639,7 +659,7 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 			keyN := m.styles.footerKey.Render("n")
 			rows = append(rows,
 				"",
-				m.styles.muted.Render("No managed hosts yet."),
+				m.styles.muted.Render("No hosts found."),
 				m.styles.muted.Render("Press "+keyN+m.styles.muted.Render(" to add your first server.")),
 			)
 		} else {
@@ -686,7 +706,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 		parts = append(parts, primaryStyle.Render(host.Alias))
 	}
 
-	parts = append(parts, metaStyle.Render("  "+listMeta(host)))
+	parts = append(parts, metaStyle.Render("  "+listMeta(host)+"  "+sourceTag(host)))
 
 	line := strings.Join(parts, "")
 	return m.styles.listItem.MaxWidth(m.listContentWidth(width)).Render(line)
@@ -716,13 +736,52 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 		rows = append(rows, m.styles.detailName.Render(selected.Alias))
 	}
 
+	sourceLabel := "vpsm managed"
+	if !selected.Managed {
+		sourceLabel = filepath.Base(selected.Source)
+		if sourceLabel == "" || sourceLabel == "." {
+			sourceLabel = "ssh"
+		}
+	}
+
 	rows = append(rows,
 		"",
+		m.detailRow("Source", sourceLabel),
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
 		m.detailRow("Port", fmt.Sprintf("%d", port)),
 		m.detailRow("Route", connectionMode(selected)),
 	)
+
+	if hasNetworkDirectives(selected) {
+		rows = append(rows,
+			"",
+			m.styles.separator.Render("── Network ──"),
+		)
+		if selected.ProxyJump != "" {
+			rows = append(rows, m.detailRow("ProxyJump", selected.ProxyJump))
+		}
+		if selected.ProxyCommand != "" {
+			rows = append(rows, m.detailRow("ProxyCmd", selected.ProxyCommand))
+		}
+		if selected.ForwardAgent != "" {
+			rows = append(rows, m.detailRow("ForwardAgent", selected.ForwardAgent))
+		}
+		for i, lf := range selected.LocalForward {
+			if i == 0 {
+				rows = append(rows, m.detailRow("LocalFwd", lf))
+			} else {
+				rows = append(rows, m.detailRow("", lf))
+			}
+		}
+		for i, rf := range selected.RemoteForward {
+			if i == 0 {
+				rows = append(rows, m.detailRow("RemoteFwd", rf))
+			} else {
+				rows = append(rows, m.detailRow("", rf))
+			}
+		}
+	}
 
 	rows = append(rows,
 		"",
@@ -1028,12 +1087,38 @@ func (m tuiModel) footerHints() []footerHint {
 		}
 		return hints
 	}
+	managed := m.selectedIsManaged()
 	if m.isCompactLayout() {
+		if managed {
+			return []footerHint{
+				{"tab", "pane"},
+				{"j/k", "move"},
+				{"/", "search"},
+				{"n/e/d/i/f/r", ""},
+				{"enter", "connect"},
+				{"q", "quit"},
+			}
+		}
 		return []footerHint{
 			{"tab", "pane"},
 			{"j/k", "move"},
 			{"/", "search"},
-			{"n/e/d/i/f/r", ""},
+			{"n/f/r", ""},
+			{"enter", "connect"},
+			{"q", "quit"},
+		}
+	}
+	if managed {
+		return []footerHint{
+			{"j/k", "move"},
+			{"pgup/dn", "page"},
+			{"/", "search"},
+			{"n", "new"},
+			{"e", "edit"},
+			{"d", "delete"},
+			{"i", "key"},
+			{"f", "fav"},
+			{"r", "refresh"},
 			{"enter", "connect"},
 			{"q", "quit"},
 		}
@@ -1043,9 +1128,6 @@ func (m tuiModel) footerHints() []footerHint {
 		{"pgup/dn", "page"},
 		{"/", "search"},
 		{"n", "new"},
-		{"e", "edit"},
-		{"d", "delete"},
-		{"i", "key"},
 		{"f", "fav"},
 		{"r", "refresh"},
 		{"enter", "connect"},
@@ -1093,7 +1175,7 @@ func useCompactFormLayout(panelWidth int, panelHeight int) bool {
 	if contentWidth < 36 {
 		return false
 	}
-	return panelWidth < 72 || panelHeight < 18
+	return panelWidth < 72 || panelHeight < 24
 }
 
 func compactFormInputWidth(panelWidth int) int {
@@ -1108,6 +1190,21 @@ func listMeta(host model.Host) string {
 	return listTargetLabel(host)
 }
 
+func sourceTag(host model.Host) string {
+	if host.Managed {
+		return "vpsm"
+	}
+	if host.Source == "" {
+		return "ssh"
+	}
+	base := filepath.Base(host.Source)
+	base = strings.TrimSuffix(base, ".conf")
+	if base == "" || base == "." {
+		return "ssh"
+	}
+	return base
+}
+
 func listTargetLabel(host model.Host) string {
 	target := host.TargetName()
 	if host.Port > 0 && host.Port != 22 {
@@ -1120,6 +1217,11 @@ func listTargetLabel(host model.Host) string {
 	}
 
 	return user + " @ " + target
+}
+
+func hasNetworkDirectives(host model.Host) bool {
+	return host.ProxyJump != "" || host.ProxyCommand != "" || host.ForwardAgent != "" ||
+		len(host.LocalForward) > 0 || len(host.RemoteForward) > 0
 }
 
 func connectionMode(host model.Host) string {

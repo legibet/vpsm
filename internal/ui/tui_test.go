@@ -102,7 +102,7 @@ func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	m.applyFilter()
 
 	rendered := ansi.Strip(m.renderListPanel(48, 18))
-	if !strings.Contains(rendered, "No managed hosts yet.") {
+	if !strings.Contains(rendered, "No hosts found.") {
 		t.Fatalf("expected empty-state add hint, got %q", rendered)
 	}
 	if !strings.Contains(rendered, "to add your first server") {
@@ -238,7 +238,7 @@ func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
 	}
 }
 
-func TestDetailsPanelOmitsSourceRow(t *testing.T) {
+func TestDetailsPanelShowsSourceRow(t *testing.T) {
 	t.Parallel()
 
 	host := model.Host{
@@ -247,6 +247,7 @@ func TestDetailsPanelOmitsSourceRow(t *testing.T) {
 		HostName:       "10.0.0.1",
 		User:           "root",
 		Port:           2201,
+		Source:         "/home/user/.ssh/vpsm.conf",
 		Managed:        true,
 		IdentityFile:   "/tmp/id_ed25519",
 		PasswordStored: true,
@@ -260,9 +261,12 @@ func TestDetailsPanelOmitsSourceRow(t *testing.T) {
 	}
 	m.applyFilter()
 
-	rendered := ansi.Strip(m.renderDetailsPanel(48, 18))
-	if strings.Contains(rendered, "Source") {
-		t.Fatalf("expected details panel to omit source row, got %q", rendered)
+	rendered := ansi.Strip(m.renderDetailsPanel(48, 24))
+	if !strings.Contains(rendered, "Source") {
+		t.Fatalf("expected details panel to show source row, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "vpsm managed") {
+		t.Fatalf("expected source to say 'vpsm managed', got %q", rendered)
 	}
 	if !strings.Contains(rendered, host.DisplayName) {
 		t.Fatalf("expected details panel to show display name, got %q", rendered)
@@ -404,7 +408,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 
 	m := tuiModel{
 		hosts: []model.Host{
-			{Alias: "prod/api", HostName: "203.0.113.10", User: "root", Port: 22},
+			{Alias: "prod/api", HostName: "203.0.113.10", User: "root", Port: 22, Managed: true},
 		},
 		styles:       newStyles(),
 		width:        120,
@@ -431,6 +435,173 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 	}
 	if !strings.Contains(rendered, wantPath) {
 		t.Fatalf("expected key path in panel, got %q", rendered)
+	}
+}
+
+func TestFooterHintsDifferForManagedVsSystemHost(t *testing.T) {
+	t.Parallel()
+
+	managedHost := model.Host{Alias: "managed", HostName: "10.0.0.1", Managed: true, Source: "/tmp/vpsm.conf"}
+	systemHost := model.Host{Alias: "system", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
+
+	m := tuiModel{
+		hosts:  []model.Host{managedHost, systemHost},
+		styles: newStyles(),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	// cursor on managed host
+	m.cursor = 0
+	managedFooter := m.footerText()
+	if !strings.Contains(managedFooter, "e edit") {
+		t.Fatalf("expected 'e edit' in managed footer, got %q", managedFooter)
+	}
+	if !strings.Contains(managedFooter, "d delete") {
+		t.Fatalf("expected 'd delete' in managed footer, got %q", managedFooter)
+	}
+
+	// cursor on system host
+	m.cursor = 1
+	systemFooter := m.footerText()
+	if strings.Contains(systemFooter, "e edit") {
+		t.Fatalf("expected no 'e edit' in system footer, got %q", systemFooter)
+	}
+	if strings.Contains(systemFooter, "d delete") {
+		t.Fatalf("expected no 'd delete' in system footer, got %q", systemFooter)
+	}
+}
+
+func TestEditDeleteKeyShowStatusOnSystemHost(t *testing.T) {
+	t.Parallel()
+
+	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
+	m := tuiModel{
+		hosts:      []model.Host{systemHost},
+		styles:     newStyles(),
+		width:      120,
+		height:     24,
+		updateHost: func(input UpdateHostInput) error { return nil },
+		deleteHost: func(alias string) error { return nil },
+		setupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+			return nil
+		},
+	}
+	m.applyFilter()
+
+	// press 'e' on system host
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "e", Code: 'e'})
+	result := updated.(tuiModel)
+	if result.mode != modeBrowse {
+		t.Fatalf("expected to stay in browse mode, got %v", result.mode)
+	}
+	if !strings.Contains(result.status, "system host") {
+		t.Fatalf("expected system host status hint, got %q", result.status)
+	}
+
+	// press 'd' on system host
+	updated, _ = m.Update(tea.KeyPressMsg{Text: "d", Code: 'd'})
+	result = updated.(tuiModel)
+	if result.mode != modeBrowse {
+		t.Fatalf("expected to stay in browse mode after d, got %v", result.mode)
+	}
+	if !strings.Contains(result.status, "system host") {
+		t.Fatalf("expected system host status hint for d, got %q", result.status)
+	}
+
+	// press 'i' on system host
+	updated, _ = m.Update(tea.KeyPressMsg{Text: "i", Code: 'i'})
+	result = updated.(tuiModel)
+	if result.mode != modeBrowse {
+		t.Fatalf("expected to stay in browse mode after i, got %v", result.mode)
+	}
+	if !strings.Contains(result.status, "managed hosts") {
+		t.Fatalf("expected managed-only status hint for i, got %q", result.status)
+	}
+}
+
+func TestDetailsPanelShowsNetworkSection(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:        "app",
+		HostName:     "10.0.0.5",
+		User:         "deploy",
+		Source:       "/tmp/config",
+		ProxyJump:    "bastion",
+		ForwardAgent: "yes",
+		LocalForward: []string{"8080:localhost:80", "9090:localhost:9090"},
+	}
+
+	m := tuiModel{
+		hosts:  []model.Host{host},
+		styles: newStyles(),
+		width:  120,
+		height: 40,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderDetailsPanel(60, 30))
+	if !strings.Contains(rendered, "Network") {
+		t.Fatalf("expected Network section, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "bastion") {
+		t.Fatalf("expected ProxyJump value, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "yes") {
+		t.Fatalf("expected ForwardAgent value, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "8080:localhost:80") {
+		t.Fatalf("expected LocalForward value, got %q", rendered)
+	}
+}
+
+func TestDetailsPanelHidesNetworkSectionWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	host := model.Host{
+		Alias:    "simple",
+		HostName: "10.0.0.1",
+		User:     "root",
+		Source:   "/tmp/config",
+	}
+
+	m := tuiModel{
+		hosts:  []model.Host{host},
+		styles: newStyles(),
+		width:  120,
+		height: 40,
+	}
+	m.applyFilter()
+
+	rendered := ansi.Strip(m.renderDetailsPanel(60, 30))
+	if strings.Contains(rendered, "Network") {
+		t.Fatalf("expected no Network section for host without directives, got %q", rendered)
+	}
+}
+
+func TestSourceTagDerivation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		host model.Host
+		want string
+	}{
+		{"managed", model.Host{Managed: true, Source: "/tmp/vpsm.conf"}, "vpsm"},
+		{"config", model.Host{Source: "/home/user/.ssh/config"}, "config"},
+		{"conf.d file", model.Host{Source: "/home/user/.ssh/conf.d/work.conf"}, "work"},
+		{"empty source", model.Host{Source: ""}, "ssh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sourceTag(tt.host)
+			if got != tt.want {
+				t.Fatalf("sourceTag() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

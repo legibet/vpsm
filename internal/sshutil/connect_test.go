@@ -17,6 +17,7 @@ func TestBuildArgsUsesAliasWhenSafe(t *testing.T) {
 		HostName: "1.2.3.4",
 		User:     "root",
 		Port:     2222,
+		Source:   "/home/user/.ssh/vpsm.conf",
 		Managed:  true,
 	})
 	if err != nil {
@@ -36,6 +37,7 @@ func TestBuildArgsFallsBackForUnicodeAlias(t *testing.T) {
 		HostName: "124.16.71.246",
 		User:     "cosmos",
 		Port:     22,
+		Source:   "/home/user/.ssh/vpsm.conf",
 		Managed:  true,
 	})
 	if err != nil {
@@ -55,7 +57,6 @@ func TestBuildArgsUsesDirectTargetForManualHost(t *testing.T) {
 		HostName: "10.0.0.2",
 		User:     "ubuntu",
 		Port:     2201,
-		Source:   "manual",
 	})
 	if err != nil {
 		t.Fatalf("build args: %v", err)
@@ -74,7 +75,6 @@ func TestBuildArgsIncludesIdentityFile(t *testing.T) {
 		HostName:     "10.0.0.3",
 		User:         "root",
 		Port:         2222,
-		Source:       "manual",
 		IdentityFile: "~/.ssh/id_ed25519",
 	})
 	if err != nil {
@@ -94,7 +94,6 @@ func TestBuildCommandWithPasswordUsesAskpass(t *testing.T) {
 		Alias:    "demo",
 		HostName: "10.0.0.5",
 		User:     "root",
-		Source:   "manual",
 	}, "s3cr3t")
 	if err != nil {
 		t.Fatalf("build command: %v", err)
@@ -129,7 +128,6 @@ func TestBuildRemoteCommandWithPasswordIncludesRemoteCommand(t *testing.T) {
 		Alias:    "demo",
 		HostName: "10.0.0.5",
 		User:     "root",
-		Source:   "manual",
 	}, "s3cr3t", "echo hello")
 	if err != nil {
 		t.Fatalf("build remote command: %v", err)

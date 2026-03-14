@@ -56,14 +56,18 @@ func NewHostService(paths config.Paths, st *store.Store) HostService {
 
 // AddManagedHostInput describes the data needed to create a managed host.
 type AddManagedHostInput struct {
-	Alias        string
-	DisplayName  string
-	HostName     string
-	User         string
-	Port         int
-	IdentityFile string
-	Password     string
-	Favorite     bool
+	Alias         string
+	DisplayName   string
+	HostName      string
+	User          string
+	Port          int
+	ProxyJump     string
+	ForwardAgent  string
+	LocalForward  string
+	RemoteForward string
+	IdentityFile  string
+	Password      string
+	Favorite      bool
 }
 
 // UpdateManagedHostInput describes the editable fields for a managed host.
@@ -74,6 +78,10 @@ type UpdateManagedHostInput struct {
 	HostName      string
 	User          string
 	Port          int
+	ProxyJump     string
+	ForwardAgent  string
+	LocalForward  string
+	RemoteForward string
 	IdentityFile  string
 	Password      string
 	ClearPassword bool
@@ -121,12 +129,16 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 	}
 
 	host := sshconfig.ImportedHost{
-		Alias:        alias,
-		DisplayName:  input.DisplayName,
-		HostName:     input.HostName,
-		User:         input.User,
-		Port:         input.Port,
-		IdentityFile: input.IdentityFile,
+		Alias:         alias,
+		DisplayName:   input.DisplayName,
+		HostName:      input.HostName,
+		User:          input.User,
+		Port:          input.Port,
+		IdentityFile:  input.IdentityFile,
+		ProxyJump:     input.ProxyJump,
+		ForwardAgent:  input.ForwardAgent,
+		LocalForward:  splitForwardValue(input.LocalForward),
+		RemoteForward: splitForwardValue(input.RemoteForward),
 	}
 	if err := s.managedHosts.Upsert(host); err != nil {
 		return err
@@ -190,12 +202,16 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 	}
 
 	nextHost := sshconfig.ImportedHost{
-		Alias:        alias,
-		DisplayName:  input.DisplayName,
-		HostName:     input.HostName,
-		User:         input.User,
-		Port:         input.Port,
-		IdentityFile: input.IdentityFile,
+		Alias:         alias,
+		DisplayName:   input.DisplayName,
+		HostName:      input.HostName,
+		User:          input.User,
+		Port:          input.Port,
+		IdentityFile:  input.IdentityFile,
+		ProxyJump:     input.ProxyJump,
+		ForwardAgent:  input.ForwardAgent,
+		LocalForward:  splitForwardValue(input.LocalForward),
+		RemoteForward: splitForwardValue(input.RemoteForward),
 	}
 	if err := s.managedHosts.Upsert(nextHost); err != nil {
 		return err
@@ -231,12 +247,16 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 
 	// Write new SSH config entry.
 	nextHost := sshconfig.ImportedHost{
-		Alias:        newAlias,
-		DisplayName:  input.DisplayName,
-		HostName:     input.HostName,
-		User:         input.User,
-		Port:         input.Port,
-		IdentityFile: input.IdentityFile,
+		Alias:         newAlias,
+		DisplayName:   input.DisplayName,
+		HostName:      input.HostName,
+		User:          input.User,
+		Port:          input.Port,
+		IdentityFile:  input.IdentityFile,
+		ProxyJump:     input.ProxyJump,
+		ForwardAgent:  input.ForwardAgent,
+		LocalForward:  splitForwardValue(input.LocalForward),
+		RemoteForward: splitForwardValue(input.RemoteForward),
 	}
 	if err := s.managedHosts.Upsert(nextHost); err != nil {
 		return err
@@ -520,6 +540,25 @@ func (systemPasswordStore) SetPassword(alias string, password string) error {
 
 func (systemPasswordStore) DeletePassword(alias string) error {
 	return secret.DeletePassword(alias)
+}
+
+func splitForwardValue(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func samePath(left string, right string) bool {

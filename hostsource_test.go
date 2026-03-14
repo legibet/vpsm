@@ -11,7 +11,7 @@ import (
 	"vpsm/internal/store"
 )
 
-func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
+func TestListHostsForDisplayShowsManagedAndSystemHosts(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -51,11 +51,13 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list hosts: %v", err)
 	}
-	if len(hosts) != 1 {
-		t.Fatalf("expected 1 managed host, got %d", len(hosts))
+	if len(hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(hosts))
 	}
+
+	// managed-box should be first (favorite)
 	if hosts[0].Alias != "managed-box" {
-		t.Fatalf("expected managed host alias %q, got %q", "managed-box", hosts[0].Alias)
+		t.Fatalf("expected managed host alias %q first, got %q", "managed-box", hosts[0].Alias)
 	}
 	if hosts[0].DisplayName != "Managed Box" {
 		t.Fatalf("expected managed host display name %q, got %q", "Managed Box", hosts[0].DisplayName)
@@ -65,6 +67,58 @@ func TestListHostsForDisplayShowsManagedHostsOnly(t *testing.T) {
 	}
 	if !hosts[0].Favorite {
 		t.Fatal("expected metadata to merge for managed host")
+	}
+
+	// external-box should appear as system host
+	if hosts[1].Alias != "external-box" {
+		t.Fatalf("expected system host alias %q, got %q", "external-box", hosts[1].Alias)
+	}
+	if hosts[1].Managed {
+		t.Fatal("expected system host to not be marked managed")
+	}
+}
+
+func TestListHostsDeduplicatesManagedAlias(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	if err := ensureManagedSetup(paths); err != nil {
+		t.Fatalf("ensure managed setup: %v", err)
+	}
+	if err := sshconfig.UpsertManagedHost(paths.ManagedConfigPath, sshconfig.ImportedHost{
+		Alias:    "shared-alias",
+		HostName: "203.0.113.10",
+		User:     "root",
+	}); err != nil {
+		t.Fatalf("upsert managed host: %v", err)
+	}
+
+	hosts, err := listHostsForDisplay(ctx, paths, st)
+	if err != nil {
+		t.Fatalf("list hosts: %v", err)
+	}
+
+	count := 0
+	for _, h := range hosts {
+		if h.Alias == "shared-alias" {
+			count++
+			if !h.Managed {
+				t.Fatal("expected shared-alias to appear as managed")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected shared-alias exactly once, got %d", count)
 	}
 }
 
