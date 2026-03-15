@@ -23,6 +23,7 @@ type CreateHostInput struct {
 	RemoteForward string
 	IdentityFile  string
 	Password      string
+	Passphrase    string
 }
 
 type addFormAction int
@@ -46,6 +47,7 @@ const (
 	fieldRemoteForward
 	fieldIdentityFile
 	fieldPassword
+	fieldPassphrase
 	fieldCount
 )
 
@@ -53,7 +55,7 @@ const (
 // (Basic → Auth → Network).
 var addFormFocusOrder = []int{
 	fieldAlias, fieldDisplayName, fieldHostName, fieldUser, fieldPort,
-	fieldIdentityFile, fieldPassword,
+	fieldIdentityFile, fieldPassword, fieldPassphrase,
 	fieldProxyJump, fieldProxyCommand, fieldForwardAgent, fieldLocalForward, fieldRemoteForward,
 }
 
@@ -65,6 +67,7 @@ var addFormFields = []formField{
 	{fieldPort, "Port", "", false},
 	{fieldIdentityFile, "Key file", "Auth", false},
 	{fieldPassword, "Password", "", false},
+	{fieldPassphrase, "Passphrase", "", false},
 	{fieldProxyJump, "ProxyJump", "Network", false},
 	{fieldProxyCommand, "ProxyCommand", "", false},
 	{fieldForwardAgent, "ForwardAgent", "", false},
@@ -93,6 +96,7 @@ func newAddForm() addForm {
 	inputs[fieldRemoteForward] = newTextInput("9090:localhost:9090, ...", 48)
 	inputs[fieldIdentityFile] = newTextInput("~/.ssh/id_ed25519", 48)
 	inputs[fieldPassword] = newPasswordInput("optional, saved to system keychain", 48)
+	inputs[fieldPassphrase] = newPasswordInput("key passphrase, saved to keychain", 48)
 	inputs[fieldPort].SetValue("22")
 
 	return addForm{inputs: inputs}
@@ -229,6 +233,7 @@ func (f *addForm) values() (CreateHostInput, error) {
 		RemoteForward: strings.TrimSpace(f.inputs[fieldRemoteForward].Value()),
 		IdentityFile:  strings.TrimSpace(f.inputs[fieldIdentityFile].Value()),
 		Password:      f.inputs[fieldPassword].Value(),
+		Passphrase:    f.inputs[fieldPassphrase].Value(),
 	}, nil
 }
 

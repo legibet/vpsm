@@ -15,6 +15,12 @@ import (
 
 var safeAliasPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// AuthCredentials holds the optional password and key passphrase for SSH automation.
+type AuthCredentials struct {
+	Password   string
+	Passphrase string
+}
+
 // BuildCommand builds an ssh command without password automation.
 func BuildCommand(host model.Host) (*exec.Cmd, error) {
 	return BuildCommandContext(context.Background(), host)
@@ -27,12 +33,17 @@ func BuildCommandWithPassword(host model.Host, password string) (*exec.Cmd, erro
 
 // BuildCommandContext builds an ssh command bound to the provided context.
 func BuildCommandContext(ctx context.Context, host model.Host) (*exec.Cmd, error) {
-	return BuildCommandWithPasswordContext(ctx, host, "")
+	return BuildCommandWithCredentials(ctx, host, AuthCredentials{})
 }
 
 // BuildCommandWithPasswordContext builds an ssh command bound to the provided context.
 func BuildCommandWithPasswordContext(ctx context.Context, host model.Host, password string) (*exec.Cmd, error) {
-	return buildSSHCommandContext(ctx, host, password, nil)
+	return BuildCommandWithCredentials(ctx, host, AuthCredentials{Password: password})
+}
+
+// BuildCommandWithCredentials builds an ssh command with full credential support.
+func BuildCommandWithCredentials(ctx context.Context, host model.Host, creds AuthCredentials) (*exec.Cmd, error) {
+	return buildSSHCommandContext(ctx, host, creds, nil)
 }
 
 // BuildRemoteCommandContext builds an ssh command that runs a remote command.
@@ -47,21 +58,27 @@ func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host,
 	if strings.TrimSpace(remoteCommand) != "" {
 		extraArgs = append(extraArgs, remoteCommand)
 	}
-	return buildSSHCommandContext(ctx, host, password, extraArgs)
+	return buildSSHCommandContext(ctx, host, AuthCredentials{Password: password}, extraArgs)
 }
 
 // BuildSubsystemCommandWithPasswordContext builds an ssh command that requests a
 // remote subsystem such as "sftp".
 func BuildSubsystemCommandWithPasswordContext(ctx context.Context, host model.Host, password string, subsystem string) (*exec.Cmd, error) {
+	return BuildSubsystemCommandWithCredentials(ctx, host, AuthCredentials{Password: password}, subsystem)
+}
+
+// BuildSubsystemCommandWithCredentials builds an ssh subsystem command with full
+// credential support.
+func BuildSubsystemCommandWithCredentials(ctx context.Context, host model.Host, creds AuthCredentials, subsystem string) (*exec.Cmd, error) {
 	subsystem = strings.TrimSpace(subsystem)
 	if subsystem == "" {
 		return nil, fmt.Errorf("ssh subsystem is required")
 	}
 
-	return buildSSHCommandContext(ctx, host, password, []string{"-s", subsystem})
+	return buildSSHCommandContext(ctx, host, creds, []string{"-s", subsystem})
 }
 
-func buildSSHCommandContext(ctx context.Context, host model.Host, password string, extraArgs []string) (*exec.Cmd, error) {
+func buildSSHCommandContext(ctx context.Context, host model.Host, creds AuthCredentials, extraArgs []string) (*exec.Cmd, error) {
 	args, err := BuildArgs(host)
 	if err != nil {
 		return nil, err
@@ -69,7 +86,8 @@ func buildSSHCommandContext(ctx context.Context, host model.Host, password strin
 	args = append(args, extraArgs...)
 
 	cmdArgs := args
-	if strings.TrimSpace(password) == "" {
+	needAskpass := strings.TrimSpace(creds.Password) != "" || strings.TrimSpace(creds.Passphrase) != ""
+	if !needAskpass {
 		return exec.CommandContext(ctx, "ssh", cmdArgs...), nil
 	}
 
@@ -84,7 +102,8 @@ func buildSSHCommandContext(ctx context.Context, host model.Host, password strin
 		"DISPLAY=vpsm:0",
 		"SSH_ASKPASS="+askpassPath,
 		"SSH_ASKPASS_REQUIRE=prefer",
-		"VPSM_SSH_PASSWORD="+password,
+		"VPSM_SSH_PASSWORD="+creds.Password,
+		"VPSM_SSH_PASSPHRASE="+creds.Passphrase,
 	)
 	return cmd, nil
 }
@@ -142,7 +161,16 @@ func CanAutoFillPassword() bool {
 
 func ensureAskpassHelper() (string, error) {
 	path := filepath.Join(os.TempDir(), "vpsm-ssh-askpass.sh")
-	content := []byte("#!/bin/sh\nprintf '%s\\n' \"$VPSM_SSH_PASSWORD\"\n")
+	content := []byte(`#!/bin/sh
+case "$1" in
+  *[Pp]assphrase*)
+    printf '%s\n' "$VPSM_SSH_PASSPHRASE"
+    ;;
+  *)
+    printf '%s\n' "$VPSM_SSH_PASSWORD"
+    ;;
+esac
+`)
 	if err := os.WriteFile(path, content, 0o700); err != nil {
 		return "", fmt.Errorf("write ssh askpass helper: %w", err)
 	}

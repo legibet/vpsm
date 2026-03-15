@@ -28,6 +28,12 @@ type passwordStore interface {
 	DeletePassword(alias string) error
 }
 
+type passphraseStore interface {
+	GetPassphraseIfExists(alias string) (string, bool, error)
+	SetPassphrase(alias string, passphrase string) error
+	DeletePassphrase(alias string) error
+}
+
 type metadataStore interface {
 	GetHost(ctx context.Context, alias string) (model.Host, error)
 	EnsureHost(ctx context.Context, alias string) error
@@ -40,6 +46,7 @@ type metadataStore interface {
 type HostService struct {
 	managedHosts managedHostStore
 	passwords    passwordStore
+	passphrases  passphraseStore
 	metadata     metadataStore
 	keySetup     keySetupRunner
 }
@@ -49,6 +56,7 @@ func NewHostService(paths config.Paths, st *store.Store) HostService {
 	return HostService{
 		managedHosts: fileManagedHostStore{paths: paths},
 		passwords:    systemPasswordStore{},
+		passphrases:  systemPassphraseStore{},
 		metadata:     st,
 		keySetup:     systemKeySetupRunner{},
 	}
@@ -68,25 +76,28 @@ type AddManagedHostInput struct {
 	RemoteForward string
 	IdentityFile  string
 	Password      string
+	Passphrase    string
 	Favorite      bool
 }
 
 // UpdateManagedHostInput describes the editable fields for a managed host.
 type UpdateManagedHostInput struct {
-	Alias         string // current alias (used as the lookup key)
-	NewAlias      string // when non-empty and different from Alias, renames the host
-	DisplayName   string
-	HostName      string
-	User          string
-	Port          int
-	ProxyJump     string
-	ProxyCommand  string
-	ForwardAgent  string
-	LocalForward  string
-	RemoteForward string
-	IdentityFile  string
-	Password      string
-	ClearPassword bool
+	Alias           string // current alias (used as the lookup key)
+	NewAlias        string // when non-empty and different from Alias, renames the host
+	DisplayName     string
+	HostName        string
+	User            string
+	Port            int
+	ProxyJump       string
+	ProxyCommand    string
+	ForwardAgent    string
+	LocalForward    string
+	RemoteForward   string
+	IdentityFile    string
+	Password        string
+	ClearPassword   bool
+	Passphrase      string
+	ClearPassphrase bool
 }
 
 type managedHostSnapshot struct {
@@ -95,6 +106,11 @@ type managedHostSnapshot struct {
 }
 
 type passwordSnapshot struct {
+	value string
+	ok    bool
+}
+
+type passphraseSnapshot struct {
 	value string
 	ok    bool
 }
@@ -118,6 +134,10 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 	}
 
 	passwordState, err := s.loadPasswordSnapshot(alias)
+	if err != nil {
+		return err
+	}
+	passphraseState, err := s.loadPassphraseSnapshot(alias)
 	if err != nil {
 		return err
 	}
@@ -153,10 +173,18 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		return withRollback(err, rollbackErr)
 	}
 
+	if err := s.applyAddPassphrase(alias, input.Passphrase); err != nil {
+		rollbackErr := s.restorePassphrase(alias, passphraseState)
+		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+		return withRollback(err, rollbackErr)
+	}
+
 	favoriteTouched := false
 	if input.Favorite {
 		if err := s.metadata.EnsureHost(ctx, alias); err != nil {
-			rollbackErr := s.restorePassword(alias, passwordState)
+			rollbackErr := s.restorePassphrase(alias, passphraseState)
+			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
 			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
@@ -165,6 +193,7 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		value := true
 		if _, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
 			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, favoriteTouched)
+			rollbackErr = joinErrors(rollbackErr, s.restorePassphrase(alias, passphraseState))
 			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
 			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
@@ -204,6 +233,15 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 		}
 	}
 
+	passphraseTouched := input.ClearPassphrase || strings.TrimSpace(input.Passphrase) != ""
+	passphraseState := passphraseSnapshot{}
+	if passphraseTouched {
+		passphraseState, err = s.loadPassphraseSnapshot(alias)
+		if err != nil {
+			return err
+		}
+	}
+
 	nextHost := sshconfig.ImportedHost{
 		Alias:         alias,
 		DisplayName:   input.DisplayName,
@@ -221,12 +259,18 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 		return err
 	}
 
+	currentSnapshot := managedHostSnapshot{host: currentHost, ok: true}
+
 	if err := s.applyUpdatedPassword(alias, input); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
-			host: currentHost,
-			ok:   true,
-		}))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		return withRollback(err, rollbackErr)
+	}
+
+	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
+		rollbackErr := s.restorePassphrase(alias, passphraseState)
+		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
@@ -245,6 +289,10 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 	}
 
 	passwordState, err := s.loadPasswordSnapshot(oldAlias)
+	if err != nil {
+		return err
+	}
+	passphraseState, err := s.loadPassphraseSnapshot(oldAlias)
 	if err != nil {
 		return err
 	}
@@ -275,23 +323,55 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 
 	// Migrate keychain: apply new password rules, then migrate the stored secret.
 	if err := s.migratePassword(ctx, oldAlias, newAlias, passwordState, input); err != nil {
-		// Rollback SSH config changes and any partial keychain write for newAlias.
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
 		_ = s.passwords.DeletePassword(newAlias)
+		return err
+	}
+
+	// Migrate passphrase.
+	if err := s.migratePassphrase(ctx, oldAlias, newAlias, passphraseState, input); err != nil {
+		_ = s.managedHosts.Delete(newAlias)
+		_ = s.managedHosts.Upsert(currentHost)
+		_ = s.restorePassword(oldAlias, passwordState)
+		_ = s.passwords.DeletePassword(newAlias)
+		_ = s.passphrases.DeletePassphrase(newAlias)
 		return err
 	}
 
 	// Rename the metadata row (best-effort; row may not exist yet).
 	if err := s.metadata.RenameHost(ctx, oldAlias, newAlias); err != nil {
-		// Rollback SSH config and keychain.
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
 		_ = s.restorePassword(oldAlias, passwordState)
 		_ = s.passwords.DeletePassword(newAlias)
+		_ = s.restorePassphrase(oldAlias, passphraseState)
+		_ = s.passphrases.DeletePassphrase(newAlias)
 		return err
 	}
 
+	return nil
+}
+
+// migratePassphrase handles keychain passphrase updates when renaming a host.
+// Priority: explicit new passphrase > ClearPassphrase flag > copy existing secret.
+func (s HostService) migratePassphrase(_ context.Context, oldAlias, newAlias string, oldState passphraseSnapshot, input UpdateManagedHostInput) error {
+	newPassphrase := strings.TrimSpace(input.Passphrase)
+	if newPassphrase != "" {
+		if err := s.passphrases.SetPassphrase(newAlias, newPassphrase); err != nil {
+			return err
+		}
+		return s.passphrases.DeletePassphrase(oldAlias)
+	}
+	if input.ClearPassphrase {
+		return s.passphrases.DeletePassphrase(oldAlias)
+	}
+	if oldState.ok {
+		if err := s.passphrases.SetPassphrase(newAlias, oldState.value); err != nil {
+			return err
+		}
+		return s.passphrases.DeletePassphrase(oldAlias)
+	}
 	return nil
 }
 
@@ -332,24 +412,31 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 	if err != nil {
 		return err
 	}
+	passphraseState, err := s.loadPassphraseSnapshot(alias)
+	if err != nil {
+		return err
+	}
+
+	currentSnapshot := managedHostSnapshot{host: currentHost, ok: true}
 
 	if err := s.managedHosts.Delete(alias); err != nil {
 		return err
 	}
 	if err := s.passwords.DeletePassword(alias); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
-			host: currentHost,
-			ok:   true,
-		}))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		return withRollback(err, rollbackErr)
+	}
+	if err := s.passphrases.DeletePassphrase(alias); err != nil {
+		rollbackErr := s.restorePassphrase(alias, passphraseState)
+		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 	if err := s.metadata.DeleteMetadata(ctx, alias); err != nil {
-		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{
-			host: currentHost,
-			ok:   true,
-		}))
+		rollbackErr := s.restorePassphrase(alias, passphraseState)
+		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
@@ -425,12 +512,29 @@ func (s HostService) applyAddPassword(alias string, password string) error {
 	return s.passwords.DeletePassword(alias)
 }
 
+func (s HostService) applyAddPassphrase(alias string, passphrase string) error {
+	if strings.TrimSpace(passphrase) != "" {
+		return s.passphrases.SetPassphrase(alias, passphrase)
+	}
+	return s.passphrases.DeletePassphrase(alias)
+}
+
 func (s HostService) applyUpdatedPassword(alias string, input UpdateManagedHostInput) error {
 	if strings.TrimSpace(input.Password) != "" {
 		return s.passwords.SetPassword(alias, input.Password)
 	}
 	if input.ClearPassword {
 		return s.passwords.DeletePassword(alias)
+	}
+	return nil
+}
+
+func (s HostService) applyUpdatedPassphrase(alias string, input UpdateManagedHostInput) error {
+	if strings.TrimSpace(input.Passphrase) != "" {
+		return s.passphrases.SetPassphrase(alias, input.Passphrase)
+	}
+	if input.ClearPassphrase {
+		return s.passphrases.DeletePassphrase(alias)
 	}
 	return nil
 }
@@ -447,6 +551,21 @@ func (s HostService) restorePassword(alias string, snapshot passwordSnapshot) er
 		return s.passwords.SetPassword(alias, snapshot.value)
 	}
 	return s.passwords.DeletePassword(alias)
+}
+
+func (s HostService) restorePassphrase(alias string, snapshot passphraseSnapshot) error {
+	if snapshot.ok {
+		return s.passphrases.SetPassphrase(alias, snapshot.value)
+	}
+	return s.passphrases.DeletePassphrase(alias)
+}
+
+func (s HostService) loadPassphraseSnapshot(alias string) (passphraseSnapshot, error) {
+	value, ok, err := s.passphrases.GetPassphraseIfExists(alias)
+	if err != nil {
+		return passphraseSnapshot{}, err
+	}
+	return passphraseSnapshot{value: value, ok: ok}, nil
 }
 
 func (s HostService) restoreFavorite(ctx context.Context, alias string, snapshot favoriteSnapshot, touched bool) error {
@@ -545,6 +664,20 @@ func (systemPasswordStore) SetPassword(alias string, password string) error {
 
 func (systemPasswordStore) DeletePassword(alias string) error {
 	return secret.DeletePassword(alias)
+}
+
+type systemPassphraseStore struct{}
+
+func (systemPassphraseStore) GetPassphraseIfExists(alias string) (string, bool, error) {
+	return secret.GetPassphraseIfExists(alias)
+}
+
+func (systemPassphraseStore) SetPassphrase(alias string, passphrase string) error {
+	return secret.SetPassphrase(alias, passphrase)
+}
+
+func (systemPassphraseStore) DeletePassphrase(alias string) error {
+	return secret.DeletePassphrase(alias)
 }
 
 func splitForwardValue(value string) []string {

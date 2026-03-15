@@ -101,6 +101,16 @@ func (a App) run(args []string) error {
 			return errors.New("usage: vpsm clear-password <alias>")
 		}
 		return a.runClearPassword(args[1])
+	case "set-passphrase":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm set-passphrase <alias> [--value ...]")
+		}
+		return a.runSetPassphrase(args[1], args[2:])
+	case "clear-passphrase":
+		if len(args) < 2 {
+			return errors.New("usage: vpsm clear-passphrase <alias>")
+		}
+		return a.runClearPassphrase(args[1])
 	case "delete":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm delete <alias>")
@@ -178,24 +188,27 @@ func (a App) runTUI() error {
 				RemoteForward: input.RemoteForward,
 				IdentityFile:  input.IdentityFile,
 				Password:      input.Password,
+				Passphrase:    input.Passphrase,
 			})
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
 			return a.hosts.UpdateManagedHost(a.ctx, hosts.UpdateManagedHostInput{
-				Alias:         input.Alias,
-				NewAlias:      input.NewAlias,
-				DisplayName:   input.DisplayName,
-				HostName:      input.HostName,
-				User:          input.User,
-				Port:          input.Port,
-				ProxyJump:     input.ProxyJump,
-				ProxyCommand:  input.ProxyCommand,
-				ForwardAgent:  input.ForwardAgent,
-				LocalForward:  input.LocalForward,
-				RemoteForward: input.RemoteForward,
-				IdentityFile:  input.IdentityFile,
-				Password:      input.Password,
-				ClearPassword: input.ClearPassword,
+				Alias:           input.Alias,
+				NewAlias:        input.NewAlias,
+				DisplayName:     input.DisplayName,
+				HostName:        input.HostName,
+				User:            input.User,
+				Port:            input.Port,
+				ProxyJump:       input.ProxyJump,
+				ProxyCommand:    input.ProxyCommand,
+				ForwardAgent:    input.ForwardAgent,
+				LocalForward:    input.LocalForward,
+				RemoteForward:   input.RemoteForward,
+				IdentityFile:    input.IdentityFile,
+				Password:        input.Password,
+				ClearPassword:   input.ClearPassword,
+				Passphrase:      input.Passphrase,
+				ClearPassphrase: input.ClearPassphrase,
 			})
 		},
 		DeleteHost: func(alias string) error {
@@ -269,6 +282,7 @@ func (a App) runShow(alias string) error {
 		{"Auth", host.AuthMethodsLabel()},
 		{"Identity File", host.IdentityFileLabel()},
 		{"Password Stored", host.PasswordStoredLabel()},
+		{"Passphrase Stored", host.PassphraseStoredLabel()},
 		{"Favorite", fmt.Sprintf("%t", host.Favorite)},
 		{"Preview", connectionPreview(host)},
 		{"Last Connected", host.LastConnectedLabel()},
@@ -298,6 +312,7 @@ func (a App) runAdd(args []string) error {
 	var remoteForward string
 	var identityFile string
 	var password string
+	var passphrase string
 
 	fs.StringVar(&alias, "alias", "", "Host alias")
 	fs.StringVar(&displayName, "name", "", "Display name")
@@ -311,6 +326,7 @@ func (a App) runAdd(args []string) error {
 	fs.StringVar(&remoteForward, "remote-forward", "", "Comma-separated SSH RemoteForward values")
 	fs.StringVar(&identityFile, "identity-file", "", "SSH private key path")
 	fs.StringVar(&password, "password", "", "SSH password to store in keychain")
+	fs.StringVar(&passphrase, "passphrase", "", "SSH key passphrase to store in keychain")
 	fs.BoolVar(&favorite, "favorite", false, "Mark as favorite")
 
 	if err := fs.Parse(args); err != nil {
@@ -331,6 +347,7 @@ func (a App) runAdd(args []string) error {
 		RemoteForward: remoteForward,
 		IdentityFile:  identityFile,
 		Password:      password,
+		Passphrase:    passphrase,
 		Favorite:      favorite,
 	}); err != nil {
 		return err
@@ -494,6 +511,52 @@ func (a App) runClearPassword(alias string) error {
 	}
 
 	fmt.Printf("Cleared password for %s\n", alias)
+	return a.runShow(alias)
+}
+
+func (a App) runSetPassphrase(alias string, args []string) error {
+	alias = hosts.NormalizeAlias(alias)
+	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
+		return err
+	}
+
+	fs := flag.NewFlagSet("set-passphrase", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var value string
+	fs.StringVar(&value, "value", "", "Passphrase value")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	passphrase := value
+	if passphrase == "" {
+		var err error
+		passphrase, err = promptPassphrase(alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := secret.SetPassphrase(alias, passphrase); err != nil {
+		return err
+	}
+
+	fmt.Printf("Stored passphrase for %s\n", alias)
+	return a.runShow(alias)
+}
+
+func (a App) runClearPassphrase(alias string) error {
+	alias = hosts.NormalizeAlias(alias)
+	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
+		return err
+	}
+
+	if err := secret.DeletePassphrase(alias); err != nil {
+		return err
+	}
+
+	fmt.Printf("Cleared passphrase for %s\n", alias)
 	return a.runShow(alias)
 }
 

@@ -58,6 +58,12 @@ Store a password if you need one:
 ./vpsm set-password hk-prod-01
 ```
 
+Store a key passphrase for automatic unlock:
+
+```bash
+./vpsm set-passphrase hk-prod-01
+```
+
 Open the TUI:
 
 ```bash
@@ -79,6 +85,8 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 ./vpsm set my-box --name "Staging API" --host 198.51.100.11
 ./vpsm set-password my-box
 ./vpsm clear-password my-box
+./vpsm set-passphrase my-box
+./vpsm clear-passphrase my-box
 ./vpsm favorite my-box on
 ./vpsm import-ssh
 ./vpsm ssh my-box

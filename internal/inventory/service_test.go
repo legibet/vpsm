@@ -28,6 +28,7 @@ func TestListShowsManagedAndSystemHosts(t *testing.T) {
 
 	svc := NewService(paths, st)
 	svc.hasPassword = func(alias string) (bool, error) { return false, nil }
+	svc.hasPassphrase = func(alias string) (bool, error) { return false, nil }
 
 	if err := svc.EnsureManagedSetup(); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
@@ -96,6 +97,7 @@ func TestListDeduplicatesManagedAlias(t *testing.T) {
 
 	svc := NewService(paths, st)
 	svc.hasPassword = func(alias string) (bool, error) { return false, nil }
+	svc.hasPassphrase = func(alias string) (bool, error) { return false, nil }
 
 	if err := svc.EnsureManagedSetup(); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)
@@ -143,6 +145,7 @@ func TestListDoesNotMigrateMetadataOnlyHosts(t *testing.T) {
 
 	svc := NewService(paths, st)
 	svc.hasPassword = func(alias string) (bool, error) { return false, nil }
+	svc.hasPassphrase = func(alias string) (bool, error) { return false, nil }
 
 	if err := svc.EnsureManagedSetup(); err != nil {
 		t.Fatalf("ensure managed setup: %v", err)

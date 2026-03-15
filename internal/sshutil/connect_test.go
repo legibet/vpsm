@@ -2,8 +2,10 @@ package sshutil
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"vpsm/internal/model"
@@ -108,6 +110,7 @@ func TestBuildCommandWithPasswordUsesAskpass(t *testing.T) {
 
 	hasAskpass := false
 	hasPassword := false
+	hasPassphrase := false
 	for _, entry := range cmd.Env {
 		if len(entry) > len("SSH_ASKPASS=") && entry[:len("SSH_ASKPASS=")] == "SSH_ASKPASS=" {
 			hasAskpass = true
@@ -115,9 +118,102 @@ func TestBuildCommandWithPasswordUsesAskpass(t *testing.T) {
 		if entry == "VPSM_SSH_PASSWORD=s3cr3t" {
 			hasPassword = true
 		}
+		if len(entry) >= len("VPSM_SSH_PASSPHRASE=") && entry[:len("VPSM_SSH_PASSPHRASE=")] == "VPSM_SSH_PASSPHRASE=" {
+			hasPassphrase = true
+		}
 	}
-	if !hasAskpass || !hasPassword {
-		t.Fatalf("expected askpass env, got %#v", cmd.Env)
+	if !hasAskpass || !hasPassword || !hasPassphrase {
+		t.Fatalf("expected askpass env with password and passphrase vars, got %#v", cmd.Env)
+	}
+}
+
+func TestBuildCommandWithCredentialsUsesAskpassForPassphraseOnly(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := BuildCommandWithCredentials(context.Background(), model.Host{
+		Alias:    "demo",
+		HostName: "10.0.0.5",
+		User:     "root",
+	}, AuthCredentials{Passphrase: "my-passphrase"})
+	if err != nil {
+		t.Fatalf("build command: %v", err)
+	}
+
+	hasPassphrase := false
+	for _, entry := range cmd.Env {
+		if entry == "VPSM_SSH_PASSPHRASE=my-passphrase" {
+			hasPassphrase = true
+		}
+	}
+	if !hasPassphrase {
+		t.Fatal("expected VPSM_SSH_PASSPHRASE env var")
+	}
+}
+
+func TestBuildCommandWithCredentialsBothPasswordAndPassphrase(t *testing.T) {
+	t.Parallel()
+
+	cmd, err := BuildCommandWithCredentials(context.Background(), model.Host{
+		Alias:    "demo",
+		HostName: "10.0.0.5",
+		User:     "root",
+	}, AuthCredentials{Password: "pw", Passphrase: "pp"})
+	if err != nil {
+		t.Fatalf("build command: %v", err)
+	}
+
+	hasPassword := false
+	hasPassphrase := false
+	for _, entry := range cmd.Env {
+		if entry == "VPSM_SSH_PASSWORD=pw" {
+			hasPassword = true
+		}
+		if entry == "VPSM_SSH_PASSPHRASE=pp" {
+			hasPassphrase = true
+		}
+	}
+	if !hasPassword || !hasPassphrase {
+		t.Fatal("expected both VPSM_SSH_PASSWORD and VPSM_SSH_PASSPHRASE env vars")
+	}
+}
+
+func TestAskpassHelperDispatchesOnPrompt(t *testing.T) {
+	t.Parallel()
+
+	path, err := ensureAskpassHelper()
+	if err != nil {
+		t.Fatalf("ensure askpass helper: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		prompt string
+		envKey string
+		envVal string
+	}{
+		{"password prompt", "user@host's password:", "VPSM_SSH_PASSWORD", "my-password"},
+		{"passphrase prompt", "Enter passphrase for key '/home/user/.ssh/id_ed25519':", "VPSM_SSH_PASSPHRASE", "my-passphrase"},
+		{"Passphrase capitalized", "Passphrase for key:", "VPSM_SSH_PASSPHRASE", "my-passphrase"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(context.Background(), "sh", path, tt.prompt)
+			cmd.Env = []string{
+				"VPSM_SSH_PASSWORD=my-password",
+				"VPSM_SSH_PASSPHRASE=my-passphrase",
+			}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("run askpass: %v", err)
+			}
+			got := strings.TrimSpace(string(out))
+			if got != tt.envVal {
+				t.Fatalf("expected %q, got %q", tt.envVal, got)
+			}
+		})
 	}
 }
 

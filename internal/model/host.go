@@ -19,8 +19,9 @@ type Host struct {
 	ForwardAgent    string
 	LocalForward    []string
 	RemoteForward   []string
-	PasswordStored  bool
-	Favorite        bool
+	PasswordStored   bool
+	PassphraseStored bool
+	Favorite         bool
 	LastConnectedAt *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -86,10 +87,21 @@ func (h Host) PasswordStoredLabel() string {
 	return "no"
 }
 
+func (h Host) PassphraseStoredLabel() string {
+	if h.PassphraseStored {
+		return "yes"
+	}
+
+	return "no"
+}
+
 func (h Host) AuthMethodsLabel() string {
 	steps := []string{"default auth"}
 	if strings.TrimSpace(h.IdentityFile) != "" {
 		steps = append(steps, "key file")
+	}
+	if h.PassphraseStored {
+		steps = append(steps, "stored passphrase")
 	}
 	if h.PasswordStored {
 		steps = append(steps, "stored password")

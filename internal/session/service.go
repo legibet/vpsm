@@ -42,17 +42,17 @@ func (s Service) Connect(ctx context.Context, alias string) error {
 		return err
 	}
 
-	password, hasPassword, err := secret.GetPasswordIfExists(alias)
+	creds, err := loadCredentials(alias)
 	if err != nil {
 		return err
 	}
-	if hasPassword && strings.TrimSpace(password) != "" {
+	if creds.Password != "" || creds.Passphrase != "" {
 		if err := sshutil.EnsureHostKeyAcceptedContext(ctx, host, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			return err
 		}
 	}
 
-	cmd, err := sshutil.BuildCommandWithPasswordContext(ctx, host, password)
+	cmd, err := sshutil.BuildCommandWithCredentials(ctx, host, creds)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s Service) RunFiles(ctx context.Context, alias string) error {
 		return err
 	}
 
-	password, hasPassword, err := secret.GetPasswordIfExists(alias)
+	creds, err := loadCredentials(alias)
 	if err != nil {
 		return err
 	}
@@ -86,10 +86,10 @@ func (s Service) RunFiles(ctx context.Context, alias string) error {
 		return err
 	}
 
-	remoteFS, err := filexfer.OpenRemoteFSContext(ctx, host, password)
+	remoteFS, err := filexfer.OpenRemoteFSWithCredentials(ctx, host, creds)
 	if err != nil {
-		if !hasPassword || strings.TrimSpace(password) == "" {
-			return fmt.Errorf("%w; files mode needs a stored password or non-interactive key auth", err)
+		if creds.Password == "" && creds.Passphrase == "" {
+			return fmt.Errorf("%w; files mode needs stored credentials or non-interactive key auth", err)
 		}
 		return err
 	}
@@ -121,6 +121,21 @@ func (s Service) BuildFilesCommand(alias string) (*exec.Cmd, error) {
 	}
 
 	return exec.Command(bin, "files", alias), nil
+}
+
+func loadCredentials(alias string) (sshutil.AuthCredentials, error) {
+	password, _, err := secret.GetPasswordIfExists(alias)
+	if err != nil {
+		return sshutil.AuthCredentials{}, err
+	}
+	passphrase, _, err := secret.GetPassphraseIfExists(alias)
+	if err != nil {
+		return sshutil.AuthCredentials{}, err
+	}
+	return sshutil.AuthCredentials{
+		Password:   strings.TrimSpace(password),
+		Passphrase: strings.TrimSpace(passphrase),
+	}, nil
 }
 
 func isUserInterruptError(err error) bool {

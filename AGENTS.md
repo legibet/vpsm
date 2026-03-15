@@ -10,7 +10,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Binary name: `vpsm`.
 - UI stack: `charm.land/bubbletea/v2`, `charm.land/bubbles/v2`, `charm.land/lipgloss/v2`.
 - Database: SQLite via `modernc.org/sqlite`.
-- Password storage: system keychain via `github.com/zalando/go-keyring`.
+- Password and key passphrase storage: system keychain via `github.com/zalando/go-keyring`.
 - SSH execution: system `ssh`; do not replace this with a Go SSH client.
 
 ## Current Architecture
@@ -24,7 +24,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts. It now stores only local favorites and last-connected timestamps.
 - `internal/sshutil/`: builds `ssh` commands, askpass handling, host-key checks, and public-key install helpers.
 - `internal/filexfer/`: opens remote SFTP sessions over system `ssh -s sftp`, reads local/remote directories, and handles recursive upload/download helpers with progress callbacks.
-- `internal/secret/`: keychain-backed password helpers.
+- `internal/secret/`: keychain-backed password and passphrase helpers.
 - `internal/ui/`: Bubble Tea TUI and forms.
 - `internal/model/`: core `Host` type and display helpers.
 - `internal/config/paths.go`: path resolution for app dir, DB path, SSH config path, and managed config path.
@@ -38,9 +38,10 @@ Automately update this file when you make changes to the codebase, architecture,
 - When a host alias exists in both managed and system config, the managed entry takes precedence (system duplicate is skipped).
 - `IsConfigBacked()` now returns true when `Source != ""` (not just `Managed`), so system hosts from SSH config also use alias-based connections.
 - Favorites and last-connected timestamps are local metadata in SQLite; they apply to both managed and system hosts.
-- Passwords are stored in keychain only.
-- Do not store passwords in SSH config.
-- Do not store passwords in SQLite.
+- Passwords are stored in keychain only (service `vpsm.ssh-password`).
+- Key passphrases are stored in keychain only (service `vpsm.ssh-passphrase`).
+- Do not store passwords or passphrases in SSH config.
+- Do not store passwords or passphrases in SQLite.
 - System hosts are read-only in the TUI: edit/delete/key-setup actions show status bar hints instead.
 - Read-only flows must not migrate or resurrect hosts from SQLite metadata into `~/.ssh/vpsm.conf`.
 
@@ -95,7 +96,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Exported names use Go standard CamelCase.
 - Unexported helpers use lowerCamelCase.
 - Short receiver names are fine: `func (s *Store)`, `func (m tuiModel)`.
-- Struct field names should be explicit and domain-oriented: `HostName`, `IdentityFile`, `PasswordStored`.
+- Struct field names should be explicit and domain-oriented: `HostName`, `IdentityFile`, `PasswordStored`, `PassphraseStored`.
 - Boolean helpers should read naturally: `Managed`, `IsConfigBacked`, `CanUseAlias`.
 
 ## Type Conventions
@@ -149,9 +150,10 @@ Automately update this file when you make changes to the codebase, architecture,
 - TUI key setup only supports concrete local `IdentityFile` paths (absolute or `~/...`); reject SSH token or environment-variable forms instead of guessing a filesystem location.
 - Public-key install flows must append idempotently to remote `authorized_keys`; do not overwrite the file.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
-- Password automation should continue to use the askpass helper path, not `sshpass`.
+- Password and passphrase automation uses a smart askpass helper that inspects the SSH prompt (`$1`): prompts containing "passphrase" (case-insensitive) return `$VPSM_SSH_PASSPHRASE`, all others return `$VPSM_SSH_PASSWORD`. Do not replace this with `sshpass`.
+- `AuthCredentials` in `internal/sshutil` carries both password and passphrase; askpass is enabled when either is non-empty.
 - The file browser (`vpsm files <alias>`) uses `github.com/pkg/sftp` only as a protocol client on top of system `ssh -s sftp`. Keep authentication and host-key handling on the system `ssh` side.
-- Because `ssh -s sftp` uses stdin/stdout as protocol pipes, file mode cannot rely on in-session interactive password or key-passphrase prompts. Prefer stored passwords or non-interactive key auth (for example `ssh-agent`).
+- Because `ssh -s sftp` uses stdin/stdout as protocol pipes, file mode cannot rely on in-session interactive password or key-passphrase prompts. Prefer stored passwords/passphrases or non-interactive key auth (for example `ssh-agent`).
 
 ## TUI Rules
 

@@ -800,6 +800,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 		m.detailRow("Method", selected.AuthMethodsLabel()),
 		m.detailRow("Identity", selected.IdentityFileLabel()),
 		m.detailRow("Password", selected.PasswordStoredLabel()),
+		m.detailRow("Passphrase", selected.PassphraseStoredLabel()),
 	)
 
 	rows = append(rows,

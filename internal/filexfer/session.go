@@ -25,7 +25,11 @@ type RemoteFS struct {
 }
 
 func OpenRemoteFSContext(ctx context.Context, host model.Host, password string) (*RemoteFS, error) {
-	cmd, err := sshutil.BuildSubsystemCommandWithPasswordContext(ctx, host, password, "sftp")
+	return OpenRemoteFSWithCredentials(ctx, host, sshutil.AuthCredentials{Password: password})
+}
+
+func OpenRemoteFSWithCredentials(ctx context.Context, host model.Host, creds sshutil.AuthCredentials) (*RemoteFS, error) {
+	cmd, err := sshutil.BuildSubsystemCommandWithCredentials(ctx, host, creds, "sftp")
 	if err != nil {
 		return nil, err
 	}

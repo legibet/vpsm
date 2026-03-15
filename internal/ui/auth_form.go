@@ -13,20 +13,22 @@ import (
 )
 
 type UpdateHostInput struct {
-	Alias         string // original alias (lookup key)
-	NewAlias      string // when different from Alias, rename is requested
-	DisplayName   string
-	HostName      string
-	User          string
-	Port          int
-	ProxyJump     string
-	ProxyCommand  string
-	ForwardAgent  string
-	LocalForward  string
-	RemoteForward string
-	IdentityFile  string
-	Password      string
-	ClearPassword bool
+	Alias           string // original alias (lookup key)
+	NewAlias        string // when different from Alias, rename is requested
+	DisplayName     string
+	HostName        string
+	User            string
+	Port            int
+	ProxyJump       string
+	ProxyCommand    string
+	ForwardAgent    string
+	LocalForward    string
+	RemoteForward   string
+	IdentityFile    string
+	Password        string
+	ClearPassword   bool
+	Passphrase      string
+	ClearPassphrase bool
 }
 
 type editFormAction int
@@ -50,13 +52,14 @@ const (
 	editFieldRemoteForward
 	editFieldIdentity
 	editFieldPassword
+	editFieldPassphrase
 	editFieldCount
 )
 
 // editFormFocusOrder defines the Tab traversal order to match the visual layout.
 var editFormFocusOrder = []int{
 	editFieldAlias, editFieldDisplayName, editFieldHostName, editFieldUser, editFieldPort,
-	editFieldIdentity, editFieldPassword,
+	editFieldIdentity, editFieldPassword, editFieldPassphrase,
 	editFieldProxyJump, editFieldProxyCommand, editFieldForwardAgent, editFieldLocalForward, editFieldRemoteForward,
 }
 
@@ -68,6 +71,7 @@ var editFormFields = []formField{
 	{editFieldPort, "Port", "", false},
 	{editFieldIdentity, "Key file", "Auth", false},
 	{editFieldPassword, "Password", "", false},
+	{editFieldPassphrase, "Passphrase", "", false},
 	{editFieldProxyJump, "ProxyJump", "Network", false},
 	{editFieldProxyCommand, "ProxyCommand", "", false},
 	{editFieldForwardAgent, "ForwardAgent", "", false},
@@ -76,12 +80,14 @@ var editFormFields = []formField{
 }
 
 type editForm struct {
-	alias          string
-	passwordStored bool
-	clearPassword  bool
-	inputs         []textinput.Model
-	focusIndex     int
-	errorText      string
+	alias            string
+	passwordStored   bool
+	clearPassword    bool
+	passphraseStored bool
+	clearPassphrase  bool
+	inputs           []textinput.Model
+	focusIndex       int
+	errorText        string
 }
 
 func newEditForm(host model.Host) editForm {
@@ -113,11 +119,13 @@ func newEditForm(host model.Host) editForm {
 	inputs[editFieldIdentity] = newTextInput("~/.ssh/id_ed25519", 48)
 	inputs[editFieldIdentity].SetValue(host.IdentityFile)
 	inputs[editFieldPassword] = newPasswordInput("leave blank to keep current password", 48)
+	inputs[editFieldPassphrase] = newPasswordInput("leave blank to keep current passphrase", 48)
 
 	return editForm{
-		alias:          host.Alias,
-		passwordStored: host.PasswordStored,
-		inputs:         inputs,
+		alias:            host.Alias,
+		passwordStored:   host.PasswordStored,
+		passphraseStored: host.PassphraseStored,
+		inputs:           inputs,
 	}
 }
 
@@ -147,12 +155,22 @@ func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 		case "ctrl+s":
 			return nil, editFormSave
 		case "ctrl+x":
-			if !f.passwordStored && !f.clearPassword {
-				return nil, editFormNone
-			}
-			f.clearPassword = !f.clearPassword
-			if f.clearPassword {
-				f.inputs[editFieldPassword].SetValue("")
+			if f.focusIndex == editFieldPassphrase {
+				if !f.passphraseStored && !f.clearPassphrase {
+					return nil, editFormNone
+				}
+				f.clearPassphrase = !f.clearPassphrase
+				if f.clearPassphrase {
+					f.inputs[editFieldPassphrase].SetValue("")
+				}
+			} else {
+				if !f.passwordStored && !f.clearPassword {
+					return nil, editFormNone
+				}
+				f.clearPassword = !f.clearPassword
+				if f.clearPassword {
+					f.inputs[editFieldPassword].SetValue("")
+				}
 			}
 			return nil, editFormNone
 		case "tab", "shift+tab", "up", "down", "enter":
@@ -164,6 +182,9 @@ func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 	f.inputs[f.focusIndex], cmd = f.inputs[f.focusIndex].Update(msg)
 	if strings.TrimSpace(f.inputs[editFieldPassword].Value()) != "" {
 		f.clearPassword = false
+	}
+	if strings.TrimSpace(f.inputs[editFieldPassphrase].Value()) != "" {
+		f.clearPassphrase = false
 	}
 	return cmd, editFormNone
 }
@@ -248,9 +269,11 @@ func (f *editForm) values() (UpdateHostInput, error) {
 		ForwardAgent:  strings.TrimSpace(f.inputs[editFieldForwardAgent].Value()),
 		LocalForward:  strings.TrimSpace(f.inputs[editFieldLocalForward].Value()),
 		RemoteForward: strings.TrimSpace(f.inputs[editFieldRemoteForward].Value()),
-		IdentityFile:  strings.TrimSpace(f.inputs[editFieldIdentity].Value()),
-		Password:      f.inputs[editFieldPassword].Value(),
-		ClearPassword: f.clearPassword,
+		IdentityFile:    strings.TrimSpace(f.inputs[editFieldIdentity].Value()),
+		Password:        f.inputs[editFieldPassword].Value(),
+		ClearPassword:   f.clearPassword,
+		Passphrase:      f.inputs[editFieldPassphrase].Value(),
+		ClearPassphrase: f.clearPassphrase,
 	}, nil
 }
 
@@ -266,6 +289,20 @@ func (f editForm) passwordStatusText() string {
 		return "Password: already stored; leave blank to keep it"
 	}
 	return "Password: not stored"
+}
+
+func (f editForm) passphraseStatusText() string {
+	passphraseValue := strings.TrimSpace(f.inputs[editFieldPassphrase].Value())
+	if passphraseValue != "" {
+		return "Passphrase: will replace stored passphrase on save"
+	}
+	if f.clearPassphrase {
+		return "Passphrase: will clear stored passphrase on save"
+	}
+	if f.passphraseStored {
+		return "Passphrase: already stored; leave blank to keep it"
+	}
+	return "Passphrase: not stored"
 }
 
 func (f editForm) view(styles styleSet, width int, height int) string {
@@ -319,7 +356,10 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		currentLine++
 	}
 
-	rows = append(rows, "", styles.sectionMeta.Render(f.passwordStatusText()))
+	rows = append(rows, "",
+		styles.sectionMeta.Render(f.passwordStatusText()),
+		styles.sectionMeta.Render(f.passphraseStatusText()),
+	)
 
 	if strings.TrimSpace(f.errorText) != "" {
 		rows = append(rows, styles.errorText.Render(f.errorText))

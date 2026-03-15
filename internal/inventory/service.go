@@ -18,16 +18,18 @@ type metadataReader interface {
 }
 
 type Service struct {
-	paths       config.Paths
-	metadata    metadataReader
-	hasPassword func(alias string) (bool, error)
+	paths         config.Paths
+	metadata      metadataReader
+	hasPassword   func(alias string) (bool, error)
+	hasPassphrase func(alias string) (bool, error)
 }
 
 func NewService(paths config.Paths, metadata metadataReader) Service {
 	return Service{
-		paths:       paths,
-		metadata:    metadata,
-		hasPassword: secret.HasPassword,
+		paths:         paths,
+		metadata:      metadata,
+		hasPassword:   secret.HasPassword,
+		hasPassphrase: secret.HasPassphrase,
 	}
 }
 
@@ -68,7 +70,7 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 	for _, managedHost := range managedHosts {
 		host := importedToModel(managedHost, true)
 		s.hydrateMetadata(&host, metadataByAlias)
-		s.hydratePasswordStatus(&host)
+		s.hydrateSecretStatus(&host)
 		hosts = append(hosts, host)
 	}
 
@@ -79,7 +81,7 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 
 		host := importedToModel(systemHost, false)
 		s.hydrateMetadata(&host, metadataByAlias)
-		s.hydratePasswordStatus(&host)
+		s.hydrateSecretStatus(&host)
 		hosts = append(hosts, host)
 	}
 
@@ -152,10 +154,12 @@ func (s Service) hydrateMetadata(host *model.Host, metadataByAlias map[string]mo
 	}
 }
 
-func (s Service) hydratePasswordStatus(host *model.Host) {
-	ok, err := s.hasPassword(host.Alias)
-	if err == nil {
+func (s Service) hydrateSecretStatus(host *model.Host) {
+	if ok, err := s.hasPassword(host.Alias); err == nil {
 		host.PasswordStored = ok
+	}
+	if ok, err := s.hasPassphrase(host.Alias); err == nil {
+		host.PassphraseStored = ok
 	}
 }
 
