@@ -133,8 +133,8 @@ func loadCredentials(alias string) (sshutil.AuthCredentials, error) {
 		return sshutil.AuthCredentials{}, err
 	}
 	return sshutil.AuthCredentials{
-		Password:   strings.TrimSpace(password),
-		Passphrase: strings.TrimSpace(passphrase),
+		Password:   password,
+		Passphrase: passphrase,
 	}, nil
 }
 

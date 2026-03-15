@@ -110,12 +110,19 @@ func ReadPublicKey(plan KeySetupPlan) (string, error) {
 // InstallPublicKeyContext appends the public key to ~/.ssh/authorized_keys when
 // it is not already present.
 func InstallPublicKeyContext(ctx context.Context, host model.Host, password string, publicKey string) error {
+	return InstallPublicKeyWithCredentials(ctx, host, AuthCredentials{Password: password}, publicKey)
+}
+
+// InstallPublicKeyWithCredentials appends the public key to ~/.ssh/authorized_keys
+// using full credential support (password + passphrase).
+func InstallPublicKeyWithCredentials(ctx context.Context, host model.Host, creds AuthCredentials, publicKey string) error {
 	publicKey = strings.TrimSpace(publicKey)
 	if publicKey == "" {
 		return errors.New("public key is required")
 	}
 
-	cmd, err := BuildRemoteCommandWithPasswordContext(ctx, host, password, installAuthorizedKeyScript())
+	extraArgs := []string{installAuthorizedKeyScript()}
+	cmd, err := buildSSHCommandContext(ctx, host, creds, extraArgs)
 	if err != nil {
 		return err
 	}

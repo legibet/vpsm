@@ -11,6 +11,7 @@ import (
 	"vpsm/internal/config"
 	"vpsm/internal/model"
 	"vpsm/internal/sshconfig"
+	"vpsm/internal/sshutil"
 	"vpsm/internal/store"
 )
 
@@ -444,8 +445,47 @@ func TestSetupManagedHostKeyWritesBackIdentityFile(t *testing.T) {
 	if keySetup.lastAlias != "prod-1" {
 		t.Fatalf("expected key setup to target prod-1, got %q", keySetup.lastAlias)
 	}
-	if keySetup.lastPassword != "secret" {
-		t.Fatalf("expected stored password to be passed through, got %q", keySetup.lastPassword)
+	if keySetup.lastCreds.Password != "secret" {
+		t.Fatalf("expected stored password to be passed through, got %q", keySetup.lastCreds.Password)
+	}
+}
+
+func TestSetupManagedHostKeyPassesBothCredentials(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "root",
+	}
+	passwords := newFakePasswordStore()
+	passwords.values["prod-1"] = "pw"
+	passphrases := newFakePassphraseStore()
+	passphrases.values["prod-1"] = "pp"
+	metadata := newFakeMetadataStore()
+	keySetup := &fakeKeySetupRunner{
+		result: keySetupResult{IdentityFile: "~/.ssh/vpsm/prod-1_ed25519"},
+	}
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		passphrases:  passphrases,
+		metadata:     metadata,
+		keySetup:     keySetup,
+	}
+
+	if err := svc.SetupManagedHostKey(ctx, "prod-1", nil, nil, nil); err != nil {
+		t.Fatalf("setup managed host key: %v", err)
+	}
+
+	if keySetup.lastCreds.Password != "pw" {
+		t.Fatalf("expected password %q, got %q", "pw", keySetup.lastCreds.Password)
+	}
+	if keySetup.lastCreds.Passphrase != "pp" {
+		t.Fatalf("expected passphrase %q, got %q", "pp", keySetup.lastCreds.Passphrase)
 	}
 }
 
@@ -670,17 +710,17 @@ func (s *fakeMetadataStore) RenameHost(ctx context.Context, oldAlias, newAlias s
 }
 
 type fakeKeySetupRunner struct {
-	result       keySetupResult
-	err          error
-	calls        int
-	lastAlias    string
-	lastPassword string
+	result    keySetupResult
+	err       error
+	calls     int
+	lastAlias string
+	lastCreds sshutil.AuthCredentials
 }
 
-func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
+func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
 	s.calls++
 	s.lastAlias = host.Alias
-	s.lastPassword = password
+	s.lastCreds = creds
 	if s.err != nil {
 		return keySetupResult{}, s.err
 	}

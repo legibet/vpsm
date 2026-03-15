@@ -14,7 +14,7 @@ type keySetupResult struct {
 }
 
 type keySetupRunner interface {
-	Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error)
+	Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error)
 }
 
 // SetupManagedHostKey ensures the selected managed host has a local key pair and
@@ -29,6 +29,15 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdi
 	if err != nil {
 		return err
 	}
+	passphrase, _, err := s.passphrases.GetPassphraseIfExists(managedHost.Alias)
+	if err != nil {
+		return err
+	}
+
+	creds := sshutil.AuthCredentials{
+		Password:   password,
+		Passphrase: passphrase,
+	}
 
 	result, err := s.keySetup.Setup(ctx, model.Host{
 		Alias:        managedHost.Alias,
@@ -38,7 +47,7 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdi
 		Port:         managedHost.Port,
 		Managed:      true,
 		IdentityFile: managedHost.IdentityFile,
-	}, password, stdin, stdout, stderr)
+	}, creds, stdin, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -57,7 +66,7 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdi
 
 type systemKeySetupRunner struct{}
 
-func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, password string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
+func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
 	plan, err := sshutil.PlanKeySetup(host.Alias, host.IdentityFile)
 	if err != nil {
 		return keySetupResult{}, err
@@ -78,7 +87,7 @@ func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, password
 		return keySetupResult{}, err
 	}
 
-	if err := sshutil.InstallPublicKeyContext(ctx, target, password, publicKey); err != nil {
+	if err := sshutil.InstallPublicKeyWithCredentials(ctx, target, creds, publicKey); err != nil {
 		return keySetupResult{}, err
 	}
 
