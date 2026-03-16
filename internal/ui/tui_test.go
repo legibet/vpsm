@@ -472,7 +472,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 	}
 }
 
-func TestFooterHintsDifferForManagedVsSystemHost(t *testing.T) {
+func TestFooterHintsEditKeyForAllHosts(t *testing.T) {
 	t.Parallel()
 
 	managedHost := model.Host{Alias: "managed", HostName: "10.0.0.1", Managed: true, Source: "/tmp/vpsm.conf"}
@@ -486,7 +486,7 @@ func TestFooterHintsDifferForManagedVsSystemHost(t *testing.T) {
 	}
 	m.applyFilter()
 
-	// cursor on managed host
+	// cursor on managed host — shows e, d, i
 	m.cursor = 0
 	managedFooter := m.footerText()
 	if !strings.Contains(managedFooter, "e edit") {
@@ -495,19 +495,44 @@ func TestFooterHintsDifferForManagedVsSystemHost(t *testing.T) {
 	if !strings.Contains(managedFooter, "d delete") {
 		t.Fatalf("expected 'd delete' in managed footer, got %q", managedFooter)
 	}
+	if !strings.Contains(managedFooter, "i key") {
+		t.Fatalf("expected 'i key' in managed footer, got %q", managedFooter)
+	}
 
-	// cursor on system host
+	// cursor on system host — shows e and i, but NOT d (no overlay)
 	m.cursor = 1
 	systemFooter := m.footerText()
-	if strings.Contains(systemFooter, "e edit") {
-		t.Fatalf("expected no 'e edit' in system footer, got %q", systemFooter)
+	if !strings.Contains(systemFooter, "e edit") {
+		t.Fatalf("expected 'e edit' in system footer, got %q", systemFooter)
+	}
+	if !strings.Contains(systemFooter, "i key") {
+		t.Fatalf("expected 'i key' in system footer, got %q", systemFooter)
 	}
 	if strings.Contains(systemFooter, "d delete") {
-		t.Fatalf("expected no 'd delete' in system footer, got %q", systemFooter)
+		t.Fatalf("expected no 'd delete' in system footer (no overlay), got %q", systemFooter)
 	}
 }
 
-func TestEditDeleteKeyShowStatusOnSystemHost(t *testing.T) {
+func TestFooterHintsDeleteForOverlayHost(t *testing.T) {
+	t.Parallel()
+
+	overlayHost := model.Host{Alias: "overlay", HostName: "10.0.0.3", Managed: false, HasOverride: true, Source: "/tmp/config"}
+
+	m := tuiModel{
+		hosts:  []model.Host{overlayHost},
+		styles: newStyles(true),
+		width:  120,
+		height: 24,
+	}
+	m.applyFilter()
+
+	footer := m.footerText()
+	if !strings.Contains(footer, "d delete") {
+		t.Fatalf("expected 'd delete' for overlay host, got %q", footer)
+	}
+}
+
+func TestEditAllowedOnSystemHost(t *testing.T) {
 	t.Parallel()
 
 	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
@@ -524,34 +549,56 @@ func TestEditDeleteKeyShowStatusOnSystemHost(t *testing.T) {
 	}
 	m.applyFilter()
 
-	// press 'e' on system host
+	// press 'e' on system host — should enter edit mode
 	updated, _ := m.Update(tea.KeyPressMsg{Text: "e", Code: 'e'})
 	result := updated.(tuiModel)
-	if result.mode != modeBrowse {
-		t.Fatalf("expected to stay in browse mode, got %v", result.mode)
+	if result.mode != modeEdit {
+		t.Fatalf("expected edit mode on system host, got %v", result.mode)
 	}
-	if !strings.Contains(result.status, "system host") {
-		t.Fatalf("expected system host status hint, got %q", result.status)
-	}
+}
 
-	// press 'd' on system host
-	updated, _ = m.Update(tea.KeyPressMsg{Text: "d", Code: 'd'})
-	result = updated.(tuiModel)
+func TestDeleteBlockedOnPureSystemHost(t *testing.T) {
+	t.Parallel()
+
+	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
+	m := tuiModel{
+		hosts:      []model.Host{systemHost},
+		styles:     newStyles(true),
+		width:      120,
+		height:     24,
+		deleteHost: func(alias string) error { return nil },
+	}
+	m.applyFilter()
+
+	// press 'd' on pure system host — should stay in browse with status hint
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "d", Code: 'd'})
+	result := updated.(tuiModel)
 	if result.mode != modeBrowse {
-		t.Fatalf("expected to stay in browse mode after d, got %v", result.mode)
+		t.Fatalf("expected to stay in browse mode after d on system host, got %v", result.mode)
 	}
 	if !strings.Contains(result.status, "system host") {
 		t.Fatalf("expected system host status hint for d, got %q", result.status)
 	}
+}
 
-	// press 'i' on system host
-	updated, _ = m.Update(tea.KeyPressMsg{Text: "i", Code: 'i'})
-	result = updated.(tuiModel)
-	if result.mode != modeBrowse {
-		t.Fatalf("expected to stay in browse mode after i, got %v", result.mode)
+func TestDeleteAllowedOnOverlayHost(t *testing.T) {
+	t.Parallel()
+
+	overlayHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, HasOverride: true, Source: "/tmp/config"}
+	m := tuiModel{
+		hosts:      []model.Host{overlayHost},
+		styles:     newStyles(true),
+		width:      120,
+		height:     24,
+		deleteHost: func(alias string) error { return nil },
 	}
-	if !strings.Contains(result.status, "managed hosts") {
-		t.Fatalf("expected managed-only status hint for i, got %q", result.status)
+	m.applyFilter()
+
+	// press 'd' on overlay host — should enter delete confirm mode
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "d", Code: 'd'})
+	result := updated.(tuiModel)
+	if result.mode != modeDeleteConfirm {
+		t.Fatalf("expected delete confirm mode on overlay host, got %v", result.mode)
 	}
 }
 
@@ -626,7 +673,7 @@ func TestSourceTagDerivation(t *testing.T) {
 		{"managed", model.Host{Managed: true, Source: "/tmp/vpsm.conf"}, "vpsm"},
 		{"config", model.Host{Source: "/home/user/.ssh/config"}, "config"},
 		{"conf.d file", model.Host{Source: "/home/user/.ssh/conf.d/work.conf"}, "work"},
-		{"empty source", model.Host{Source: ""}, "ssh"},
+		{"empty source", model.Host{Source: ""}, ""},
 	}
 
 	for _, tt := range tests {

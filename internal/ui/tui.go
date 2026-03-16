@@ -233,10 +233,6 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.filtered) == 0 || m.updateHost == nil {
 			return m, nil
 		}
-		if !m.filtered[m.cursor].Managed {
-			m.setStatus("system host — edit "+sourceTag(m.filtered[m.cursor])+" directly", statusInfo)
-			return m, nil
-		}
 		m.mode = modeEdit
 		m.editForm = newEditForm(m.filtered[m.cursor])
 		m.editForm.setWidth(m.formWidth())
@@ -246,8 +242,9 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.filtered) == 0 || m.deleteHost == nil {
 			return m, nil
 		}
-		if !m.filtered[m.cursor].Managed {
-			m.setStatus("system host — edit "+sourceTag(m.filtered[m.cursor])+" directly", statusInfo)
+		host := m.filtered[m.cursor]
+		if !host.Managed && !host.HasOverride {
+			m.setStatus("system host — edit your SSH config directly to remove", statusInfo)
 			return m, nil
 		}
 		m.mode = modeDeleteConfirm
@@ -256,10 +253,6 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "i":
 		if len(m.filtered) == 0 || m.setupHostKey == nil {
-			return m, nil
-		}
-		if !m.filtered[m.cursor].Managed {
-			m.setStatus("key setup is only available for managed hosts", statusInfo)
 			return m, nil
 		}
 		plan, err := sshutil.PlanKeySetup(m.filtered[m.cursor].Alias, m.filtered[m.cursor].IdentityFile)
@@ -483,11 +476,14 @@ func (m *tuiModel) selectAlias(alias string) {
 	}
 }
 
-func (m tuiModel) selectedIsManaged() bool {
+// selectedCanDelete returns true if the selected host can be deleted
+// (managed hosts or hosts with an overlay).
+func (m tuiModel) selectedCanDelete() bool {
 	if len(m.filtered) == 0 {
 		return false
 	}
-	return m.filtered[m.cursor].Managed
+	h := m.filtered[m.cursor]
+	return h.Managed || h.HasOverride
 }
 
 func (m tuiModel) currentAlias() string {
@@ -692,15 +688,9 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 
 	left := gutter + starPart + primaryStyle.Render(primary)
 
-	// Right side: connection meta and source tag.
+	// Right side: connection meta.
 	meta := listMeta(host)
-	tag := sourceTag(host)
-	var right string
-	if meta != "" {
-		right = metaStyle.Render(meta) + "  " + metaStyle.Render(tag)
-	} else {
-		right = metaStyle.Render(tag)
-	}
+	right := metaStyle.Render(meta)
 
 	gap := contentWidth - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
@@ -735,13 +725,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 		rows = append(rows, m.styles.detailName.Render(selected.Alias))
 	}
 
-	sourceLabel := "vpsm managed"
-	if !selected.Managed {
-		sourceLabel = filepath.Base(selected.Source)
-		if sourceLabel == "" || sourceLabel == "." {
-			sourceLabel = "ssh"
-		}
-	}
+	sourceLabel := sourceLabel(selected)
 
 	rows = append(rows,
 		"",
@@ -803,7 +787,6 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Delete Server"),
-		m.styles.sectionMeta.Render("This removes the host from the local list."),
 	}
 
 	if len(m.filtered) == 0 {
@@ -812,6 +795,13 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	}
 
 	selected := m.filtered[m.cursor]
+
+	if selected.HasOverride {
+		rows = append(rows, m.styles.sectionMeta.Render("This removes the vpsm override for this host."))
+	} else {
+		rows = append(rows, m.styles.sectionMeta.Render("This removes the host from the local list."))
+	}
+
 	if strings.TrimSpace(selected.DisplayName) != "" {
 		rows = append(rows, m.detailRow("Name", selected.DisplayName))
 	}
@@ -819,7 +809,12 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 		m.detailRow("Alias", selected.Alias),
 		m.detailRow("Target", selected.TargetName()),
 	)
-	rows = append(rows, m.styles.sectionMeta.Render("This removes the entry from vpsm-managed SSH config."))
+
+	if selected.HasOverride {
+		rows = append(rows, m.styles.sectionMeta.Render("The host will revert to its original SSH config values."))
+	} else {
+		rows = append(rows, m.styles.sectionMeta.Render("This removes the entry from vpsm-managed SSH config."))
+	}
 	rows = append(rows, m.styles.errorText.Render("Press y to confirm delete. Esc cancels."))
 
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
@@ -1079,57 +1074,44 @@ func (m tuiModel) footerHints() []footerHint {
 		}
 		return hints
 	}
-	managed := m.selectedIsManaged()
+	canDelete := m.selectedCanDelete()
 	if m.isCompactLayout() {
-		if managed {
-			return []footerHint{
-				{"tab", "pane"},
-				{"/", "search"},
-				{"n", "new"},
-				{"e", "edit"},
-				{"d", "del"},
-				{"i", "key"},
-				{"o", "files"},
-				{"f", "fav"},
-				{"r", "refresh"},
-				{"↵", "connect"},
-				{"q", "quit"},
-			}
-		}
-		return []footerHint{
+		hints := []footerHint{
 			{"tab", "pane"},
 			{"/", "search"},
 			{"n", "new"},
-			{"o", "files"},
-			{"f", "fav"},
-			{"r", "refresh"},
-			{"↵", "connect"},
-			{"q", "quit"},
-		}
-	}
-	if managed {
-		return []footerHint{
-			{"/", "search"},
-			{"n", "new"},
 			{"e", "edit"},
-			{"d", "delete"},
-			{"i", "key"},
-			{"o", "files"},
-			{"f", "fav"},
-			{"r", "refresh"},
-			{"↵", "connect"},
-			{"q", "quit"},
 		}
+		if canDelete {
+			hints = append(hints, footerHint{"d", "del"})
+		}
+		hints = append(hints,
+			footerHint{"i", "key"},
+			footerHint{"o", "files"},
+			footerHint{"f", "fav"},
+			footerHint{"r", "refresh"},
+			footerHint{"↵", "connect"},
+			footerHint{"q", "quit"},
+		)
+		return hints
 	}
-	return []footerHint{
+	hints := []footerHint{
 		{"/", "search"},
 		{"n", "new"},
-		{"o", "files"},
-		{"f", "fav"},
-		{"r", "refresh"},
-		{"↵", "connect"},
-		{"q", "quit"},
+		{"e", "edit"},
 	}
+	if canDelete {
+		hints = append(hints, footerHint{"d", "delete"})
+	}
+	hints = append(hints,
+		footerHint{"i", "key"},
+		footerHint{"o", "files"},
+		footerHint{"f", "fav"},
+		footerHint{"r", "refresh"},
+		footerHint{"↵", "connect"},
+		footerHint{"q", "quit"},
+	)
+	return hints
 }
 
 // footerText returns the plain-text footer for test assertions.
@@ -1210,18 +1192,28 @@ func listMeta(host model.Host) string {
 }
 
 func sourceTag(host model.Host) string {
-	if host.Managed {
-		return "vpsm"
-	}
 	if host.Source == "" {
-		return "ssh"
+		return ""
 	}
 	base := filepath.Base(host.Source)
 	base = strings.TrimSuffix(base, ".conf")
 	if base == "" || base == "." {
-		return "ssh"
+		return ""
 	}
 	return base
+}
+
+func sourceLabel(host model.Host) string {
+	if host.Managed {
+		return "vpsm managed"
+	}
+	if host.HasOverride {
+		return "overridden by vpsm"
+	}
+	if host.Source == "" {
+		return "ssh config"
+	}
+	return filepath.Base(host.Source)
 }
 
 func listTargetLabel(host model.Host) string {

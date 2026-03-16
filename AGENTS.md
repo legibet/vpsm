@@ -18,7 +18,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - `main.go`: thin CLI entrypoint that delegates to `internal/cli`.
 - `internal/cli/`: command bootstrap, argument dispatch, CLI output, and TUI wiring.
 - `internal/inventory/`: builds the visible host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates local metadata.
-- `internal/hosts/`: thin use-case layer for managed-host add/update/delete and key-setup workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
+- `internal/hosts/`: thin use-case layer for managed-host add/update/delete, overlay-based system-host editing, and key-setup workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
 - `internal/session/`: SSH connect flow, file-browser session setup, and interrupt handling.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts. It now stores only local favorites and last-connected timestamps.
@@ -35,14 +35,17 @@ Automately update this file when you make changes to the codebase, architecture,
 - `vpsm` manages its own writable include file at `~/.ssh/vpsm.conf`.
 - Optional display names live with managed hosts in `~/.ssh/vpsm.conf` comments.
 - The main `~/.ssh/config` is still used to ensure the managed `Include` exists and to detect alias conflicts.
-- When a host alias exists in both managed and system config, the managed entry takes precedence (system duplicate is skipped).
+- When a full managed host alias exists in both managed and system config, the managed entry takes precedence (system duplicate is skipped).
 - `IsConfigBacked()` now returns true when `Source != ""` (not just `Managed`), so system hosts from SSH config also use alias-based connections.
+- System hosts can be edited via overlay blocks in `~/.ssh/vpsm.conf`. Overlay blocks are partial Host entries (marked with `# vpsm-overlay`) that only contain the fields the user changed. SSH's first-match-wins merge ensures overlay fields take priority while unrecognized/unchanged directives in the original config continue to work.
+- Overlay hosts appear in the inventory with `Managed: false, HasOverride: true`. The inventory uses the already-merged view from `ParsePath` (which resolves the Include chain).
+- Scalar fields (HostName, User, Port, ProxyJump, ProxyCommand, ForwardAgent) are safely overridden. IdentityFile overlays include `IdentitiesOnly yes` to prevent accumulation. LocalForward/RemoteForward are not written in overlay blocks because SSH accumulates these across blocks.
+- Deleting an overlay removes only the `vpsm.conf` block; the host reverts to its original system config values.
 - Favorites and last-connected timestamps are local metadata in SQLite; they apply to both managed and system hosts.
 - Passwords are stored in keychain only (service `vpsm.ssh-password`).
 - Key passphrases are stored in keychain only (service `vpsm.ssh-passphrase`).
 - Do not store passwords or passphrases in SSH config.
 - Do not store passwords or passphrases in SQLite.
-- System hosts are read-only in the TUI: edit/delete/key-setup actions show status bar hints instead.
 - Read-only flows must not migrate or resurrect hosts from SQLite metadata into `~/.ssh/vpsm.conf`.
 
 ## Build Commands
@@ -125,11 +128,11 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## SSH Config Editing Rules
 
-- Route managed-host create/update/delete flows through `internal/hosts/hosts.go` so SSH config, keychain, and metadata stay consistent.
-- For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers.
+- Route managed-host create/update/delete and system-host overlay flows through `internal/hosts/hosts.go` so SSH config, keychain, and metadata stay consistent.
+- For new or editable managed hosts, use `internal/sshconfig/managed.go` helpers (`UpsertManagedHost`). For system host overrides, use `UpsertOverlay` which writes partial blocks with only the changed fields.
 - Validate managed host aliases through `internal/sshconfig.ValidateAlias` before writing `Host` entries.
 - Do not hand-roll writes to `~/.ssh/vpsm.conf` in random places.
-- Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, and consistent `# vpsm-name:` comments when display names are set.
+- Keep the managed file deterministic: sorted aliases, stable formatting, minimal directives, consistent `# vpsm-name:` comments when display names are set, and `# vpsm-overlay` comments before overlay blocks.
 - Managed hosts support extended directives: ProxyJump, ProxyCommand, ForwardAgent, LocalForward, RemoteForward. These are written after IdentityFile in the managed config.
 - CLI and TUI managed-host update flows must round-trip all configured network directives on partial edits; do not silently drop ProxyCommand or forwarding settings when only one field changes.
 - The parser (`importer.go`) recognizes these directives for both managed and system hosts. Strings use fill-if-empty merge; forward slices use first-block-wins.
@@ -177,8 +180,8 @@ Automately update this file when you make changes to the codebase, architecture,
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
-- The server list renders one host per single terminal line: `[▸| ] [★| ] <primary>  <user@host:port>  <tag>`. Primary is DisplayName when set, otherwise Alias. The `▸` cursor marks the selected row. Alias details are visible in the side detail panel.
-- Footer hints are dynamic: managed hosts show edit/delete/key actions; system hosts omit those and only show new/fav/refresh.
+- The server list renders one host per single terminal line: `[▸| ] [★| ] <primary>  <user@host:port>`. Primary is DisplayName when set, otherwise Alias. The `▸` cursor marks the selected row. Alias details are visible in the side detail panel.
+- Footer hints are dynamic: edit (`e`) and key-setup (`i`) are always shown; delete (`d`) is shown only for managed hosts or hosts with an overlay. Pure system hosts cannot be deleted from vpsm.
 - Browse mode now also includes an `o` action to open the split-pane file browser for the selected host.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
 - The file browser is a separate full-screen Bubble Tea interface with local/remote panes, `hjkl` navigation, direct `t` transfer to the opposite pane, and modal prompts for mkdir/rename/delete confirmations.

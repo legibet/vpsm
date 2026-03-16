@@ -568,6 +568,15 @@ func (s *fakeManagedHostStore) Upsert(host sshconfig.ImportedHost) error {
 	return nil
 }
 
+func (s *fakeManagedHostStore) UpsertOverlay(host sshconfig.ImportedHost) error {
+	if s.upsertErr != nil {
+		return s.upsertErr
+	}
+	host.Overlay = true
+	s.hosts[host.Alias] = host
+	return nil
+}
+
 func (s *fakeManagedHostStore) Delete(alias string) error {
 	if s.deleteErr != nil {
 		return s.deleteErr

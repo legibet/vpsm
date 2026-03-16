@@ -171,6 +171,122 @@ func TestListDoesNotMigrateMetadataOnlyHosts(t *testing.T) {
 	}
 }
 
+func TestListMergesOverlayWithSystemHost(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+
+	// System host in ssh config.
+	writeTestFile(t, paths.SSHConfigPath, "Host prod-box\n  HostName 198.51.100.10\n  User ubuntu\n  Port 2222\n")
+
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	svc := NewService(paths, st)
+	svc.hasPassword = func(alias string) (bool, error) { return false, nil }
+	svc.hasPassphrase = func(alias string) (bool, error) { return false, nil }
+
+	if err := svc.EnsureManagedSetup(); err != nil {
+		t.Fatalf("ensure managed setup: %v", err)
+	}
+
+	// Create overlay that only overrides User.
+	if err := sshconfig.UpsertOverlay(paths.ManagedConfigPath, sshconfig.ImportedHost{
+		Alias: "prod-box",
+		User:  "deploy",
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+
+	hosts, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("list hosts: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+
+	h := hosts[0]
+	if h.Alias != "prod-box" {
+		t.Fatalf("expected alias %q, got %q", "prod-box", h.Alias)
+	}
+	if h.Managed {
+		t.Fatal("expected overlay host to not be Managed")
+	}
+	if !h.HasOverride {
+		t.Fatal("expected overlay host to have HasOverride=true")
+	}
+	// User should come from overlay.
+	if h.User != "deploy" {
+		t.Fatalf("expected User %q from overlay, got %q", "deploy", h.User)
+	}
+	// HostName and Port should come from system host.
+	if h.HostName != "198.51.100.10" {
+		t.Fatalf("expected HostName %q from system, got %q", "198.51.100.10", h.HostName)
+	}
+	if h.Port != 2222 {
+		t.Fatalf("expected Port %d from system, got %d", 2222, h.Port)
+	}
+}
+
+func TestDeleteOverlayRevertsToSystemHost(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+
+	writeTestFile(t, paths.SSHConfigPath, "Host prod-box\n  HostName 198.51.100.10\n  User ubuntu\n")
+
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	svc := NewService(paths, st)
+	svc.hasPassword = func(alias string) (bool, error) { return false, nil }
+	svc.hasPassphrase = func(alias string) (bool, error) { return false, nil }
+
+	if err := svc.EnsureManagedSetup(); err != nil {
+		t.Fatalf("ensure managed setup: %v", err)
+	}
+
+	// Create then delete overlay.
+	if err := sshconfig.UpsertOverlay(paths.ManagedConfigPath, sshconfig.ImportedHost{
+		Alias: "prod-box",
+		User:  "deploy",
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+	if err := sshconfig.DeleteManagedHost(paths.ManagedConfigPath, "prod-box"); err != nil {
+		t.Fatalf("delete overlay: %v", err)
+	}
+
+	hosts, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("list hosts: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host after overlay delete, got %d", len(hosts))
+	}
+
+	h := hosts[0]
+	if h.Managed || h.HasOverride {
+		t.Fatal("expected reverted host to be a pure system host")
+	}
+	if h.User != "ubuntu" {
+		t.Fatalf("expected User %q after revert, got %q", "ubuntu", h.User)
+	}
+}
+
 func testPaths(t *testing.T) config.Paths {
 	t.Helper()
 

@@ -24,6 +24,7 @@ type ImportedHost struct {
 	LocalForward  []string
 	RemoteForward []string
 	Source        string
+	Overlay       bool // true when this is a partial override block for a system host
 }
 
 type parser struct {
@@ -45,6 +46,7 @@ type hostBlock struct {
 	localForward  []string
 	remoteForward []string
 	source        string
+	overlay       bool
 }
 
 type parsedHost struct {
@@ -61,6 +63,7 @@ type parsedHost struct {
 	localForward  []string
 	remoteForward []string
 	source        string
+	overlay       bool
 }
 
 func ParsePath(path string) ([]ImportedHost, error) {
@@ -115,6 +118,7 @@ func (p *parser) parseFile(path string) error {
 	scanner := bufio.NewScanner(file)
 	current := hostBlock{}
 	pendingDisplayName := ""
+	pendingOverlay := false
 
 	flush := func() {
 		for _, alias := range current.aliases {
@@ -136,6 +140,7 @@ func (p *parser) parseFile(path string) error {
 				localForward:  current.localForward,
 				remoteForward: current.remoteForward,
 				source:        current.source,
+				overlay:       current.overlay,
 			}
 
 			if existing, exists := p.hosts[alias]; exists {
@@ -150,14 +155,20 @@ func (p *parser) parseFile(path string) error {
 		rawLine := strings.TrimSpace(scanner.Text())
 		if rawLine == "" {
 			pendingDisplayName = ""
+			pendingOverlay = false
 			continue
 		}
 		if displayName, ok := parseDisplayNameComment(rawLine); ok {
 			pendingDisplayName = displayName
 			continue
 		}
+		if isOverlayComment(rawLine) {
+			pendingOverlay = true
+			continue
+		}
 		if strings.HasPrefix(rawLine, "#") {
 			pendingDisplayName = ""
+			pendingOverlay = false
 			continue
 		}
 
@@ -182,12 +193,15 @@ func (p *parser) parseFile(path string) error {
 				aliases:     parseValues(value),
 				displayName: pendingDisplayName,
 				source:      absolutePath,
+				overlay:     pendingOverlay,
 			}
 			pendingDisplayName = ""
+			pendingOverlay = false
 		case "match":
 			flush()
 			current = hostBlock{}
 			pendingDisplayName = ""
+			pendingOverlay = false
 		case "include":
 			pendingDisplayName = ""
 			matches, err := resolveIncludes(absolutePath, parseValues(value))
@@ -270,6 +284,10 @@ func parseDisplayNameComment(line string) (string, bool) {
 
 	value := strings.TrimSpace(strings.TrimPrefix(line, displayNameCommentPrefix))
 	return normalizeManagedDisplayName(value), true
+}
+
+func isOverlayComment(line string) bool {
+	return strings.TrimSpace(line) == overlayCommentPrefix
 }
 
 func sanitizeLine(line string) string {
@@ -403,12 +421,19 @@ func mergeParsedHost(existing parsedHost, next parsedHost) parsedHost {
 }
 
 func (h parsedHost) export() ImportedHost {
+	hostName := firstNonEmpty(h.hostName, h.alias)
+	port := defaultPort(h.port)
+	if h.overlay {
+		// Overlay blocks preserve zero values to mean "not overridden".
+		hostName = h.hostName
+		port = h.port
+	}
 	return ImportedHost{
 		Alias:         h.alias,
 		DisplayName:   h.displayName,
-		HostName:      firstNonEmpty(h.hostName, h.alias),
+		HostName:      hostName,
 		User:          h.user,
-		Port:          defaultPort(h.port),
+		Port:          port,
 		IdentityFile:  h.identityFile,
 		ProxyJump:     h.proxyJump,
 		ProxyCommand:  h.proxyCommand,
@@ -416,6 +441,7 @@ func (h parsedHost) export() ImportedHost {
 		LocalForward:  h.localForward,
 		RemoteForward: h.remoteForward,
 		Source:        h.source,
+		Overlay:       h.overlay,
 	}
 }
 

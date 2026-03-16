@@ -13,6 +13,7 @@ type Host struct {
 	Port            int
 	Source          string
 	Managed         bool
+	HasOverride     bool
 	IdentityFile    string
 	ProxyJump       string
 	ProxyCommand    string

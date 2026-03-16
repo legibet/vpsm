@@ -47,14 +47,22 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 		return nil, err
 	}
 
-	managedAliasSet := make(map[string]struct{}, len(managedHosts))
+	managedByAlias := make(map[string]sshconfig.ImportedHost, len(managedHosts))
 	for _, host := range managedHosts {
-		managedAliasSet[host.Alias] = struct{}{}
+		managedByAlias[host.Alias] = host
 	}
 
 	allHosts, err := sshconfig.ParsePath(s.paths.SSHConfigPath)
 	if err != nil {
 		return nil, err
+	}
+
+	// allHosts from ParsePath(SSHConfigPath) includes hosts from vpsm.conf
+	// (via Include) merged with system hosts. For overlays, allHosts already
+	// contains the correctly merged view (overlay fields take priority).
+	allByAlias := make(map[string]sshconfig.ImportedHost, len(allHosts))
+	for _, host := range allHosts {
+		allByAlias[host.Alias] = host
 	}
 
 	metadataRows, err := s.metadata.ListHosts(ctx)
@@ -66,16 +74,28 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 		metadataByAlias[host.Alias] = host
 	}
 
+	seen := make(map[string]struct{}, len(managedHosts)+len(allHosts))
 	hosts := make([]model.Host, 0, len(managedHosts)+len(allHosts))
+
 	for _, managedHost := range managedHosts {
-		host := importedToModel(managedHost, true)
+		seen[managedHost.Alias] = struct{}{}
+		var host model.Host
+		if managedHost.Overlay {
+			// Use the merged view from ParsePath which already combines
+			// overlay fields (from vpsm.conf) with system fields.
+			merged := allByAlias[managedHost.Alias]
+			host = importedToModel(merged, false)
+			host.HasOverride = true
+		} else {
+			host = importedToModel(managedHost, true)
+		}
 		s.hydrateMetadata(&host, metadataByAlias)
 		s.hydrateSecretStatus(&host)
 		hosts = append(hosts, host)
 	}
 
 	for _, systemHost := range allHosts {
-		if _, exists := managedAliasSet[systemHost.Alias]; exists {
+		if _, exists := seen[systemHost.Alias]; exists {
 			continue
 		}
 
@@ -97,6 +117,7 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 
 	return hosts, nil
 }
+
 
 func (s Service) Get(ctx context.Context, alias string) (model.Host, error) {
 	host, ok, err := s.Lookup(ctx, alias)

@@ -194,6 +194,169 @@ func TestUpsertManagedHostWritesNetworkDirectives(t *testing.T) {
 	}
 }
 
+func TestUpsertOverlayWritesPartialBlock(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	if err := UpsertOverlay(managedPath, ImportedHost{
+		Alias: "prod-box",
+		User:  "deploy",
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+
+	content, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read managed config: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "# vpsm-overlay") {
+		t.Fatalf("expected overlay comment, got %q", text)
+	}
+	if !strings.Contains(text, "Host prod-box") {
+		t.Fatalf("expected Host line, got %q", text)
+	}
+	if !strings.Contains(text, "User deploy") {
+		t.Fatalf("expected User directive, got %q", text)
+	}
+	// Should NOT have HostName since we didn't set it.
+	if strings.Contains(text, "HostName") {
+		t.Fatalf("expected no HostName in overlay, got %q", text)
+	}
+}
+
+func TestOverlayRoundTripsOverlayFlag(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	if err := UpsertOverlay(managedPath, ImportedHost{
+		Alias: "test-box",
+		User:  "admin",
+		Port:  2222,
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+
+	hosts, err := ListManagedHosts(managedPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	if !hosts[0].Overlay {
+		t.Fatal("expected Overlay flag to be true after round-trip")
+	}
+	if hosts[0].User != "admin" {
+		t.Fatalf("expected User %q, got %q", "admin", hosts[0].User)
+	}
+	if hosts[0].Port != 2222 {
+		t.Fatalf("expected Port %d, got %d", 2222, hosts[0].Port)
+	}
+	// HostName should be empty (not defaulted) for overlays.
+	if hosts[0].HostName != "" {
+		t.Fatalf("expected empty HostName for overlay, got %q", hosts[0].HostName)
+	}
+}
+
+func TestOverlayIdentityFileAddsIdentitiesOnly(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	if err := UpsertOverlay(managedPath, ImportedHost{
+		Alias:        "key-box",
+		IdentityFile: "~/.ssh/vpsm/key-box",
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+
+	content, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read managed config: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "IdentityFile ~/.ssh/vpsm/key-box") {
+		t.Fatalf("expected IdentityFile directive, got %q", text)
+	}
+	if !strings.Contains(text, "IdentitiesOnly yes") {
+		t.Fatalf("expected IdentitiesOnly yes, got %q", text)
+	}
+}
+
+func TestOverlayCoexistsWithFullManagedHost(t *testing.T) {
+	t.Parallel()
+
+	sshDir := filepath.Join(t.TempDir(), ".ssh")
+	mainPath := filepath.Join(sshDir, "config")
+	managedPath := filepath.Join(sshDir, "vpsm.conf")
+	if err := EnsureManagedConfig(mainPath, managedPath); err != nil {
+		t.Fatalf("ensure managed config: %v", err)
+	}
+
+	// Add a full managed host.
+	if err := UpsertManagedHost(managedPath, ImportedHost{
+		Alias:    "full-host",
+		HostName: "10.0.0.1",
+		User:     "root",
+	}); err != nil {
+		t.Fatalf("upsert full host: %v", err)
+	}
+
+	// Add an overlay.
+	if err := UpsertOverlay(managedPath, ImportedHost{
+		Alias: "overlay-host",
+		User:  "deploy",
+	}); err != nil {
+		t.Fatalf("upsert overlay: %v", err)
+	}
+
+	hosts, err := ListManagedHosts(managedPath)
+	if err != nil {
+		t.Fatalf("list managed hosts: %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(hosts))
+	}
+
+	// Verify both types are correctly preserved.
+	var full, overlay *ImportedHost
+	for i := range hosts {
+		if hosts[i].Alias == "full-host" {
+			full = &hosts[i]
+		}
+		if hosts[i].Alias == "overlay-host" {
+			overlay = &hosts[i]
+		}
+	}
+	if full == nil || overlay == nil {
+		t.Fatal("expected both full and overlay hosts")
+	}
+	if full.Overlay {
+		t.Fatal("expected full host to not be overlay")
+	}
+	if !overlay.Overlay {
+		t.Fatal("expected overlay host to be overlay")
+	}
+}
+
 func TestUpsertManagedHostRejectsInvalidAlias(t *testing.T) {
 	t.Parallel()
 

@@ -18,9 +18,9 @@ It gives you a keyboard-first terminal UI, keeps host labels easy to scan, and s
 
 - `vpsm` manages hosts you add to `~/.ssh/vpsm.conf`
 - it also shows matching hosts already defined in `~/.ssh/config` and its `Include` files
-- hosts from your existing SSH config are read-only inside `vpsm`
+- system hosts can be edited directly: vpsm writes a partial override to `~/.ssh/vpsm.conf` with only the fields you changed, while your original config stays untouched
+- deleting an override reverts the host to its original system config values
 - it does not import or rewrite your existing hand-written SSH entries
-- `vpsm import-ssh` explains the current managed-only workflow
 - each server has a required `alias` for commands and SSH
 - managed aliases must be single tokens without whitespace, wildcards, negation markers, or quotes
 - each server can also have an optional `name` for display and search
@@ -134,7 +134,7 @@ The file browser opens as a separate full-screen interface. It uses `hjkl` and `
 
 ## A few useful notes
 
-- If you already have a large `~/.ssh/config`, `vpsm` will show concrete aliases from that config in the list, but managed edits still only write to `~/.ssh/vpsm.conf`.
+- If you already have a large `~/.ssh/config`, `vpsm` will show concrete aliases from that config in the list. Editing a system host writes a partial override to `~/.ssh/vpsm.conf` — only changed scalar fields (User, Port, HostName, etc.) are written. Your original config is never modified. Forwarding rules (LocalForward/RemoteForward) are read-only for system hosts because SSH accumulates them across blocks.
 - Passwords are stored in your system keychain, not in the SSH config.
 - On the first password-based connection to a new host, `vpsm` now lets the normal SSH host key confirmation happen before it auto-fills the password.
 - Press `i` in the TUI to configure a host key for the selected server. If the host already has an `IdentityFile`, `vpsm` reuses it; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
@@ -142,6 +142,6 @@ The file browser opens as a separate full-screen interface. It uses `hjkl` and `
 - If the host key is still unknown and your SSH config requires interactive confirmation, `vpsm` now pauses the TUI and lets you confirm it in the current terminal before key installation continues.
 - Reusing an existing `IdentityFile` for TUI key setup currently requires a concrete local path such as `~/.ssh/id_ed25519` or an absolute path.
 - Favorites and connection history stay local to `vpsm`.
-- `vpsm list`, `vpsm show`, `vpsm ssh`, and `vpsm files` work with both managed hosts and read-only system hosts.
+- `vpsm list`, `vpsm show`, `vpsm ssh`, and `vpsm files` work with all hosts. `vpsm set` and `vpsm delete` also work on system hosts via the overlay mechanism.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.
 - `vpsm files <alias>` uses system `ssh -s sftp` under the hood. Because that session uses stdin/stdout for the SFTP protocol, file mode currently needs either a stored password or non-interactive key authentication (for example an agent-backed key).

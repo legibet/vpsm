@@ -192,7 +192,7 @@ func (a App) runTUI() error {
 			})
 		},
 		UpdateHost: func(input ui.UpdateHostInput) error {
-			return a.hosts.UpdateManagedHost(a.ctx, hosts.UpdateManagedHostInput{
+			updateInput := hosts.UpdateManagedHostInput{
 				Alias:           input.Alias,
 				NewAlias:        input.NewAlias,
 				DisplayName:     input.DisplayName,
@@ -209,13 +209,38 @@ func (a App) runTUI() error {
 				ClearPassword:   input.ClearPassword,
 				Passphrase:      input.Passphrase,
 				ClearPassphrase: input.ClearPassphrase,
-			})
+			}
+			current, err := a.inventory.Get(a.ctx, input.Alias)
+			if err != nil {
+				return err
+			}
+			if current.Managed {
+				return a.hosts.UpdateManagedHost(a.ctx, updateInput)
+			}
+			return a.hosts.UpdateSystemHostOverlay(a.ctx, current, updateInput)
 		},
 		DeleteHost: func(alias string) error {
-			return a.hosts.DeleteManagedHost(a.ctx, alias)
+			current, err := a.inventory.Get(a.ctx, alias)
+			if err != nil {
+				return err
+			}
+			if current.Managed {
+				return a.hosts.DeleteManagedHost(a.ctx, alias)
+			}
+			if current.HasOverride {
+				return a.hosts.DeleteOverlay(a.ctx, alias)
+			}
+			return errors.New("system host — edit your SSH config directly to remove")
 		},
 		SetupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return a.hosts.SetupManagedHostKey(a.ctx, alias, stdin, stdout, stderr)
+			current, err := a.inventory.Get(a.ctx, alias)
+			if err != nil {
+				return err
+			}
+			if current.Managed {
+				return a.hosts.SetupManagedHostKey(a.ctx, alias, stdin, stdout, stderr)
+			}
+			return a.hosts.SetupSystemHostKey(a.ctx, current, stdin, stdout, stderr)
 		},
 		OpenFiles: func(alias string) (*exec.Cmd, error) {
 			return a.session.BuildFilesCommand(alias)
@@ -392,9 +417,6 @@ func (a App) runSet(alias string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if !current.Managed {
-		return errors.New("system hosts are read-only; edit your SSH config directly")
-	}
 
 	next := hosts.UpdateManagedHostInput{
 		Alias:         alias,
@@ -460,8 +482,14 @@ func (a App) runSet(alias string, args []string) error {
 		return errors.New("no changes requested")
 	}
 
-	if err := a.hosts.UpdateManagedHost(a.ctx, next); err != nil {
-		return err
+	if current.Managed {
+		if err := a.hosts.UpdateManagedHost(a.ctx, next); err != nil {
+			return err
+		}
+	} else {
+		if err := a.hosts.UpdateSystemHostOverlay(a.ctx, current, next); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("Updated %s\n", alias)
@@ -572,15 +600,21 @@ func (a App) runDelete(alias string) error {
 	if err != nil {
 		return err
 	}
-	if !host.Managed {
-		return errors.New("system hosts are read-only; edit your SSH config directly")
+
+	if host.Managed {
+		if err := a.hosts.DeleteManagedHost(a.ctx, alias); err != nil {
+			return err
+		}
+		fmt.Printf("Deleted %s\n", alias)
+	} else if host.HasOverride {
+		if err := a.hosts.DeleteOverlay(a.ctx, alias); err != nil {
+			return err
+		}
+		fmt.Printf("Removed override for %s (reverted to system config)\n", alias)
+	} else {
+		return errors.New("system host — edit your SSH config directly to remove")
 	}
 
-	if err := a.hosts.DeleteManagedHost(a.ctx, alias); err != nil {
-		return err
-	}
-
-	fmt.Printf("Deleted %s\n", alias)
 	return nil
 }
 

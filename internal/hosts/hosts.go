@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -12,12 +13,14 @@ import (
 	"vpsm/internal/model"
 	"vpsm/internal/secret"
 	"vpsm/internal/sshconfig"
+	"vpsm/internal/sshutil"
 	"vpsm/internal/store"
 )
 
 type managedHostStore interface {
 	Get(alias string) (sshconfig.ImportedHost, bool, error)
 	Upsert(host sshconfig.ImportedHost) error
+	UpsertOverlay(host sshconfig.ImportedHost) error
 	Delete(alias string) error
 	HasAliasConflict(alias string) (bool, error)
 }
@@ -443,6 +446,138 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 	return nil
 }
 
+// UpdateSystemHostOverlay writes a partial override block in vpsm.conf for a
+// system host. Only fields that differ from the original system host values
+// are written. Rename is not supported for overlays.
+func (s HostService) UpdateSystemHostOverlay(ctx context.Context, original model.Host, input UpdateManagedHostInput) error {
+	alias := NormalizeAlias(input.Alias)
+
+	passwordTouched := input.ClearPassword || strings.TrimSpace(input.Password) != ""
+	var passwordState passwordSnapshot
+	var err error
+	if passwordTouched {
+		passwordState, err = s.loadPasswordSnapshot(alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	passphraseTouched := input.ClearPassphrase || strings.TrimSpace(input.Passphrase) != ""
+	var passphraseState passphraseSnapshot
+	if passphraseTouched {
+		passphraseState, err = s.loadPassphraseSnapshot(alias)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Build overlay with only the fields that changed from the original.
+	overlay := sshconfig.ImportedHost{Alias: alias, Overlay: true}
+	if input.DisplayName != original.DisplayName {
+		overlay.DisplayName = input.DisplayName
+	}
+	if input.HostName != original.HostName {
+		overlay.HostName = input.HostName
+	}
+	if input.User != original.User {
+		overlay.User = input.User
+	}
+	if input.Port != original.Port {
+		overlay.Port = input.Port
+	}
+	if input.IdentityFile != original.IdentityFile {
+		overlay.IdentityFile = input.IdentityFile
+	}
+	if input.ProxyJump != original.ProxyJump {
+		overlay.ProxyJump = input.ProxyJump
+	}
+	if input.ProxyCommand != original.ProxyCommand {
+		overlay.ProxyCommand = input.ProxyCommand
+	}
+	if input.ForwardAgent != original.ForwardAgent {
+		overlay.ForwardAgent = input.ForwardAgent
+	}
+
+	if err := s.managedHosts.UpsertOverlay(overlay); err != nil {
+		return err
+	}
+
+	if err := s.applyUpdatedPassword(alias, input); err != nil {
+		rollbackErr := s.restorePassword(alias, passwordState)
+		rollbackErr = joinErrors(rollbackErr, s.managedHosts.Delete(alias))
+		return withRollback(err, rollbackErr)
+	}
+
+	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
+		rollbackErr := s.restorePassphrase(alias, passphraseState)
+		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = joinErrors(rollbackErr, s.managedHosts.Delete(alias))
+		return withRollback(err, rollbackErr)
+	}
+
+	return nil
+}
+
+// DeleteOverlay removes the overlay block for a system host from vpsm.conf.
+// The host reverts to its original system config values.
+func (s HostService) DeleteOverlay(ctx context.Context, alias string) error {
+	alias = NormalizeAlias(alias)
+	if alias == "" {
+		return fmt.Errorf("alias is required")
+	}
+
+	if err := s.managedHosts.Delete(alias); err != nil {
+		return err
+	}
+	// Passwords and passphrases stay in keychain (they work with system hosts too).
+	return nil
+}
+
+// SetupSystemHostKey creates a key pair and installs it on a system host,
+// writing the IdentityFile into an overlay block in vpsm.conf.
+func (s HostService) SetupSystemHostKey(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+	alias := NormalizeAlias(host.Alias)
+
+	password, _, err := s.passwords.GetPasswordIfExists(alias)
+	if err != nil {
+		return err
+	}
+	passphrase, _, err := s.passphrases.GetPassphraseIfExists(alias)
+	if err != nil {
+		return err
+	}
+
+	creds := sshutil.AuthCredentials{
+		Password:   password,
+		Passphrase: passphrase,
+	}
+
+	result, err := s.keySetup.Setup(ctx, host, creds, stdin, stdout, stderr)
+	if err != nil {
+		return err
+	}
+
+	if result.IdentityFile == "" || result.IdentityFile == host.IdentityFile {
+		return nil
+	}
+
+	overlay := sshconfig.ImportedHost{
+		Alias:        alias,
+		IdentityFile: result.IdentityFile,
+		Overlay:      true,
+	}
+	// Merge with any existing overlay to preserve previously overridden fields.
+	if existing, ok, _ := s.managedHosts.Get(alias); ok && existing.Overlay {
+		existing.IdentityFile = result.IdentityFile
+		overlay = existing
+	}
+	if err := s.managedHosts.UpsertOverlay(overlay); err != nil {
+		return fmt.Errorf("update identity file for %q: %w", alias, err)
+	}
+
+	return nil
+}
+
 func (s HostService) getManagedHost(alias string) (sshconfig.ImportedHost, error) {
 	alias = NormalizeAlias(alias)
 	if alias == "" {
@@ -623,6 +758,10 @@ func (s fileManagedHostStore) Get(alias string) (sshconfig.ImportedHost, bool, e
 
 func (s fileManagedHostStore) Upsert(host sshconfig.ImportedHost) error {
 	return sshconfig.UpsertManagedHost(s.paths.ManagedConfigPath, host)
+}
+
+func (s fileManagedHostStore) UpsertOverlay(host sshconfig.ImportedHost) error {
+	return sshconfig.UpsertOverlay(s.paths.ManagedConfigPath, host)
 }
 
 func (s fileManagedHostStore) Delete(alias string) error {
