@@ -162,7 +162,8 @@ Automately update this file when you make changes to the codebase, architecture,
 - Platform-specific files follow the naming convention `<base>_unix.go` / `<base>_windows.go` with corresponding test files `<base>_unix_test.go` / `<base>_windows_test.go`.
 - Path handling: use `filepath.Join` for filesystem paths. Tilde expansion (`expandHomePath` in `hostkey.go`) handles both `~/` and `~\` so `filepath.Join("~", ...)` works on Windows.
 - Tests that invoke a shell (`sh -c ...`) must be placed in `_unix_test.go` files with `//go:build !windows`; the Windows counterpart uses `cmd.exe /c ...`.
-- Keyring availability: `secret.Available()` probes once (via `sync.Once`) whether the system keyring is functional. All `secret.*` functions guard on this: read/delete degrade silently, write returns `ErrKeyringUnavailable`. Callers do not need individual guards.
+- Keyring availability: `secret.Available()` probes once (via `sync.Once`) whether the system keyring is functional. All `secret.*` functions guard on this: read/delete degrade silently, write returns `ErrKeyringUnavailable`. Callers do not need individual guards for read/delete paths; only explicit write commands (`set-password`, `set-passphrase`) should check `Available()` at the CLI layer for a clearer error message.
+- The Windows askpass helper delegates to PowerShell to avoid `cmd.exe` special-character issues (`!`, `^`, `&`, etc.) in passwords. Do not use `enabledelayedexpansion` or `%`-expansion for credential values.
 - Tests in `internal/secret/` that modify global keyring mock state (`MockInit`, `MockInitWithError`, `resetAvailable`) must not use `t.Parallel()`.
 - Verify cross-compilation with `GOOS=windows go build ./...` and `GOOS=linux go build ./...` when touching platform-sensitive code.
 

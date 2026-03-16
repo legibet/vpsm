@@ -504,9 +504,6 @@ func (a App) runSetPassword(alias string, args []string) error {
 }
 
 func (a App) runClearPassword(alias string) error {
-	if !secret.Available() {
-		return secret.ErrKeyringUnavailable
-	}
 	alias = hosts.NormalizeAlias(alias)
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
 		return err
@@ -556,9 +553,6 @@ func (a App) runSetPassphrase(alias string, args []string) error {
 }
 
 func (a App) runClearPassphrase(alias string) error {
-	if !secret.Available() {
-		return secret.ErrKeyringUnavailable
-	}
 	alias = hosts.NormalizeAlias(alias)
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
 		return err
