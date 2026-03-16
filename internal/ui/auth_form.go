@@ -57,11 +57,21 @@ const (
 	editFieldCount
 )
 
-// editFormFocusOrder defines the Tab traversal order to match the visual layout.
-var editFormFocusOrder = []int{
+// editFormAllFields defines the full Tab traversal order to match the visual layout.
+var editFormAllFields = []int{
 	editFieldAlias, editFieldDisplayName, editFieldHostName, editFieldUser, editFieldPort,
 	editFieldIdentity, editFieldPassword, editFieldPassphrase,
 	editFieldProxyJump, editFieldProxyCommand, editFieldForwardAgent, editFieldLocalForward, editFieldRemoteForward,
+}
+
+// editFormReadOnlyForOverlay lists fields that cannot be overridden via overlay.
+// Alias: system hosts cannot be renamed through vpsm.
+// LocalForward/RemoteForward: SSH accumulates these across blocks, so overlays
+// would add to rather than replace the original values.
+var editFormReadOnlyForOverlay = map[int]bool{
+	editFieldAlias:         true,
+	editFieldLocalForward:  true,
+	editFieldRemoteForward: true,
 }
 
 var editFormFields = []formField{
@@ -82,6 +92,8 @@ var editFormFields = []formField{
 
 type editForm struct {
 	alias            string
+	managed          bool
+	focusOrder       []int
 	passwordStored   bool
 	clearPassword    bool
 	passphraseStored bool
@@ -128,8 +140,21 @@ func newEditForm(host model.Host) editForm {
 	inputs[editFieldPassword] = newPasswordInput(pwPlaceholder, 48)
 	inputs[editFieldPassphrase] = newPasswordInput(ppPlaceholder, 48)
 
+	focusOrder := editFormAllFields
+	if !host.Managed {
+		filtered := make([]int, 0, len(editFormAllFields))
+		for _, idx := range editFormAllFields {
+			if !editFormReadOnlyForOverlay[idx] {
+				filtered = append(filtered, idx)
+			}
+		}
+		focusOrder = filtered
+	}
+
 	return editForm{
 		alias:            host.Alias,
+		managed:          host.Managed,
+		focusOrder:       focusOrder,
 		passwordStored:   host.PasswordStored,
 		passphraseStored: host.PassphraseStored,
 		inputs:           inputs,
@@ -137,7 +162,7 @@ func newEditForm(host model.Host) editForm {
 }
 
 func (f *editForm) init() tea.Cmd {
-	return f.setFocus(editFormFocusOrder[0])
+	return f.setFocus(f.focusOrder[0])
 }
 
 func (f *editForm) setWidth(width int) {
@@ -197,32 +222,32 @@ func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 }
 
 func (f *editForm) handleFocusKey(key string) (tea.Cmd, editFormAction) {
-	pos := editFormFocusPos(f.focusIndex)
+	pos := f.focusPos(f.focusIndex)
 	switch key {
 	case "up", "shift+tab":
 		pos--
 		if pos < 0 {
-			pos = len(editFormFocusOrder) - 1
+			pos = len(f.focusOrder) - 1
 		}
-		return f.setFocus(editFormFocusOrder[pos]), editFormNone
+		return f.setFocus(f.focusOrder[pos]), editFormNone
 	case "down", "tab":
 		pos++
-		if pos >= len(editFormFocusOrder) {
+		if pos >= len(f.focusOrder) {
 			pos = 0
 		}
-		return f.setFocus(editFormFocusOrder[pos]), editFormNone
+		return f.setFocus(f.focusOrder[pos]), editFormNone
 	case "enter":
-		if pos == len(editFormFocusOrder)-1 {
+		if pos == len(f.focusOrder)-1 {
 			return nil, editFormSave
 		}
-		return f.setFocus(editFormFocusOrder[pos+1]), editFormNone
+		return f.setFocus(f.focusOrder[pos+1]), editFormNone
 	default:
 		return nil, editFormNone
 	}
 }
 
-func editFormFocusPos(inputIndex int) int {
-	for i, idx := range editFormFocusOrder {
+func (f *editForm) focusPos(inputIndex int) int {
+	for i, idx := range f.focusOrder {
 		if idx == inputIndex {
 			return i
 		}
@@ -264,18 +289,28 @@ func (f *editForm) values() (UpdateHostInput, error) {
 		port = parsed
 	}
 
+	newAlias := aliasValue
+	localForward := strings.TrimSpace(f.inputs[editFieldLocalForward].Value())
+	remoteForward := strings.TrimSpace(f.inputs[editFieldRemoteForward].Value())
+	if !f.managed {
+		// System hosts cannot be renamed; forward directives cannot be overridden.
+		newAlias = f.alias
+		localForward = ""
+		remoteForward = ""
+	}
+
 	return UpdateHostInput{
-		Alias:         f.alias,
-		NewAlias:      aliasValue,
-		DisplayName:   strings.TrimSpace(f.inputs[editFieldDisplayName].Value()),
-		HostName:      hostName,
-		User:          strings.TrimSpace(f.inputs[editFieldUser].Value()),
-		Port:          port,
-		ProxyJump:     strings.TrimSpace(f.inputs[editFieldProxyJump].Value()),
-		ProxyCommand:  strings.TrimSpace(f.inputs[editFieldProxyCommand].Value()),
-		ForwardAgent:  strings.TrimSpace(f.inputs[editFieldForwardAgent].Value()),
-		LocalForward:  strings.TrimSpace(f.inputs[editFieldLocalForward].Value()),
-		RemoteForward: strings.TrimSpace(f.inputs[editFieldRemoteForward].Value()),
+		Alias:           f.alias,
+		NewAlias:        newAlias,
+		DisplayName:     strings.TrimSpace(f.inputs[editFieldDisplayName].Value()),
+		HostName:        hostName,
+		User:            strings.TrimSpace(f.inputs[editFieldUser].Value()),
+		Port:            port,
+		ProxyJump:       strings.TrimSpace(f.inputs[editFieldProxyJump].Value()),
+		ProxyCommand:    strings.TrimSpace(f.inputs[editFieldProxyCommand].Value()),
+		ForwardAgent:    strings.TrimSpace(f.inputs[editFieldForwardAgent].Value()),
+		LocalForward:    localForward,
+		RemoteForward:   remoteForward,
 		IdentityFile:    strings.TrimSpace(f.inputs[editFieldIdentity].Value()),
 		Password:        f.inputs[editFieldPassword].Value(),
 		ClearPassword:   f.clearPassword,
@@ -312,6 +347,15 @@ func (f editForm) passphraseStatusText() string {
 	return "Passphrase: not stored"
 }
 
+func (f editForm) isEditable(fieldIndex int) bool {
+	for _, idx := range f.focusOrder {
+		if idx == fieldIndex {
+			return true
+		}
+	}
+	return false
+}
+
 func (f editForm) view(styles styleSet, width int, height int) string {
 	fieldWidth := formInputWidth(width)
 
@@ -333,6 +377,21 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 		labelText := ff.label
 		if ff.required {
 			labelText += " *"
+		}
+
+		if !f.isEditable(ff.index) {
+			// Read-only field: render as static text.
+			value := strings.TrimSpace(f.inputs[ff.index].Value())
+			if value == "" {
+				value = "-"
+			}
+			row := lipgloss.JoinHorizontal(lipgloss.Top,
+				styles.formLabel.Width(formLabelWidth).Render(labelText),
+				styles.muted.Render(value+" (read-only)"),
+			)
+			rows = append(rows, row, "")
+			currentLine += 2
+			continue
 		}
 
 		focused := ff.index == f.focusIndex

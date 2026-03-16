@@ -699,3 +699,129 @@ func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
 		t.Fatalf("expected key setup footer hint, got %q", footer)
 	}
 }
+
+func TestEditFormSystemHostSkipsAliasAndForwardFields(t *testing.T) {
+	t.Parallel()
+
+	systemHost := model.Host{
+		Alias:        "prod-box",
+		HostName:     "10.0.0.1",
+		User:         "root",
+		Port:         22,
+		Managed:      false,
+		LocalForward: []string{"8080:localhost:80"},
+	}
+	form := newEditForm(systemHost)
+
+	// Alias, LocalForward, RemoteForward should not be in the focus order.
+	for _, idx := range form.focusOrder {
+		if idx == editFieldAlias {
+			t.Fatal("expected Alias to be excluded from focus order for system host")
+		}
+		if idx == editFieldLocalForward {
+			t.Fatal("expected LocalForward to be excluded from focus order for system host")
+		}
+		if idx == editFieldRemoteForward {
+			t.Fatal("expected RemoteForward to be excluded from focus order for system host")
+		}
+	}
+
+	// These fields should be marked as non-editable.
+	if form.isEditable(editFieldAlias) {
+		t.Fatal("expected Alias to be non-editable for system host")
+	}
+	if form.isEditable(editFieldLocalForward) {
+		t.Fatal("expected LocalForward to be non-editable for system host")
+	}
+	if form.isEditable(editFieldRemoteForward) {
+		t.Fatal("expected RemoteForward to be non-editable for system host")
+	}
+
+	// Other fields remain editable.
+	if !form.isEditable(editFieldHostName) {
+		t.Fatal("expected HostName to remain editable for system host")
+	}
+	if !form.isEditable(editFieldUser) {
+		t.Fatal("expected User to remain editable for system host")
+	}
+}
+
+func TestEditFormSystemHostValuesEnforcesConstraints(t *testing.T) {
+	t.Parallel()
+
+	systemHost := model.Host{
+		Alias:        "prod-box",
+		HostName:     "10.0.0.1",
+		User:         "root",
+		Port:         22,
+		Managed:      false,
+		LocalForward: []string{"8080:localhost:80"},
+	}
+	form := newEditForm(systemHost)
+
+	// Simulate user editing: even though the input has values, values()
+	// should enforce constraints for non-managed hosts.
+	form.inputs[editFieldAlias].SetValue("new-alias")
+	form.inputs[editFieldLocalForward].SetValue("9090:localhost:9090")
+	form.inputs[editFieldRemoteForward].SetValue("3000:localhost:3000")
+
+	values, err := form.values()
+	if err != nil {
+		t.Fatalf("form values: %v", err)
+	}
+
+	// Alias rename should be suppressed.
+	if values.NewAlias != "prod-box" {
+		t.Fatalf("expected NewAlias = %q (original), got %q", "prod-box", values.NewAlias)
+	}
+
+	// Forward fields should be cleared.
+	if values.LocalForward != "" {
+		t.Fatalf("expected empty LocalForward for system host, got %q", values.LocalForward)
+	}
+	if values.RemoteForward != "" {
+		t.Fatalf("expected empty RemoteForward for system host, got %q", values.RemoteForward)
+	}
+}
+
+func TestEditFormManagedHostKeepsAllFields(t *testing.T) {
+	t.Parallel()
+
+	managedHost := model.Host{
+		Alias:    "managed-box",
+		HostName: "10.0.0.1",
+		User:     "root",
+		Port:     22,
+		Managed:  true,
+	}
+	form := newEditForm(managedHost)
+
+	// All fields should be in the focus order for managed hosts.
+	if !form.isEditable(editFieldAlias) {
+		t.Fatal("expected Alias to be editable for managed host")
+	}
+	if !form.isEditable(editFieldLocalForward) {
+		t.Fatal("expected LocalForward to be editable for managed host")
+	}
+	if !form.isEditable(editFieldRemoteForward) {
+		t.Fatal("expected RemoteForward to be editable for managed host")
+	}
+}
+
+func TestEditFormSystemHostViewShowsReadOnly(t *testing.T) {
+	t.Parallel()
+
+	systemHost := model.Host{
+		Alias:    "prod-box",
+		HostName: "10.0.0.1",
+		User:     "root",
+		Port:     22,
+		Managed:  false,
+	}
+	form := newEditForm(systemHost)
+
+	rendered := ansi.Strip(form.view(newStyles(true), 60, 40))
+	if !strings.Contains(rendered, "read-only") {
+		t.Fatalf("expected 'read-only' label for non-editable fields, got %q", rendered)
+	}
+}

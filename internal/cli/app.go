@@ -487,6 +487,9 @@ func (a App) runSet(alias string, args []string) error {
 			return err
 		}
 	} else {
+		if localForward.IsSet() || remoteForward.IsSet() {
+			return errors.New("cannot override LocalForward/RemoteForward for system hosts via overlay (SSH accumulates these directives)")
+		}
 		if err := a.hosts.UpdateSystemHostOverlay(a.ctx, current, next); err != nil {
 			return err
 		}
