@@ -189,7 +189,9 @@ func validateLocalIdentityFilePath(path string) error {
 	}
 
 	expanded := expandHomePath(path)
-	if filepath.IsAbs(expanded) || strings.HasPrefix(path, "~/") || path == "~" {
+	tildeRelative := strings.HasPrefix(path, "~/") ||
+		(filepath.Separator != '/' && strings.HasPrefix(path, `~\`))
+	if filepath.IsAbs(expanded) || tildeRelative || path == "~" {
 		return nil
 	}
 

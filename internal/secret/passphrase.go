@@ -10,6 +10,9 @@ import (
 )
 
 func SetPassphrase(alias string, passphrase string) error {
+	if !Available() {
+		return ErrKeyringUnavailable
+	}
 	alias = normalizeAlias(alias)
 	if alias == "" {
 		return errors.New("alias is required")
@@ -26,6 +29,9 @@ func SetPassphrase(alias string, passphrase string) error {
 }
 
 func GetPassphrase(alias string) (string, error) {
+	if !Available() {
+		return "", keyring.ErrNotFound
+	}
 	alias = normalizeAlias(alias)
 	if alias == "" {
 		return "", errors.New("alias is required")
@@ -43,6 +49,9 @@ func GetPassphrase(alias string) (string, error) {
 }
 
 func DeletePassphrase(alias string) error {
+	if !Available() {
+		return nil
+	}
 	alias = normalizeAlias(alias)
 	if alias == "" {
 		return errors.New("alias is required")

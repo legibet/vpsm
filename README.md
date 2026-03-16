@@ -124,6 +124,14 @@ That keeps the list compact and easy to scan without hiding the technical alias 
 
 The file browser opens as a separate full-screen interface. It uses `hjkl` and `tab` for navigation, supports local/remote split-pane browsing, and transfers the selected file or directory directly with `t` to the opposite pane. It can create directories, rename entries, delete entries, refresh, and transfer files or directories recursively.
 
+## Platform notes
+
+`vpsm` is developed on macOS and also runs on Linux and Windows.
+
+- **macOS**: works out of the box. Passwords and passphrases are stored in the system Keychain.
+- **Linux**: passwords and passphrases are stored via D-Bus Secret Service. A provider such as `gnome-keyring` or `kwallet` must be running. On headless servers without a keyring, password storage is automatically disabled; you can still connect with interactive SSH password prompts or key-based auth.
+- **Windows**: requires OpenSSH in your `PATH` (built-in since Windows 10 1809, or available via Git for Windows). Passwords and passphrases are stored in Windows Credential Manager.
+
 ## A few useful notes
 
 - If you already have a large `~/.ssh/config`, `vpsm` will show concrete aliases from that config in the list, but managed edits still only write to `~/.ssh/vpsm.conf`.

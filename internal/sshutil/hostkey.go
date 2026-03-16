@@ -216,8 +216,14 @@ func expandHomePath(path string) string {
 		}
 		return path
 	}
-	if !strings.HasPrefix(path, "~/") {
-		return path
+
+	sep := string(filepath.Separator)
+	prefix := "~/"
+	if !strings.HasPrefix(path, prefix) {
+		if sep == "/" || !strings.HasPrefix(path, "~"+sep) {
+			return path
+		}
+		prefix = "~" + sep
 	}
 
 	home, err := os.UserHomeDir()
@@ -225,7 +231,7 @@ func expandHomePath(path string) string {
 		return path
 	}
 
-	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+	return filepath.Join(home, path[len(prefix):])
 }
 
 func isKnownHostsFile(path string) (bool, error) {

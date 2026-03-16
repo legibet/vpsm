@@ -10,7 +10,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Binary name: `vpsm`.
 - UI stack: `charm.land/bubbletea/v2`, `charm.land/bubbles/v2`, `charm.land/lipgloss/v2`.
 - Database: SQLite via `modernc.org/sqlite`.
-- Password and key passphrase storage: system keychain via `github.com/zalando/go-keyring`.
+- Password and key passphrase storage: system keychain via `github.com/zalando/go-keyring` (macOS Keychain, Linux D-Bus Secret Service, Windows Credential Manager). Gracefully disabled when keyring is unavailable.
 - SSH execution: system `ssh`; do not replace this with a Go SSH client.
 
 ## Current Architecture
@@ -22,9 +22,9 @@ Automately update this file when you make changes to the codebase, architecture,
 - `internal/session/`: SSH connect flow, file-browser session setup, and interrupt handling.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
 - `internal/store/`: SQLite metadata only, not the source of truth for hosts. It now stores only local favorites and last-connected timestamps.
-- `internal/sshutil/`: builds `ssh` commands, askpass handling, host-key checks, and public-key install helpers.
+- `internal/sshutil/`: builds `ssh` commands, askpass handling (platform-split via `askpass_unix.go` / `askpass_windows.go`), host-key checks, and public-key install helpers.
 - `internal/filexfer/`: opens remote SFTP sessions over system `ssh -s sftp`, reads local/remote directories, and handles recursive upload/download helpers with progress callbacks.
-- `internal/secret/`: keychain-backed password and passphrase helpers.
+- `internal/secret/`: keychain-backed password and passphrase helpers with `Available()` graceful degradation for headless Linux.
 - `internal/ui/`: Bubble Tea TUI and forms.
 - `internal/model/`: core `Host` type and display helpers.
 - `internal/config/paths.go`: path resolution for app dir, DB path, SSH config path, and managed config path.
@@ -151,9 +151,20 @@ Automately update this file when you make changes to the codebase, architecture,
 - Public-key install flows must append idempotently to remote `authorized_keys`; do not overwrite the file.
 - Non-ASCII aliases must continue to fall back to direct `user@host` targets.
 - Password and passphrase automation uses a smart askpass helper that inspects the SSH prompt (`$1`): prompts containing "passphrase" (case-insensitive) return `$VPSM_SSH_PASSPHRASE`, all others return `$VPSM_SSH_PASSWORD`. Do not replace this with `sshpass`.
+- The askpass helper is platform-specific: `askpass_unix.go` writes a POSIX shell script (`.sh`), `askpass_windows.go` writes a batch file (`.cmd`). Both live in `internal/sshutil/` with `//go:build` tags.
 - `AuthCredentials` in `internal/sshutil` carries both password and passphrase; askpass is enabled when either is non-empty.
 - The file browser (`vpsm files <alias>`) uses `github.com/pkg/sftp` only as a protocol client on top of system `ssh -s sftp`. Keep authentication and host-key handling on the system `ssh` side.
 - Because `ssh -s sftp` uses stdin/stdout as protocol pipes, file mode cannot rely on in-session interactive password or key-passphrase prompts. Prefer stored passwords/passphrases or non-interactive key auth (for example `ssh-agent`).
+
+## Cross-Platform Rules
+
+- The project targets macOS, Linux, and Windows. Use `//go:build` tags for platform-specific code; never use `runtime.GOOS` checks at runtime for code that can be split at compile time.
+- Platform-specific files follow the naming convention `<base>_unix.go` / `<base>_windows.go` with corresponding test files `<base>_unix_test.go` / `<base>_windows_test.go`.
+- Path handling: use `filepath.Join` for filesystem paths. Tilde expansion (`expandHomePath` in `hostkey.go`) handles both `~/` and `~\` so `filepath.Join("~", ...)` works on Windows.
+- Tests that invoke a shell (`sh -c ...`) must be placed in `_unix_test.go` files with `//go:build !windows`; the Windows counterpart uses `cmd.exe /c ...`.
+- Keyring availability: `secret.Available()` probes once (via `sync.Once`) whether the system keyring is functional. All `secret.*` functions guard on this: read/delete degrade silently, write returns `ErrKeyringUnavailable`. Callers do not need individual guards.
+- Tests in `internal/secret/` that modify global keyring mock state (`MockInit`, `MockInitWithError`, `resetAvailable`) must not use `t.Parallel()`.
+- Verify cross-compilation with `GOOS=windows go build ./...` and `GOOS=linux go build ./...` when touching platform-sensitive code.
 
 ## TUI Rules
 

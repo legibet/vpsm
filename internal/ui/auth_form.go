@@ -10,6 +10,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 
 	"vpsm/internal/model"
+	"vpsm/internal/secret"
 )
 
 type UpdateHostInput struct {
@@ -118,8 +119,14 @@ func newEditForm(host model.Host) editForm {
 	}
 	inputs[editFieldIdentity] = newTextInput("~/.ssh/id_ed25519", 48)
 	inputs[editFieldIdentity].SetValue(host.IdentityFile)
-	inputs[editFieldPassword] = newPasswordInput("leave blank to keep current password", 48)
-	inputs[editFieldPassphrase] = newPasswordInput("leave blank to keep current passphrase", 48)
+	pwPlaceholder := "leave blank to keep current password"
+	ppPlaceholder := "leave blank to keep current passphrase"
+	if !secret.Available() {
+		pwPlaceholder = "keyring unavailable"
+		ppPlaceholder = "keyring unavailable"
+	}
+	inputs[editFieldPassword] = newPasswordInput(pwPlaceholder, 48)
+	inputs[editFieldPassphrase] = newPasswordInput(ppPlaceholder, 48)
 
 	return editForm{
 		alias:            host.Alias,

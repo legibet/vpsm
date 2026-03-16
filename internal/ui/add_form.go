@@ -8,6 +8,8 @@ import (
 	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+
+	"vpsm/internal/secret"
 )
 
 type CreateHostInput struct {
@@ -95,8 +97,14 @@ func newAddForm() addForm {
 	inputs[fieldLocalForward] = newTextInput("8080:localhost:80, 9090:...", 48)
 	inputs[fieldRemoteForward] = newTextInput("9090:localhost:9090, ...", 48)
 	inputs[fieldIdentityFile] = newTextInput("~/.ssh/id_ed25519", 48)
-	inputs[fieldPassword] = newPasswordInput("optional, saved to system keychain", 48)
-	inputs[fieldPassphrase] = newPasswordInput("key passphrase, saved to keychain", 48)
+	pwPlaceholder := "optional, saved to system keychain"
+	ppPlaceholder := "key passphrase, saved to keychain"
+	if !secret.Available() {
+		pwPlaceholder = "keyring unavailable"
+		ppPlaceholder = "keyring unavailable"
+	}
+	inputs[fieldPassword] = newPasswordInput(pwPlaceholder, 48)
+	inputs[fieldPassphrase] = newPasswordInput(ppPlaceholder, 48)
 	inputs[fieldPort].SetValue("22")
 
 	return addForm{inputs: inputs}

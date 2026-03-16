@@ -8,9 +8,8 @@ import (
 )
 
 func TestPasswordLifecycle(t *testing.T) {
-	t.Parallel()
-
 	keyring.MockInit()
+	resetAvailable()
 
 	if err := SetPassword("demo", "s3cr3t"); err != nil {
 		t.Fatalf("set password: %v", err)
