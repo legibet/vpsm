@@ -177,7 +177,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Form inputs are Bubble Tea text inputs; keep paste support working.
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
-- The server list currently renders one host per row: display name and alias on the left, target meta and source tag (e.g. `vpsm`, `config`, `work`) on the same line.
+- The server list renders one host per single terminal line: `[▸| ] [★| ] <primary>  <user@host:port>  <tag>`. Primary is DisplayName when set, otherwise Alias. The `▸` cursor marks the selected row. Alias details are visible in the side detail panel.
 - Footer hints are dynamic: managed hosts show edit/delete/key actions; system hosts omit those and only show new/fav/refresh.
 - Browse mode now also includes an `o` action to open the split-pane file browser for the selected host.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
@@ -186,7 +186,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.
 - The detail panel shows a Source row and a Network section (ProxyJump, ProxyCommand, ForwardAgent, LocalForward, RemoteForward) when directives are present.
-- If a display name exists, show it without hiding the technical alias completely.
+- If a display name exists, show it as the primary label in the list; the alias is always available in the details panel.
 - Keep key hints accurate when you change interactions.
 
 ## SQLite Metadata Rules

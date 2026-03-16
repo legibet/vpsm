@@ -657,70 +657,58 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
-// renderListItem returns a two-line representation of a host entry.
-// Line 1: [▎ ][★ ]<primary>                       <source-tag>
-// Line 2:      [alias ·] <user@host:port>
+// renderListItem returns a single-line representation of a host entry.
+// Format: [▸| ] [★| ] <primary>           <user@host:port>  <tag>
 // Primary is DisplayName when available, otherwise Alias.
-// Alias appears on line 2 only when DisplayName is set (avoids duplication).
 func (m tuiModel) renderListItem(host model.Host, width int) string {
 	contentWidth := m.listContentWidth(width)
 	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
 	primaryStyle := m.styles.alias
 	metaStyle := m.styles.meta
-	starStyle := m.styles.star
 
 	if selected {
 		primaryStyle = m.styles.aliasActive
 		metaStyle = m.styles.metaActive
 	}
 
-	// Left gutter: indicator bar or spaces.
+	// Cursor indicator.
 	gutter := "  "
 	if selected {
-		gutter = m.styles.indicator.Render("▎") + " "
+		gutter = m.styles.indicator.Render("▸") + " "
 	}
 
 	// Star or blank spacer.
 	starPart := "  "
 	if host.Favorite {
-		starPart = starStyle.Render("★") + " "
+		starPart = m.styles.star.Render("★") + " "
 	}
 
 	// Primary label: DisplayName if set, otherwise Alias.
 	displayName := strings.TrimSpace(host.DisplayName)
 	primary := host.Alias
-	hasDisplayName := displayName != ""
-	if hasDisplayName {
+	if displayName != "" {
 		primary = displayName
 	}
 
-	left1 := gutter + starPart + primaryStyle.Render(primary)
+	left := gutter + starPart + primaryStyle.Render(primary)
 
-	// Right side of line 1: source tag.
-	tag := sourceTag(host)
-	right1 := metaStyle.Render(tag)
-
-	gap1 := contentWidth - lipgloss.Width(left1) - lipgloss.Width(right1)
-	if gap1 < 2 {
-		gap1 = 2
-	}
-	line1 := left1 + strings.Repeat(" ", gap1) + right1
-
-	// Line 2: indented alias (if DisplayName is set) + connection meta.
-	indent := "     "
+	// Right side: connection meta and source tag.
 	meta := listMeta(host)
-	var line2Content string
-	if hasDisplayName && meta != "" {
-		line2Content = metaStyle.Render(host.Alias + "  " + meta)
-	} else if hasDisplayName {
-		line2Content = metaStyle.Render(host.Alias)
+	tag := sourceTag(host)
+	var right string
+	if meta != "" {
+		right = metaStyle.Render(meta) + "  " + metaStyle.Render(tag)
 	} else {
-		line2Content = metaStyle.Render(meta)
+		right = metaStyle.Render(tag)
 	}
-	line2 := indent + line2Content
 
-	return m.styles.listItem.MaxWidth(contentWidth).Render(line1) + "\n" +
-		m.styles.listItem.MaxWidth(contentWidth).Render(line2)
+	gap := contentWidth - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		gap = 2
+	}
+
+	line := left + strings.Repeat(" ", gap) + right
+	return m.styles.listItem.MaxWidth(contentWidth).Render(line)
 }
 
 func (m tuiModel) renderDetailsPanel(width int, height int) string {
@@ -921,18 +909,13 @@ func (m tuiModel) listContentWidth(panelWidth int) int {
 }
 
 // listRowsPerPage returns how many host entries fit in the list panel.
-// Each entry occupies 2 lines (primary + meta), no separators,
-// so N items take 2*N rows.
+// Each entry occupies 1 line, no separators.
 func (m tuiModel) listRowsPerPage() int {
 	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	if available < 2 {
+	if available < 1 {
 		return 1
 	}
-	n := available / 2
-	if n < 1 {
-		return 1
-	}
-	return n
+	return available
 }
 
 func (m tuiModel) renderCompactBody(width int, height int) string {

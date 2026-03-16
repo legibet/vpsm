@@ -199,9 +199,6 @@ func TestRenderListItemShowsDisplayNameAsPrimary(t *testing.T) {
 	if !strings.Contains(rendered, host.DisplayName) {
 		t.Fatalf("expected display name as primary label, got %q", rendered)
 	}
-	if !strings.Contains(rendered, host.Alias) {
-		t.Fatalf("expected alias on second line, got %q", rendered)
-	}
 	if !strings.Contains(rendered, "root @ 10.0.0.1:2201") {
 		t.Fatalf("expected meta info, got %q", rendered)
 	}
@@ -257,10 +254,9 @@ func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
 	}
 	m.applyFilter()
 
-	// Each item takes 2 lines (primary + meta), no separators,
-	// so N items occupy 2*N rows.
+	// Each item occupies 1 line, no separators.
 	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	want := available / 2
+	want := available
 	if want < 1 {
 		want = 1
 	}
