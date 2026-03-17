@@ -21,16 +21,15 @@ Usage:
   vpsm list                   Print visible hosts
   vpsm show <alias>           Show one visible host
   vpsm add --alias ...        Add a managed host (optional --name/--proxy-*)
-  vpsm set <alias>            Update a managed host (optional --name/--proxy-*)
+  vpsm set <alias>            Update a visible host (supports rename and secret changes)
   vpsm set-password <alias>   Store an SSH password in the system keychain
   vpsm clear-password <alias> Delete a stored SSH password
   vpsm set-passphrase <alias> Store an SSH key passphrase in the system keychain
   vpsm clear-passphrase <alias> Delete a stored SSH key passphrase
-  vpsm delete <alias>         Delete a managed host
+  vpsm delete <alias>         Delete a managed host or remove a system override
   vpsm favorite <alias>       Toggle favorite state
   vpsm favorite <alias> on    Mark as favorite
   vpsm favorite <alias> off   Remove favorite mark
-  vpsm import-ssh             Explain the managed-host workflow
   vpsm ssh <alias>            Connect with system ssh
   vpsm files <alias>          Open the file browser
   vpsm help                   Show this help

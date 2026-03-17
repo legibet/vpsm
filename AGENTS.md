@@ -207,7 +207,8 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - If you change commands or stage-1 limitations, update `README.md`.
 - Keep CLI help text in `internal/cli/output.go` aligned with actual behavior.
-- If a compatibility command remains for UX reasons, explain that clearly instead of removing it silently.
+- `vpsm set` supports managed-host alias renames plus inline password/passphrase updates or clear flags; keep this aligned with the TUI and host service behavior.
+- There is no `import-ssh` command anymore; inventory always reads directly from SSH config plus managed overlays.
 
 ## Commit Style
 

@@ -9,12 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 
-	"vpsm/internal/cmdutil"
 	"vpsm/internal/config"
 	"vpsm/internal/hosts"
 	"vpsm/internal/inventory"
@@ -88,7 +86,7 @@ func (a App) run(args []string) error {
 		return a.runAdd(args[1:])
 	case "set":
 		if len(args) < 2 {
-			return errors.New("usage: vpsm set <alias> [--name ...] [--host ...] [--user ...] [--port ...] [--proxy-jump ...] [--proxy-command ...] [--forward-agent ...] [--local-forward ...] [--remote-forward ...] [--identity-file ...]")
+			return errors.New("usage: vpsm set <alias> [--alias ...] [--name ...] [--host ...] [--user ...] [--port ...] [--proxy-jump ...] [--proxy-command ...] [--forward-agent ...] [--local-forward ...] [--remote-forward ...] [--identity-file ...] [--password ...|--clear-password] [--passphrase ...|--clear-passphrase]")
 		}
 		return a.runSet(args[1], args[2:])
 	case "set-password":
@@ -125,10 +123,6 @@ func (a App) run(args []string) error {
 			mode = args[2]
 		}
 		return a.runFavorite(args[1], mode)
-	case "import-ssh":
-		fmt.Println("Import from existing SSH config is not available.")
-		fmt.Println("vpsm manages hosts in ~/.ssh/vpsm.conf and shows matching system hosts from ~/.ssh/config as read-only entries.")
-		return nil
 	case "ssh":
 		if len(args) < 2 {
 			return errors.New("usage: vpsm ssh <alias>")
@@ -383,120 +377,32 @@ func (a App) runAdd(args []string) error {
 }
 
 func (a App) runSet(alias string, args []string) error {
-	fs := flag.NewFlagSet("set", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	var displayName cmdutil.OptionalString
-	var hostName cmdutil.OptionalString
-	var user cmdutil.OptionalString
-	var portValue string
-	var proxyJump cmdutil.OptionalString
-	var proxyCommand cmdutil.OptionalString
-	var forwardAgent cmdutil.OptionalString
-	var localForward cmdutil.OptionalString
-	var remoteForward cmdutil.OptionalString
-	var identityFile cmdutil.OptionalString
-
-	fs.Var(&displayName, "name", "Display name")
-	fs.Var(&hostName, "host", "Host or IP")
-	fs.Var(&user, "user", "SSH user")
-	fs.StringVar(&portValue, "port", "", "SSH port")
-	fs.Var(&proxyJump, "proxy-jump", "SSH ProxyJump value")
-	fs.Var(&proxyCommand, "proxy-command", "SSH ProxyCommand value")
-	fs.Var(&forwardAgent, "forward-agent", "SSH ForwardAgent value")
-	fs.Var(&localForward, "local-forward", "Comma-separated SSH LocalForward values")
-	fs.Var(&remoteForward, "remote-forward", "Comma-separated SSH RemoteForward values")
-	fs.Var(&identityFile, "identity-file", "SSH private key path")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
 	alias = hosts.NormalizeAlias(alias)
 	current, err := a.inventory.Get(a.ctx, alias)
 	if err != nil {
 		return err
 	}
 
-	next := hosts.UpdateManagedHostInput{
-		Alias:         alias,
-		DisplayName:   current.DisplayName,
-		HostName:      current.HostName,
-		User:          current.User,
-		Port:          current.Port,
-		ProxyJump:     current.ProxyJump,
-		ProxyCommand:  current.ProxyCommand,
-		ForwardAgent:  current.ForwardAgent,
-		LocalForward:  joinForwardValues(current.LocalForward),
-		RemoteForward: joinForwardValues(current.RemoteForward),
-		IdentityFile:  current.IdentityFile,
-	}
-
-	changed := false
-	if displayName.IsSet() {
-		next.DisplayName = displayName.Value()
-		changed = true
-	}
-	if hostName.IsSet() {
-		next.HostName = hostName.Value()
-		changed = true
-	}
-	if user.IsSet() {
-		next.User = user.Value()
-		changed = true
-	}
-	if strings.TrimSpace(portValue) != "" {
-		parsed, err := strconv.Atoi(strings.TrimSpace(portValue))
-		if err != nil || parsed <= 0 {
-			return errors.New("port must be a positive number")
-		}
-		next.Port = parsed
-		changed = true
-	}
-	if proxyJump.IsSet() {
-		next.ProxyJump = proxyJump.Value()
-		changed = true
-	}
-	if proxyCommand.IsSet() {
-		next.ProxyCommand = proxyCommand.Value()
-		changed = true
-	}
-	if forwardAgent.IsSet() {
-		next.ForwardAgent = forwardAgent.Value()
-		changed = true
-	}
-	if localForward.IsSet() {
-		next.LocalForward = localForward.Value()
-		changed = true
-	}
-	if remoteForward.IsSet() {
-		next.RemoteForward = remoteForward.Value()
-		changed = true
-	}
-	if identityFile.IsSet() {
-		next.IdentityFile = identityFile.Value()
-		changed = true
-	}
-
-	if !changed {
-		return errors.New("no changes requested")
+	plan, err := buildSetUpdate(current, args)
+	if err != nil {
+		return err
 	}
 
 	if current.Managed {
-		if err := a.hosts.UpdateManagedHost(a.ctx, next); err != nil {
+		if err := a.hosts.UpdateManagedHost(a.ctx, plan.input); err != nil {
 			return err
 		}
 	} else {
-		if localForward.IsSet() || remoteForward.IsSet() {
+		if plan.localForwardSet || plan.remoteForwardSet {
 			return errors.New("cannot override LocalForward/RemoteForward for system hosts via overlay (SSH accumulates these directives)")
 		}
-		if err := a.hosts.UpdateSystemHostOverlay(a.ctx, current, next); err != nil {
+		if err := a.hosts.UpdateSystemHostOverlay(a.ctx, current, plan.input); err != nil {
 			return err
 		}
 	}
 
-	fmt.Printf("Updated %s\n", alias)
-	return a.runShow(alias)
+	fmt.Printf("Updated %s\n", plan.effectiveAlias)
+	return a.runShow(plan.effectiveAlias)
 }
 
 func (a App) runSetPassword(alias string, args []string) error {

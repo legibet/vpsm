@@ -74,6 +74,8 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 
 `vpsm add` and `vpsm set` also accept optional `--proxy-jump`, `--proxy-command`, `--forward-agent`, `--local-forward`, and `--remote-forward` flags. Forward flags take comma-separated SSH forward rules.
 
+`vpsm set` also supports `--alias` for managed-host renames, plus `--password`, `--passphrase`, `--clear-password`, and `--clear-passphrase` for keychain-backed auth updates.
+
 ## Common commands
 
 ```bash
@@ -88,7 +90,6 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 ./vpsm set-passphrase my-box
 ./vpsm clear-passphrase my-box
 ./vpsm favorite my-box on
-./vpsm import-ssh
 ./vpsm ssh my-box
 ./vpsm files my-box
 ./vpsm delete my-box
@@ -143,5 +144,6 @@ The file browser opens as a separate full-screen interface. It uses `hjkl` and `
 - Reusing an existing `IdentityFile` for TUI key setup currently requires a concrete local path such as `~/.ssh/id_ed25519` or an absolute path.
 - Favorites and connection history stay local to `vpsm`.
 - `vpsm list`, `vpsm show`, `vpsm ssh`, and `vpsm files` work with all hosts. `vpsm set` and `vpsm delete` also work on system hosts via the overlay mechanism.
+- `vpsm set <alias> --alias <new-alias>` renames managed hosts and keeps local metadata plus stored secrets aligned with the new alias.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.
 - `vpsm files <alias>` uses system `ssh -s sftp` under the hood. Because that session uses stdin/stdout for the SFTP protocol, file mode currently needs either a stored password or non-interactive key authentication (for example an agent-backed key).
