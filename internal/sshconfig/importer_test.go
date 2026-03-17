@@ -199,3 +199,45 @@ func TestParsePathMergesDuplicateAliasesByMissingFields(t *testing.T) {
 		t.Fatalf("expected identity file %q, got %q", "~/.ssh/id_app", host.IdentityFile)
 	}
 }
+
+func TestLookupPathExcludingSkipsManagedOverlayFile(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	mainPath := filepath.Join(tempDir, "config")
+	managedPath := filepath.Join(tempDir, "vpsm.conf")
+
+	if err := os.WriteFile(managedPath, []byte(strings.Join([]string{
+		"# vpsm-overlay",
+		"Host app",
+		"  User ubuntu",
+		"",
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("write managed config: %v", err)
+	}
+
+	if err := os.WriteFile(mainPath, []byte(strings.Join([]string{
+		"Include " + managedPath,
+		"",
+		"Host app",
+		"  HostName 10.0.0.9",
+		"  User root",
+		"",
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("write main config: %v", err)
+	}
+
+	host, ok, err := LookupPathExcluding(mainPath, "app", managedPath)
+	if err != nil {
+		t.Fatalf("lookup path excluding: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected host to be found")
+	}
+	if host.User != "root" {
+		t.Fatalf("expected base system user %q, got %q", "root", host.User)
+	}
+	if host.Source != mainPath {
+		t.Fatalf("expected source %q, got %q", mainPath, host.Source)
+	}
+}

@@ -403,6 +403,135 @@ func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
 	}
 }
 
+func TestUpdateSystemHostOverlayPreservesExistingOverrideOnSecretOnlyUpdate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:   "prod-1",
+		User:    "ubuntu",
+		Overlay: true,
+	}
+	managed.systemHosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "root",
+		Port:     22,
+	}
+	passwords := newFakePasswordStore()
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		passphrases:  newFakePassphraseStore(),
+		metadata:     newFakeMetadataStore(),
+	}
+
+	err := svc.UpdateSystemHostOverlay(ctx, model.Host{
+		Alias:       "prod-1",
+		HostName:    "203.0.113.10",
+		User:        "ubuntu",
+		Port:        22,
+		HasOverride: true,
+	}, UpdateManagedHostInput{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "ubuntu",
+		Port:     22,
+		Password: "new-secret",
+	})
+	if err != nil {
+		t.Fatalf("update system host overlay: %v", err)
+	}
+
+	overlay, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get overlay: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected overlay to remain")
+	}
+	if !overlay.Overlay || overlay.User != "ubuntu" {
+		t.Fatalf("expected existing overlay to be preserved, got %+v", overlay)
+	}
+	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	if err != nil {
+		t.Fatalf("get password: %v", err)
+	}
+	if !ok || password != "new-secret" {
+		t.Fatalf("expected stored password to be updated, got %q", password)
+	}
+}
+
+func TestUpdateSystemHostOverlayRestoresOverlayWhenSecretWriteFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:        "prod-1",
+		User:         "ubuntu",
+		IdentityFile: "~/.ssh/id_prod",
+		Overlay:      true,
+	}
+	managed.systemHosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "root",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_root",
+	}
+	passwords := newFakePasswordStore()
+	passwords.values["prod-1"] = "old-secret"
+	passwords.failSetOnce = true
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		passphrases:  newFakePassphraseStore(),
+		metadata:     newFakeMetadataStore(),
+	}
+
+	err := svc.UpdateSystemHostOverlay(ctx, model.Host{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "ubuntu",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_prod",
+		HasOverride:  true,
+	}, UpdateManagedHostInput{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "ubuntu",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_prod",
+		Password:     "new-secret",
+	})
+	if err == nil {
+		t.Fatal("expected password write error")
+	}
+
+	overlay, ok, getErr := managed.Get("prod-1")
+	if getErr != nil {
+		t.Fatalf("get overlay: %v", getErr)
+	}
+	if !ok {
+		t.Fatal("expected overlay to be restored")
+	}
+	if !overlay.Overlay || overlay.User != "ubuntu" || overlay.IdentityFile != "~/.ssh/id_prod" {
+		t.Fatalf("expected original overlay to be restored, got %+v", overlay)
+	}
+
+	password, ok, getErr := passwords.GetPasswordIfExists("prod-1")
+	if getErr != nil {
+		t.Fatalf("get password: %v", getErr)
+	}
+	if !ok || password != "old-secret" {
+		t.Fatalf("expected original password to remain, got %q", password)
+	}
+}
+
 func TestSetupManagedHostKeyWritesBackIdentityFile(t *testing.T) {
 	t.Parallel()
 
@@ -542,21 +671,28 @@ func testPaths(t *testing.T) config.Paths {
 }
 
 type fakeManagedHostStore struct {
-	hosts     map[string]sshconfig.ImportedHost
-	conflicts map[string]bool
-	upsertErr error
-	deleteErr error
+	hosts       map[string]sshconfig.ImportedHost
+	systemHosts map[string]sshconfig.ImportedHost
+	conflicts   map[string]bool
+	upsertErr   error
+	deleteErr   error
 }
 
 func newFakeManagedHostStore() *fakeManagedHostStore {
 	return &fakeManagedHostStore{
-		hosts:     make(map[string]sshconfig.ImportedHost),
-		conflicts: make(map[string]bool),
+		hosts:       make(map[string]sshconfig.ImportedHost),
+		systemHosts: make(map[string]sshconfig.ImportedHost),
+		conflicts:   make(map[string]bool),
 	}
 }
 
 func (s *fakeManagedHostStore) Get(alias string) (sshconfig.ImportedHost, bool, error) {
 	host, ok := s.hosts[alias]
+	return host, ok, nil
+}
+
+func (s *fakeManagedHostStore) LookupSystemBase(alias string) (sshconfig.ImportedHost, bool, error) {
+	host, ok := s.systemHosts[alias]
 	return host, ok, nil
 }
 

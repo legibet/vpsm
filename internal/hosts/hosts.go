@@ -19,6 +19,7 @@ import (
 
 type managedHostStore interface {
 	Get(alias string) (sshconfig.ImportedHost, bool, error)
+	LookupSystemBase(alias string) (sshconfig.ImportedHost, bool, error)
 	Upsert(host sshconfig.ImportedHost) error
 	UpsertOverlay(host sshconfig.ImportedHost) error
 	Delete(alias string) error
@@ -449,12 +450,23 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 // UpdateSystemHostOverlay writes a partial override block in vpsm.conf for a
 // system host. Only fields that differ from the original system host values
 // are written. Rename is not supported for overlays.
-func (s HostService) UpdateSystemHostOverlay(ctx context.Context, original model.Host, input UpdateManagedHostInput) error {
+func (s HostService) UpdateSystemHostOverlay(ctx context.Context, _ model.Host, input UpdateManagedHostInput) error {
 	alias := NormalizeAlias(input.Alias)
+	baseHost, ok, err := s.managedHosts.LookupSystemBase(alias)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("system host %q not found", alias)
+	}
+
+	overlayState, err := s.loadOverlaySnapshot(alias)
+	if err != nil {
+		return err
+	}
 
 	passwordTouched := input.ClearPassword || strings.TrimSpace(input.Password) != ""
 	var passwordState passwordSnapshot
-	var err error
 	if passwordTouched {
 		passwordState, err = s.loadPasswordSnapshot(alias)
 		if err != nil {
@@ -471,47 +483,60 @@ func (s HostService) UpdateSystemHostOverlay(ctx context.Context, original model
 		}
 	}
 
-	// Build overlay with only the fields that changed from the original.
+	// Build overlay with only the fields that changed from the original system host.
 	overlay := sshconfig.ImportedHost{Alias: alias, Overlay: true}
-	if input.DisplayName != original.DisplayName {
+	if input.DisplayName != baseHost.DisplayName {
 		overlay.DisplayName = input.DisplayName
 	}
-	if input.HostName != original.HostName {
+	if input.HostName != baseHost.HostName {
 		overlay.HostName = input.HostName
 	}
-	if input.User != original.User {
+	if input.User != baseHost.User {
 		overlay.User = input.User
 	}
-	if input.Port != original.Port {
+	if input.Port != baseHost.Port {
 		overlay.Port = input.Port
 	}
-	if input.IdentityFile != original.IdentityFile {
+	if input.IdentityFile != baseHost.IdentityFile {
 		overlay.IdentityFile = input.IdentityFile
 	}
-	if input.ProxyJump != original.ProxyJump {
+	if input.ProxyJump != baseHost.ProxyJump {
 		overlay.ProxyJump = input.ProxyJump
 	}
-	if input.ProxyCommand != original.ProxyCommand {
+	if input.ProxyCommand != baseHost.ProxyCommand {
 		overlay.ProxyCommand = input.ProxyCommand
 	}
-	if input.ForwardAgent != original.ForwardAgent {
+	if input.ForwardAgent != baseHost.ForwardAgent {
 		overlay.ForwardAgent = input.ForwardAgent
 	}
 
-	if err := s.managedHosts.UpsertOverlay(overlay); err != nil {
-		return err
+	overlayTouched := false
+	if hasOverlayFields(overlay) {
+		if err := s.managedHosts.UpsertOverlay(overlay); err != nil {
+			return err
+		}
+		overlayTouched = true
+	} else if overlayState.ok {
+		if err := s.managedHosts.Delete(alias); err != nil {
+			return err
+		}
+		overlayTouched = true
 	}
 
 	if err := s.applyUpdatedPassword(alias, input); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.managedHosts.Delete(alias))
+		if overlayTouched {
+			rollbackErr = joinErrors(rollbackErr, s.restoreOverlay(alias, overlayState))
+		}
 		return withRollback(err, rollbackErr)
 	}
 
 	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
 		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-		rollbackErr = joinErrors(rollbackErr, s.managedHosts.Delete(alias))
+		if overlayTouched {
+			rollbackErr = joinErrors(rollbackErr, s.restoreOverlay(alias, overlayState))
+		}
 		return withRollback(err, rollbackErr)
 	}
 
@@ -681,6 +706,13 @@ func (s HostService) restoreManagedHost(alias string, snapshot managedHostSnapsh
 	return s.managedHosts.Delete(alias)
 }
 
+func (s HostService) restoreOverlay(alias string, snapshot managedHostSnapshot) error {
+	if snapshot.ok {
+		return s.managedHosts.UpsertOverlay(snapshot.host)
+	}
+	return s.managedHosts.Delete(alias)
+}
+
 func (s HostService) restorePassword(alias string, snapshot passwordSnapshot) error {
 	if snapshot.ok {
 		return s.passwords.SetPassword(alias, snapshot.value)
@@ -703,6 +735,17 @@ func (s HostService) loadPassphraseSnapshot(alias string) (passphraseSnapshot, e
 	return passphraseSnapshot{value: value, ok: ok}, nil
 }
 
+func (s HostService) loadOverlaySnapshot(alias string) (managedHostSnapshot, error) {
+	host, ok, err := s.managedHosts.Get(alias)
+	if err != nil {
+		return managedHostSnapshot{}, err
+	}
+	if !ok || !host.Overlay {
+		return managedHostSnapshot{}, nil
+	}
+	return managedHostSnapshot{host: host, ok: true}, nil
+}
+
 func (s HostService) restoreFavorite(ctx context.Context, alias string, snapshot favoriteSnapshot, touched bool) error {
 	if !touched {
 		return nil
@@ -714,6 +757,17 @@ func (s HostService) restoreFavorite(ctx context.Context, alias string, snapshot
 	value := snapshot.favorite
 	_, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value})
 	return err
+}
+
+func hasOverlayFields(host sshconfig.ImportedHost) bool {
+	return strings.TrimSpace(host.DisplayName) != "" ||
+		strings.TrimSpace(host.HostName) != "" ||
+		strings.TrimSpace(host.User) != "" ||
+		host.Port > 0 ||
+		strings.TrimSpace(host.IdentityFile) != "" ||
+		strings.TrimSpace(host.ProxyJump) != "" ||
+		strings.TrimSpace(host.ProxyCommand) != "" ||
+		strings.TrimSpace(host.ForwardAgent) != ""
 }
 
 func joinErrors(current error, next error) error {
@@ -754,6 +808,10 @@ func (s fileManagedHostStore) Get(alias string) (sshconfig.ImportedHost, bool, e
 	}
 
 	return sshconfig.ImportedHost{}, false, nil
+}
+
+func (s fileManagedHostStore) LookupSystemBase(alias string) (sshconfig.ImportedHost, bool, error) {
+	return sshconfig.LookupPathExcluding(s.paths.SSHConfigPath, alias, s.paths.ManagedConfigPath)
 }
 
 func (s fileManagedHostStore) Upsert(host sshconfig.ImportedHost) error {

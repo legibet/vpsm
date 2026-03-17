@@ -28,8 +28,9 @@ type ImportedHost struct {
 }
 
 type parser struct {
-	visited map[string]struct{}
-	hosts   map[string]parsedHost
+	visited  map[string]struct{}
+	hosts    map[string]parsedHost
+	excluded map[string]struct{}
 }
 
 type hostBlock struct {
@@ -67,14 +68,24 @@ type parsedHost struct {
 }
 
 func ParsePath(path string) ([]ImportedHost, error) {
+	return ParsePathExcluding(path)
+}
+
+func ParsePathExcluding(path string, excludePaths ...string) ([]ImportedHost, error) {
 	cleanPath, err := expandHome(path)
 	if err != nil {
 		return nil, err
 	}
 
+	excluded, err := buildExcludedPaths(excludePaths)
+	if err != nil {
+		return nil, err
+	}
+
 	collector := &parser{
-		visited: make(map[string]struct{}),
-		hosts:   make(map[string]parsedHost),
+		visited:  make(map[string]struct{}),
+		hosts:    make(map[string]parsedHost),
+		excluded: excluded,
 	}
 
 	if err := collector.parseFile(cleanPath); err != nil {
@@ -93,10 +104,31 @@ func ParsePath(path string) ([]ImportedHost, error) {
 	return result, nil
 }
 
+func LookupPathExcluding(path string, alias string, excludePaths ...string) (ImportedHost, bool, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return ImportedHost{}, false, nil
+	}
+
+	hosts, err := ParsePathExcluding(path, excludePaths...)
+	if err != nil {
+		return ImportedHost{}, false, err
+	}
+	for _, host := range hosts {
+		if host.Alias == alias {
+			return host, true, nil
+		}
+	}
+	return ImportedHost{}, false, nil
+}
+
 func (p *parser) parseFile(path string) error {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("resolve absolute path for %q: %w", path, err)
+	}
+	if _, skip := p.excluded[filepath.Clean(absolutePath)]; skip {
+		return nil
 	}
 
 	if _, seen := p.visited[absolutePath]; seen {
@@ -376,6 +408,25 @@ func expandHome(path string) (string, error) {
 	}
 
 	return filepath.Join(homeDir, strings.TrimPrefix(path, "~/")), nil
+}
+
+func buildExcludedPaths(paths []string) (map[string]struct{}, error) {
+	excluded := make(map[string]struct{}, len(paths))
+	for _, raw := range paths {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		expanded, err := expandHome(raw)
+		if err != nil {
+			return nil, err
+		}
+		absolutePath, err := filepath.Abs(expanded)
+		if err != nil {
+			return nil, fmt.Errorf("resolve absolute path for %q: %w", raw, err)
+		}
+		excluded[filepath.Clean(absolutePath)] = struct{}{}
+	}
+	return excluded, nil
 }
 
 func skipAlias(alias string) bool {

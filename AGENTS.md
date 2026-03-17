@@ -40,6 +40,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - System hosts can be edited via overlay blocks in `~/.ssh/vpsm.conf`. Overlay blocks are partial Host entries (marked with `# vpsm-overlay`) that only contain the fields the user changed. SSH's first-match-wins merge ensures overlay fields take priority while unrecognized/unchanged directives in the original config continue to work.
 - Overlay hosts appear in the inventory with `Managed: false, HasOverride: true`. The inventory uses the already-merged view from `ParsePath` (which resolves the Include chain).
 - Scalar fields (HostName, User, Port, ProxyJump, ProxyCommand, ForwardAgent) are safely overridden. IdentityFile overlays include `IdentitiesOnly yes` to prevent accumulation. LocalForward/RemoteForward are not written in overlay blocks because SSH accumulates these across blocks.
+- When updating a system-host overlay, diff against the original SSH config with `vpsm.conf` excluded, not against the inventory's merged overlay view. Secret-update failures must restore the previous overlay instead of deleting it.
 - Deleting an overlay removes only the `vpsm.conf` block; the host reverts to its original system config values.
 - Favorites and last-connected timestamps are local metadata in SQLite; they apply to both managed and system hosts.
 - Passwords are stored in keychain only (service `vpsm.ssh-password`).
