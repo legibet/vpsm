@@ -122,7 +122,7 @@ Hong Kong Production · hk-prod-01  root @ 203.0.113.10
 
 That keeps the list compact and easy to scan without hiding the technical alias you need for commands.
 
-The file browser opens as a separate full-screen interface. It uses `hjkl` and `tab` for navigation, supports local/remote split-pane browsing, and transfers the selected file or directory directly with `t` to the opposite pane. It can create directories, rename entries, delete entries, refresh, and transfer files or directories recursively.
+The file browser opens as a separate full-screen interface. It uses `hjkl` and `tab` for navigation, supports local/remote split-pane browsing, and transfers the selected file or directory directly with `t` to the opposite pane. It can create directories, rename entries, delete entries, refresh, search the active pane's current directory with `/`, and transfer files or directories recursively.
 
 ## Platform notes
 

@@ -184,7 +184,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Footer hints are dynamic: edit (`e`) and key-setup (`i`) are always shown; delete (`d`) is shown only for managed hosts or hosts with an overlay. Pure system hosts cannot be deleted from vpsm.
 - Browse mode now also includes an `o` action to open the split-pane file browser for the selected host.
 - Browse mode now includes an `i` action to configure or upload the selected host key; keep its key hints and confirmation flow accurate.
-- The file browser is a separate full-screen Bubble Tea interface with local/remote panes, `hjkl` navigation, direct `t` transfer to the opposite pane, and modal prompts for mkdir/rename/delete confirmations.
+- The file browser is a separate full-screen Bubble Tea interface with local/remote panes, `hjkl` navigation, `/` search scoped to the active pane's current directory, direct `t` transfer to the opposite pane, and modal prompts for mkdir/rename/delete confirmations.
 - Interactive key-setup work that needs terminal control should pause Bubble Tea with `tea.Exec`/`tea.ExecProcess`; do not try to run first-time host-key confirmation in a background `tea.Cmd`.
 - Keep long list rows width-constrained so narrow panes do not wrap one host back into multiple lines.
 - Keep list pagination aligned with the actual panel content height; account for panel frame and list header rows when changing list layout. The list title line (which may include position indicator and search query) must be truncated to panel content width so it never wraps beyond the expected header row count.

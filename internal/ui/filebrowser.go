@@ -49,6 +49,7 @@ type fileBrowserMode int
 
 const (
 	fileBrowserModeBrowse fileBrowserMode = iota
+	fileBrowserModeSearch
 	fileBrowserModePrompt
 	fileBrowserModeConfirm
 	fileBrowserModeTransfer
@@ -97,12 +98,14 @@ type transferTickMsg struct{}
 type filePane struct {
 	side        browserSide
 	cwd         string
+	allEntries  []filexfer.Entry
 	entries     []filexfer.Entry
 	cursor      int
 	scroll      int
 	loading     bool
 	errText     string
 	selectByDir map[string]string
+	query       string
 }
 
 func newFilePane(side browserSide, cwd string) filePane {
@@ -133,24 +136,53 @@ func (p *filePane) currentName() string {
 }
 
 func (p *filePane) setEntries(entries []filexfer.Entry, selectName string) {
-	p.entries = entries
+	p.allEntries = append(p.allEntries[:0], entries...)
 	p.loading = false
 	p.errText = ""
+	p.applyQuery(selectName)
+}
 
-	if len(entries) == 0 {
+func (p *filePane) setQuery(query string) {
+	p.query = strings.TrimSpace(query)
+	p.applyQuery(p.currentName())
+}
+
+func (p *filePane) clearQuery(selectName string) {
+	p.query = ""
+	p.applyQuery(selectName)
+}
+
+func (p *filePane) applyQuery(selectName string) {
+	filtered := make([]filexfer.Entry, 0, len(p.allEntries))
+	if p.query == "" {
+		filtered = append(filtered, p.allEntries...)
+	} else {
+		query := strings.ToLower(p.query)
+		for _, entry := range p.allEntries {
+			if strings.Contains(strings.ToLower(entry.Name), query) {
+				filtered = append(filtered, entry)
+			}
+		}
+	}
+
+	p.entries = filtered
+	if len(filtered) == 0 {
 		p.cursor = 0
 		p.scroll = 0
 		return
 	}
 
 	if selectName != "" {
-		for i, entry := range entries {
+		for i, entry := range filtered {
 			if entry.Name == selectName {
 				p.cursor = i
 				p.scroll = 0
 				return
 			}
 		}
+		p.cursor = 0
+		p.scroll = 0
+		return
 	}
 
 	p.cursor = 0
@@ -209,6 +241,12 @@ type confirmState struct {
 	message    string
 }
 
+type searchState struct {
+	side        browserSide
+	initialName string
+	input       textinput.Model
+}
+
 type liveTransfer struct {
 	cancel     context.CancelFunc
 	mu         sync.Mutex
@@ -252,6 +290,7 @@ type fileBrowserModel struct {
 	mode       fileBrowserMode
 	localPane  filePane
 	remotePane filePane
+	search     searchState
 	prompt     promptState
 	confirm    confirmState
 	transfer   *liveTransfer
@@ -411,6 +450,8 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.mode {
+	case fileBrowserModeSearch:
+		return m.updateSearchMode(keyMsg)
 	case fileBrowserModePrompt:
 		return m.updatePromptMode(keyMsg)
 	case fileBrowserModeConfirm:
@@ -428,6 +469,8 @@ func (m fileBrowserModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.
 	case "ctrl+c", "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "/":
+		return m.beginSearch()
 	case "tab", "shift+tab":
 		m.active = m.inactiveSide()
 		return m, nil
@@ -496,6 +539,47 @@ func (m fileBrowserModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.
 		)
 	default:
 		return m, nil
+	}
+}
+
+func (m fileBrowserModel) updateSearchMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	pane := m.pane(m.search.side)
+	rows := m.entriesViewportHeight()
+
+	switch msg.String() {
+	case "enter":
+		selectName := pane.currentName()
+		if selectName == "" {
+			selectName = m.search.initialName
+		}
+		pane.clearQuery(selectName)
+		pane.ensureVisible(rows)
+		m.mode = fileBrowserModeBrowse
+		m.search = searchState{}
+		return m, nil
+	case "esc":
+		pane.clearQuery(m.search.initialName)
+		pane.ensureVisible(rows)
+		m.mode = fileBrowserModeBrowse
+		m.search = searchState{}
+		return m, nil
+	case "up", "ctrl+p":
+		pane.move(-1, rows)
+		return m, nil
+	case "down", "ctrl+n":
+		pane.move(1, rows)
+		return m, nil
+	case "ctrl+u":
+		m.search.input.SetValue("")
+		pane.clearQuery(pane.currentName())
+		pane.ensureVisible(rows)
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.search.input, cmd = m.search.input.Update(msg)
+		pane.setQuery(m.search.input.Value())
+		pane.ensureVisible(rows)
+		return m, cmd
 	}
 }
 
@@ -632,6 +716,19 @@ func (m fileBrowserModel) navigateParent() (tea.Model, tea.Cmd) {
 	selectName := pane.selectByDir[parentPath]
 	pane.loading = true
 	return m, loadPaneCmd(m.ctx, m.active, parentPath, m.showHidden, m.remote, selectName)
+}
+
+func (m fileBrowserModel) beginSearch() (tea.Model, tea.Cmd) {
+	input := newTextInput("filter current directory", 36)
+	pane := m.activePane()
+
+	m.mode = fileBrowserModeSearch
+	m.search = searchState{
+		side:        m.active,
+		initialName: pane.currentName(),
+		input:       input,
+	}
+	return m, m.search.input.Focus()
 }
 
 func (m fileBrowserModel) beginPrompt(kind promptKind) (tea.Model, tea.Cmd) {
@@ -915,10 +1012,14 @@ func (m fileBrowserModel) renderFilePane(pane filePane, width int, height int) s
 	}
 
 	rightMeta := fmt.Sprintf("%d", len(pane.entries))
+	if pane.query != "" {
+		rightMeta = fmt.Sprintf("%d/%d", len(pane.entries), len(pane.allEntries))
+	}
 	titleLine := joinAligned(titleStyle.Render(title), metaStyle.Render(rightMeta), contentWidth)
 	pathLine := metaStyle.Render(truncatePath(pathLabel, contentWidth))
+	searchLine := m.renderFileSearchLine(pane, contentWidth)
 
-	rows := []string{titleLine, pathLine, ""}
+	rows := []string{titleLine, pathLine, searchLine}
 
 	switch {
 	case pane.loading:
@@ -926,7 +1027,11 @@ func (m fileBrowserModel) renderFilePane(pane filePane, width int, height int) s
 	case pane.errText != "":
 		rows = append(rows, m.styles.errorText.Render(pane.errText))
 	case len(pane.entries) == 0:
-		rows = append(rows, m.styles.muted.Render("Empty directory."))
+		if pane.query != "" && len(pane.allEntries) > 0 {
+			rows = append(rows, m.styles.muted.Render("No files match the current filter."))
+		} else {
+			rows = append(rows, m.styles.muted.Render("Empty directory."))
+		}
 	default:
 		visible := m.visiblePaneEntries(pane)
 		for _, item := range visible {
@@ -935,6 +1040,15 @@ func (m fileBrowserModel) renderFilePane(pane filePane, width int, height int) s
 	}
 
 	return style.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+func (m fileBrowserModel) renderFileSearchLine(pane filePane, width int) string {
+	if m.mode == fileBrowserModeSearch && pane.side == m.search.side {
+		input := m.search.input
+		input.SetWidth(width)
+		return m.styles.inputBoxActive.Width(width).Render(input.View())
+	}
+	return ""
 }
 
 func (m fileBrowserModel) renderFileEntry(pane filePane, item filexfer.Entry, width int) string {
@@ -1079,6 +1193,8 @@ func (m fileBrowserModel) renderFileFooterBar(width int) string {
 
 func (m fileBrowserModel) fileFooterHints() []footerHint {
 	switch m.mode {
+	case fileBrowserModeSearch:
+		return []footerHint{{"type", "filter"}, {"↑/↓", "move"}, {"enter", "select"}, {"ctrl+u", "clear"}, {"esc", "cancel"}}
 	case fileBrowserModePrompt:
 		return []footerHint{{"type", "edit"}, {"enter", "save"}, {"esc", "cancel"}}
 	case fileBrowserModeConfirm:
@@ -1087,6 +1203,7 @@ func (m fileBrowserModel) fileFooterHints() []footerHint {
 		return []footerHint{{"c", "cancel"}, {"ctrl+c", "quit"}}
 	default:
 		return []footerHint{
+			{"/", "search"},
 			{"tab", "pane"},
 			{"h/j/k/l", "move"},
 			{"t", "transfer"},
