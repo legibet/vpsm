@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"vpsm/internal/config"
@@ -284,6 +285,64 @@ func TestDeleteOverlayRevertsToSystemHost(t *testing.T) {
 	}
 	if h.User != "ubuntu" {
 		t.Fatalf("expected User %q after revert, got %q", "ubuntu", h.User)
+	}
+}
+
+func TestGetHydratesOnlyRequestedAlias(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	paths := testPaths(t)
+	writeTestFile(t, paths.SSHConfigPath, "Host app-1\n  HostName 198.51.100.10\n  User ubuntu\n\nHost app-2\n  HostName 198.51.100.11\n  User deploy\n")
+
+	st, err := store.Open(paths.DatabasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	favorite := true
+	if err := st.EnsureHost(ctx, "app-2"); err != nil {
+		t.Fatalf("ensure host metadata: %v", err)
+	}
+	if _, err := st.UpdateHost(ctx, "app-2", store.HostPatch{Favorite: &favorite}); err != nil {
+		t.Fatalf("update host metadata: %v", err)
+	}
+
+	svc := NewService(paths, st)
+	passwordCalls := make([]string, 0, 1)
+	passphraseCalls := make([]string, 0, 1)
+	svc.hasPassword = func(alias string) (bool, error) {
+		passwordCalls = append(passwordCalls, alias)
+		return alias == "app-2", nil
+	}
+	svc.hasPassphrase = func(alias string) (bool, error) {
+		passphraseCalls = append(passphraseCalls, alias)
+		return false, nil
+	}
+
+	host, err := svc.Get(ctx, "app-2")
+	if err != nil {
+		t.Fatalf("get host: %v", err)
+	}
+
+	if host.Alias != "app-2" {
+		t.Fatalf("expected alias %q, got %q", "app-2", host.Alias)
+	}
+	if !host.Favorite {
+		t.Fatal("expected metadata to be hydrated for requested host")
+	}
+	if !host.PasswordStored {
+		t.Fatal("expected password status to be hydrated for requested host")
+	}
+
+	if want := []string{"app-2"}; !reflect.DeepEqual(passwordCalls, want) {
+		t.Fatalf("unexpected password lookups: got %v want %v", passwordCalls, want)
+	}
+	if want := []string{"app-2"}; !reflect.DeepEqual(passphraseCalls, want) {
+		t.Fatalf("unexpected passphrase lookups: got %v want %v", passphraseCalls, want)
 	}
 }
 
