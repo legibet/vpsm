@@ -163,3 +163,31 @@ func TestBuildDownloadPlanWithReaderHonorsCanceledContext(t *testing.T) {
 		t.Fatalf("expected no remote reads after cancellation")
 	}
 }
+
+func TestBuildDownloadPlanWithReaderRejectsSymlink(t *testing.T) {
+	t.Parallel()
+
+	root := Entry{
+		Name:  "app",
+		Path:  "/remote/app",
+		IsDir: true,
+		Mode:  os.ModeDir | 0o755,
+	}
+
+	_, err := buildDownloadPlanWithReader(context.Background(), root, "/local/app", func(_ context.Context, remoteBase string) ([]Entry, error) {
+		if remoteBase != "/remote/app" {
+			return nil, nil
+		}
+		return []Entry{{
+			Name: "shared",
+			Path: "/remote/app/shared",
+			Mode: os.ModeSymlink,
+		}}, nil
+	})
+	if err == nil {
+		t.Fatal("expected symlink rejection error")
+	}
+	if !strings.Contains(err.Error(), "symlink transfers are not supported yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
