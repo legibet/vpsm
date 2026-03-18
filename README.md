@@ -82,7 +82,11 @@ If the list is empty, press `n` in the TUI to add your first managed host.
 ./vpsm
 ./vpsm tui
 ./vpsm list
+./vpsm list --favorite --managed
+./vpsm list --query prod
+./vpsm list --json
 ./vpsm show hk-prod-01
+./vpsm show hk-prod-01 --json
 ./vpsm add --alias my-box --name "Staging API" --host 198.51.100.10 --user ubuntu
 ./vpsm set my-box --name "Staging API" --host 198.51.100.11
 ./vpsm set-password my-box
@@ -143,6 +147,8 @@ The file browser opens as a separate full-screen interface. It uses `hjkl` and `
 - If the host key is still unknown and your SSH config requires interactive confirmation, `vpsm` now pauses the TUI and lets you confirm it in the current terminal before key installation continues.
 - Reusing an existing `IdentityFile` for TUI key setup currently requires a concrete local path such as `~/.ssh/id_ed25519` or an absolute path.
 - Favorites and connection history stay local to `vpsm`.
+- `vpsm list` supports `--favorite`, `--managed`, `--system`, `--query`, and `--json` for filtering or automation-friendly output.
+- `vpsm show <alias> --json` prints the full resolved host record, including source, auth state, and network directives.
 - `vpsm list`, `vpsm show`, `vpsm ssh`, and `vpsm files` work with all hosts. `vpsm set` and `vpsm delete` also work on system hosts via the overlay mechanism.
 - `vpsm set <alias> --alias <new-alias>` renames managed hosts and keeps local metadata plus stored secrets aligned with the new alias.
 - If an alias contains non-ASCII characters, `vpsm` falls back to connecting by direct target instead of `ssh <alias>`.

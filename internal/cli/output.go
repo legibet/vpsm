@@ -18,8 +18,8 @@ func printHelp() {
 Usage:
   vpsm                        Open the TUI
   vpsm tui                    Open the TUI
-  vpsm list                   Print visible hosts
-  vpsm show <alias>           Show one visible host
+  vpsm list [--json]          Print visible hosts (supports --favorite/--managed/--system/--query)
+  vpsm show <alias> [--json]  Show one visible host
   vpsm add --alias ...        Add a managed host (optional --name/--proxy-*)
   vpsm set <alias>            Update a visible host (supports rename and secret changes)
   vpsm set-password <alias>   Store an SSH password in the system keychain

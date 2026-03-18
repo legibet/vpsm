@@ -17,7 +17,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - `main.go`: thin CLI entrypoint that delegates to `internal/cli`.
 - `internal/cli/`: command bootstrap, argument dispatch, CLI output, and TUI wiring.
-- `internal/inventory/`: builds the visible host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates local metadata.
+- `internal/inventory/`: builds the visible host list by merging managed hosts from `~/.ssh/vpsm.conf` with system hosts from `~/.ssh/config` (and its includes), then hydrates local metadata. Single-host lookups should hydrate only the requested alias instead of routing through the full list path.
 - `internal/hosts/`: thin use-case layer for managed-host add/update/delete, overlay-based system-host editing, and key-setup workflows across SSH config, keychain, and metadata, with small injected boundaries for rollback-oriented tests.
 - `internal/session/`: SSH connect flow, file-browser session setup, and interrupt handling.
 - `internal/sshconfig/`: parses SSH config when needed and manages `~/.ssh/vpsm.conf`.
@@ -208,6 +208,8 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - If you change commands or stage-1 limitations, update `README.md`.
 - Keep CLI help text in `internal/cli/output.go` aligned with actual behavior.
+- `vpsm list` supports `--favorite`, `--managed`, `--system`, `--query`, and `--json`; keep text and JSON output aligned with the resolved host model.
+- `vpsm show <alias>` supports `--json` and should continue to expose source/auth/network details in both text and JSON forms.
 - `vpsm set` supports managed-host alias renames plus inline password/passphrase updates or clear flags; keep this aligned with the TUI and host service behavior.
 - There is no `import-ssh` command anymore; inventory always reads directly from SSH config plus managed overlays.
 

@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 
 	"vpsm/internal/config"
 	"vpsm/internal/hosts"
@@ -76,12 +75,12 @@ func (a App) run(args []string) error {
 	case "tui":
 		return a.runTUI()
 	case "list":
-		return a.runList()
+		return a.runList(args[1:])
 	case "show":
 		if len(args) < 2 {
-			return errors.New("usage: vpsm show <alias>")
+			return errors.New("usage: vpsm show <alias> [--json]")
 		}
-		return a.runShow(args[1])
+		return a.runShow(args[1], args[2:])
 	case "add":
 		return a.runAdd(args[1:])
 	case "set":
@@ -251,67 +250,33 @@ func (a App) runTUI() error {
 	return a.session.Connect(a.ctx, selected)
 }
 
-func (a App) runList() error {
+func (a App) runList(args []string) error {
+	options, err := parseListOptions(args)
+	if err != nil {
+		return err
+	}
+
 	hostItems, err := a.inventory.List(a.ctx)
 	if err != nil {
 		return err
 	}
 
-	if len(hostItems) == 0 {
-		fmt.Println("No hosts found.")
-		return nil
-	}
-
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "FAV\tNAME\tALIAS\tTARGET\tAUTH\tLAST CONNECTED")
-	for _, host := range hostItems {
-		favorite := ""
-		if host.Favorite {
-			favorite = "*"
-		}
-		_, _ = fmt.Fprintf(
-			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
-			favorite,
-			firstNonEmpty(host.DisplayName, "-"),
-			host.Alias,
-			host.TargetName(),
-			compactAuthLabel(host),
-			host.LastConnectedLabel(),
-		)
-	}
-	return tw.Flush()
+	return writeHostList(os.Stdout, hostItems, options)
 }
 
-func (a App) runShow(alias string) error {
+func (a App) runShow(alias string, args []string) error {
+	options, err := parseShowOptions(args)
+	if err != nil {
+		return err
+	}
+
 	alias = hosts.NormalizeAlias(alias)
 	host, err := a.inventory.Get(a.ctx, alias)
 	if err != nil {
 		return err
 	}
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	rows := [][2]string{
-		{"Name", firstNonEmpty(host.DisplayName, "-")},
-		{"Alias", host.Alias},
-		{"Target", host.TargetName()},
-		{"User", firstNonEmpty(host.User, "-")},
-		{"Port", fmt.Sprintf("%d", host.Port)},
-		{"Route", connectionMode(host)},
-		{"Auth", host.AuthMethodsLabel()},
-		{"Identity File", host.IdentityFileLabel()},
-		{"Password Stored", host.PasswordStoredLabel()},
-		{"Passphrase Stored", host.PassphraseStoredLabel()},
-		{"Favorite", fmt.Sprintf("%t", host.Favorite)},
-		{"Preview", connectionPreview(host)},
-		{"Last Connected", host.LastConnectedLabel()},
-	}
-
-	for _, row := range rows {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\n", row[0], row[1])
-	}
-
-	return tw.Flush()
+	return writeHostDetails(os.Stdout, host, options)
 }
 
 func (a App) runAdd(args []string) error {
@@ -373,7 +338,7 @@ func (a App) runAdd(args []string) error {
 	}
 
 	fmt.Printf("Added %s\n", alias)
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
 
 func (a App) runSet(alias string, args []string) error {
@@ -402,7 +367,7 @@ func (a App) runSet(alias string, args []string) error {
 	}
 
 	fmt.Printf("Updated %s\n", plan.effectiveAlias)
-	return a.runShow(plan.effectiveAlias)
+	return a.runShow(plan.effectiveAlias, nil)
 }
 
 func (a App) runSetPassword(alias string, args []string) error {
@@ -437,7 +402,7 @@ func (a App) runSetPassword(alias string, args []string) error {
 	}
 
 	fmt.Printf("Stored password for %s\n", alias)
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
 
 func (a App) runClearPassword(alias string) error {
@@ -451,7 +416,7 @@ func (a App) runClearPassword(alias string) error {
 	}
 
 	fmt.Printf("Cleared password for %s\n", alias)
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
 
 func (a App) runSetPassphrase(alias string, args []string) error {
@@ -486,7 +451,7 @@ func (a App) runSetPassphrase(alias string, args []string) error {
 	}
 
 	fmt.Printf("Stored passphrase for %s\n", alias)
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
 
 func (a App) runClearPassphrase(alias string) error {
@@ -500,7 +465,7 @@ func (a App) runClearPassphrase(alias string) error {
 	}
 
 	fmt.Printf("Cleared passphrase for %s\n", alias)
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
 
 func (a App) runDelete(alias string) error {
@@ -553,5 +518,5 @@ func (a App) runFavorite(alias string, mode string) error {
 		return err
 	}
 
-	return a.runShow(alias)
+	return a.runShow(alias, nil)
 }
