@@ -178,7 +178,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Do not nest lipgloss `Render()` calls. Inner renders produce ANSI resets (`\x1b[0m`) that break outer foreground, bold, and background. Instead, render each styled segment independently and concatenate the results. When an item needs a shared background (e.g. selected row), apply the background to each segment's style individually.
 - Status bar uses three color tiers: green (`statusBarOK`) for success, orange (`statusBar`) for info, red (`statusBarError`) for errors. Use `setStatus(text, kind)` to set both message and kind together.
 - Footer key hints are rendered with structured `footerHint` pairs (key in accent color, description in muted); do not fall back to plain pipe-separated strings.
-- Form inputs are Bubble Tea text inputs; keep paste support working.
+- Form inputs are Bubble Tea text inputs; keep paste support working. Slash-search in both the main host list and the file browser must also handle `tea.PasteMsg`.
 - The empty state should stay actionable: users must be able to open the TUI with zero hosts and press `n` to add the first one.
 - The list view should stay compact and easy to scan.
 - The server list renders one host per single terminal line: `[▸| ] [★| ] <primary>  <user@host:port>`. Primary is DisplayName when set, otherwise Alias. The `▸` cursor marks the selected row. Alias details are visible in the side detail panel.

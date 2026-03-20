@@ -442,6 +442,10 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setStatus(label, statusSuccess)
 		return m, loadPaneCmd(m.ctx, targetSide, m.pane(targetSide).cwd, m.showHidden, m.remote, selectName)
+	case tea.PasteMsg:
+		if m.mode == fileBrowserModeSearch {
+			return m.updateSearchPaste(msg)
+		}
 	}
 
 	keyMsg, ok := msg.(tea.KeyPressMsg)
@@ -461,6 +465,20 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m.updateBrowseMode(keyMsg)
 	}
+}
+
+func (m fileBrowserModel) updateSearchPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	content := normalizeSearchPaste(msg.Content)
+	if content == "" {
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.search.input, cmd = m.search.input.Update(tea.PasteMsg{Content: content})
+	pane := m.pane(m.search.side)
+	pane.setQuery(m.search.input.Value())
+	pane.ensureVisible(m.entriesViewportHeight())
+	return m, cmd
 }
 
 func (m fileBrowserModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

@@ -194,6 +194,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateKeySetupConfirmMode(msg)
 	}
 
+	if pasteMsg, ok := msg.(tea.PasteMsg); ok {
+		if m.searchMode {
+			m.appendSearchPaste(pasteMsg.Content)
+		}
+		return m, nil
+	}
+
 	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
@@ -202,6 +209,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSearch(keyMsg)
 	}
 	return m.updateBrowseMode(keyMsg)
+}
+
+func (m *tuiModel) appendSearchPaste(content string) {
+	content = normalizeSearchPaste(content)
+	if content == "" {
+		return
+	}
+	m.query += content
+	m.applyFilter()
 }
 
 func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

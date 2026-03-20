@@ -404,6 +404,46 @@ func TestSearchArrowKeysNavigate(t *testing.T) {
 	}
 }
 
+func TestSearchPasteUpdatesQueryAndFilter(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "prod"})
+	result := updated.(tuiModel)
+
+	if result.query != "prod" {
+		t.Fatalf("expected pasted query, got %q", result.query)
+	}
+	if len(result.filtered) != 1 {
+		t.Fatalf("expected 1 filtered host after paste, got %d", len(result.filtered))
+	}
+	if result.filtered[0].Alias != "prod-web" {
+		t.Fatalf("expected prod-web after paste search, got %q", result.filtered[0].Alias)
+	}
+}
+
+func TestSearchPasteNormalizesMultilineContent(t *testing.T) {
+	t.Parallel()
+
+	m := searchModel()
+	m.hosts[0].DisplayName = "Hong Kong Production"
+	m.applyFilter()
+
+	updated, _ := m.Update(tea.PasteMsg{Content: "hong\nkong"})
+	result := updated.(tuiModel)
+
+	if result.query != "hong kong" {
+		t.Fatalf("expected normalized pasted query, got %q", result.query)
+	}
+	if len(result.filtered) != 1 {
+		t.Fatalf("expected 1 filtered host after multiline paste, got %d", len(result.filtered))
+	}
+	if result.filtered[0].Alias != "prod-web" {
+		t.Fatalf("expected prod-web after multiline paste, got %q", result.filtered[0].Alias)
+	}
+}
+
 func TestSearchEnterWithNoMatchesDoesNotConnect(t *testing.T) {
 	t.Parallel()
 

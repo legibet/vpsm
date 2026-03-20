@@ -216,6 +216,27 @@ func TestSearchFiltersCurrentPaneEntries(t *testing.T) {
 	}
 }
 
+func TestSearchPasteFiltersCurrentPaneEntries(t *testing.T) {
+	t.Parallel()
+
+	m := testFileBrowserModel()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Text: "/", Code: '/'})
+	result := updated.(fileBrowserModel)
+	updated, _ = result.Update(tea.PasteMsg{Content: "ogs"})
+	result = updated.(fileBrowserModel)
+
+	if result.localPane.query != "ogs" {
+		t.Fatalf("expected pasted query %q, got %q", "ogs", result.localPane.query)
+	}
+	if len(result.localPane.entries) != 1 {
+		t.Fatalf("expected one filtered match after paste, got %d entries", len(result.localPane.entries))
+	}
+	if result.localPane.entries[0].Name != "logs" {
+		t.Fatalf("expected logs after pasted filter, got %#v", result.localPane.entries)
+	}
+}
+
 func TestSearchEnterClearsFilterAndSelectsMatchedEntry(t *testing.T) {
 	t.Parallel()
 
