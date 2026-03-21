@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"context"
 	"errors"
+	"path"
 	"strings"
 	"testing"
 
@@ -9,6 +11,49 @@ import (
 
 	"vpsm/internal/filexfer"
 )
+
+type stubFileBrowserRemote struct {
+	renameOld string
+	renameNew string
+}
+
+func (s *stubFileBrowserRemote) ReadDir(ctx context.Context, dirPath string, showHidden bool) ([]filexfer.Entry, error) {
+	return nil, nil
+}
+
+func (s *stubFileBrowserRemote) Stat(fullPath string) (filexfer.Entry, error) {
+	return filexfer.Entry{}, nil
+}
+
+func (s *stubFileBrowserRemote) Exists(fullPath string) (bool, error) {
+	return false, nil
+}
+
+func (s *stubFileBrowserRemote) Mkdir(fullPath string) error {
+	return nil
+}
+
+func (s *stubFileBrowserRemote) Rename(oldPath string, newPath string) error {
+	s.renameOld = oldPath
+	s.renameNew = newPath
+	return nil
+}
+
+func (s *stubFileBrowserRemote) Remove(fullPath string) error {
+	return nil
+}
+
+func (s *stubFileBrowserRemote) RemoteJoin(parts ...string) string {
+	return path.Join(parts...)
+}
+
+func (s *stubFileBrowserRemote) UploadPathContext(ctx context.Context, localPath string, remotePath string, progress func(filexfer.TransferProgress)) error {
+	return nil
+}
+
+func (s *stubFileBrowserRemote) DownloadPathContext(ctx context.Context, remotePath string, localPath string, progress func(filexfer.TransferProgress)) error {
+	return nil
+}
 
 func TestValidateBaseNameRejectsSeparators(t *testing.T) {
 	t.Parallel()
@@ -150,6 +195,53 @@ func TestPaneLoadSuccessClearsRefreshStatus(t *testing.T) {
 	}
 	if got.statusType != statusInfo {
 		t.Fatalf("expected status type to stay info, got %v", got.statusType)
+	}
+}
+
+func TestPromptRenameUsesOriginalRemotePath(t *testing.T) {
+	t.Parallel()
+
+	remote := &stubFileBrowserRemote{}
+	m := fileBrowserModel{
+		styles: newStyles(true),
+		mode:   fileBrowserModePrompt,
+		remote: remote,
+	}
+	m.prompt = promptState{
+		kind: promptKindRename,
+		side: browserSideRemote,
+		source: filexfer.Entry{
+			Name:  "logs",
+			Path:  "/srv/project/logs",
+			IsDir: true,
+		},
+		input: newTextInput("", 36),
+	}
+	m.prompt.input.SetValue("logs-archived")
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	got := updated.(fileBrowserModel)
+
+	if got.mode != fileBrowserModeBrowse {
+		t.Fatalf("expected mode %v, got %v", fileBrowserModeBrowse, got.mode)
+	}
+	if cmd == nil {
+		t.Fatal("expected rename command")
+	}
+
+	msg := cmd()
+	result, ok := msg.(opResultMsg)
+	if !ok {
+		t.Fatalf("expected opResultMsg, got %T", msg)
+	}
+	if result.err != nil {
+		t.Fatalf("expected rename success, got %v", result.err)
+	}
+	if remote.renameOld != "/srv/project/logs" {
+		t.Fatalf("expected old path preserved, got %q", remote.renameOld)
+	}
+	if remote.renameNew != "/srv/project/logs-archived" {
+		t.Fatalf("expected new path in same directory, got %q", remote.renameNew)
 	}
 }
 

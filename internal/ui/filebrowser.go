@@ -623,10 +623,11 @@ func (m fileBrowserModel) updatePromptMode(msg tea.KeyPressMsg) (tea.Model, tea.
 			m.prompt = promptState{}
 			return m, mkdirEntryCmd(side, fullPath, m.remote)
 		case promptKindRename:
-			targetPath := joinPath(side, dirPath(side, m.prompt.source.Path), value, m.remote)
+			oldPath := m.prompt.source.Path
+			targetPath := joinPath(side, dirPath(side, oldPath), value, m.remote)
 			m.mode = fileBrowserModeBrowse
 			m.prompt = promptState{}
-			return m, renameEntryCmd(side, m.prompt.source.Path, targetPath, m.remote)
+			return m, renameEntryCmd(side, oldPath, targetPath, m.remote)
 		default:
 			return m, nil
 		}
