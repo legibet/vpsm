@@ -11,6 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"vpsm/internal/model"
 )
 
@@ -32,6 +34,14 @@ type listOptions struct {
 type showOptions struct {
 	jsonOutput bool
 }
+
+const (
+	listFavWidth    = 3
+	listHostWidth   = 32
+	listTargetWidth = 28
+	listAuthWidth   = 14
+	listLastWidth   = 19
+)
 
 func parseListOptions(args []string) (listOptions, error) {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
@@ -156,26 +166,41 @@ func writeHostList(w io.Writer, hosts []model.Host, options listOptions) error {
 		return err
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "FAV\tNAME\tALIAS\tTYPE\tTARGET\tAUTH\tLAST CONNECTED")
+	if _, err := fmt.Fprintf(
+		w,
+		"%s  %s  %s  %s  %s\n",
+		fitListCell("FAV", listFavWidth),
+		fitListCell("HOST", listHostWidth),
+		fitListCell("TARGET", listTargetWidth),
+		fitListCell("AUTH", listAuthWidth),
+		fitListCell("LAST CONNECTED", listLastWidth),
+	); err != nil {
+		return err
+	}
 	for _, host := range hosts {
 		favorite := ""
 		if host.Favorite {
 			favorite = "*"
 		}
-		_, _ = fmt.Fprintf(
-			tw,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			favorite,
-			firstNonEmpty(host.DisplayName, "-"),
-			host.Alias,
-			hostType(host),
-			targetLabel(host),
-			compactAuthLabel(host),
-			host.LastConnectedLabel(),
-		)
+		label := strings.TrimSpace(host.DisplayName)
+		if label == "" || label == host.Alias {
+			label = host.Alias
+		} else {
+			label = fmt.Sprintf("%s (%s)", label, host.Alias)
+		}
+		if _, err := fmt.Fprintf(
+			w,
+			"%s  %s  %s  %s  %s\n",
+			fitListCell(favorite, listFavWidth),
+			fitListCell(label, listHostWidth),
+			fitListCell(targetLabel(host), listTargetWidth),
+			fitListCell(compactAuthLabel(host), listAuthWidth),
+			fitListCell(host.LastConnectedLabel(), listLastWidth),
+		); err != nil {
+			return err
+		}
 	}
-	return tw.Flush()
+	return nil
 }
 
 func writeHostDetails(w io.Writer, host model.Host, options showOptions) error {
@@ -283,4 +308,25 @@ func timePointer(value time.Time) *time.Time {
 	}
 	copy := value
 	return &copy
+}
+
+func fitListCell(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	value = strings.TrimSpace(value)
+	tail := "..."
+	if width <= len(tail) {
+		tail = ""
+	}
+	if ansi.StringWidth(value) > width {
+		value = ansi.Truncate(value, width, tail)
+	}
+
+	padding := width - ansi.StringWidth(value)
+	if padding < 0 {
+		padding = 0
+	}
+	return value + strings.Repeat(" ", padding)
 }

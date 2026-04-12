@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"vpsm/internal/model"
 )
 
@@ -123,5 +125,49 @@ func TestWriteHostDetailsIncludesExtendedNetworkFields(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Fatalf("expected output to contain %q, got:\n%s", check, output)
 		}
+	}
+}
+
+func TestWriteHostListTextKeepsColumnsAlignedWithWideCharacters(t *testing.T) {
+	t.Parallel()
+
+	hosts := []model.Host{
+		{
+			Alias:          "nc-rs",
+			DisplayName:    "雨云洛杉矶",
+			HostName:       "38.246.237.122",
+			User:           "root",
+			Managed:        true,
+			IdentityFile:   "~/.ssh/id_ed25519",
+			PasswordStored: true,
+		},
+		{
+			Alias:        "ictp",
+			HostName:     "210.77.30.53",
+			User:         "zypeng",
+			IdentityFile: "~/.ssh/id_ed25519",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeHostList(&buf, hosts, listOptions{}); err != nil {
+		t.Fatalf("write host list: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(lines))
+	}
+
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got != 104 {
+			t.Fatalf("line %d width = %d, want 104: %q", i, got, line)
+		}
+	}
+	if strings.Contains(buf.String(), "\t") {
+		t.Fatalf("expected space-padded table, got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "雨云洛杉矶 (nc-rs)") {
+		t.Fatalf("expected host label to include display name and alias, got %q", buf.String())
 	}
 }
