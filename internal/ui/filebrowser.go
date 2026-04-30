@@ -1111,10 +1111,7 @@ func (m fileBrowserModel) visiblePaneEntries(pane filePane) []filexfer.Entry {
 	if start >= len(pane.entries) {
 		start = len(pane.entries) - 1
 	}
-	end := start + rows
-	if end > len(pane.entries) {
-		end = len(pane.entries)
-	}
+	end := min(start+rows, len(pane.entries))
 	return pane.entries[start:end]
 }
 
@@ -1132,10 +1129,7 @@ func (m fileBrowserModel) renderFileModal(width int) string {
 }
 
 func (m fileBrowserModel) renderPromptModal(width int) string {
-	panelWidth := width
-	if panelWidth > 72 {
-		panelWidth = 72
-	}
+	panelWidth := min(width, 72)
 	contentWidth := panelWidth - m.styles.panelActive.GetHorizontalFrameSize()
 	rows := []string{
 		m.styles.sectionTitle.Render(m.prompt.title),
@@ -1149,10 +1143,7 @@ func (m fileBrowserModel) renderPromptModal(width int) string {
 }
 
 func (m fileBrowserModel) renderConfirmModal(width int) string {
-	panelWidth := width
-	if panelWidth > 72 {
-		panelWidth = 72
-	}
+	panelWidth := min(width, 72)
 	rows := []string{
 		m.styles.sectionTitle.Render(m.confirm.title),
 		m.styles.sectionMeta.Render(m.confirm.message),
@@ -1163,10 +1154,7 @@ func (m fileBrowserModel) renderConfirmModal(width int) string {
 }
 
 func (m fileBrowserModel) renderTransferModal(width int) string {
-	panelWidth := width
-	if panelWidth > 72 {
-		panelWidth = 72
-	}
+	panelWidth := min(width, 72)
 
 	progress, _, _ := m.transfer.snapshot()
 	ratio := 0.0
@@ -1357,9 +1345,6 @@ func renderBar(ratio float64, width int) string {
 	if barWidth < 8 {
 		barWidth = 8
 	}
-	filled := int(ratio * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int(ratio*float64(barWidth)), barWidth)
 	return "[" + strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled) + "] " + fmt.Sprintf("%3.0f%%", ratio*100)
 }

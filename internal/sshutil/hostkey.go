@@ -89,7 +89,7 @@ func resolveSSHConfig(ctx context.Context, host model.Host) (resolvedSSHConfig, 
 func parseResolvedSSHConfig(output string) (resolvedSSHConfig, error) {
 	var cfg resolvedSSHConfig
 
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue

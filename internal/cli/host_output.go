@@ -324,9 +324,6 @@ func fitListCell(value string, width int) string {
 		value = ansi.Truncate(value, width, tail)
 	}
 
-	padding := width - ansi.StringWidth(value)
-	if padding < 0 {
-		padding = 0
-	}
+	padding := max(width-ansi.StringWidth(value), 0)
 	return value + strings.Repeat(" ", padding)
 }

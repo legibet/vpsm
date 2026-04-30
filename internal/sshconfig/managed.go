@@ -62,7 +62,7 @@ func EnsureManagedConfig(mainConfigPath string, managedConfigPath string) error 
 
 func hasManagedInclude(mainConfigPath string, managedConfigPath string, content string) bool {
 	baseDir := filepath.Dir(mainConfigPath)
-	for _, rawLine := range strings.Split(content, "\n") {
+	for rawLine := range strings.SplitSeq(content, "\n") {
 		line := sanitizeLine(rawLine)
 		if line == "" {
 			continue

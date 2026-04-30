@@ -1195,10 +1195,7 @@ func scrollFormContent(body string, focusLine int, availableHeight int) string {
 		start = 0
 	}
 
-	end := start + availableHeight
-	if end > total {
-		end = total
-	}
+	end := min(start+availableHeight, total)
 
 	return strings.Join(lines[start:end], "\n")
 }

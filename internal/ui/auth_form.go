@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -348,12 +349,7 @@ func (f editForm) passphraseStatusText() string {
 }
 
 func (f editForm) isEditable(fieldIndex int) bool {
-	for _, idx := range f.focusOrder {
-		if idx == fieldIndex {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.focusOrder, fieldIndex)
 }
 
 func (f editForm) view(styles styleSet, width int, height int) string {
@@ -437,11 +433,4 @@ func (f editForm) view(styles styleSet, width int, height int) string {
 	body = scrollFormContent(body, focusLine, availableHeight)
 
 	return styles.panelActive.Width(width).Height(height).Render(body)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
