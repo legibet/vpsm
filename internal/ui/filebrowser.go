@@ -23,11 +23,11 @@ type FileBrowserRemote interface {
 	Stat(fullPath string) (filexfer.Entry, error)
 	Exists(fullPath string) (bool, error)
 	Mkdir(fullPath string) error
-	Rename(oldPath string, newPath string) error
+	Rename(oldPath, newPath string) error
 	Remove(fullPath string) error
 	RemoteJoin(parts ...string) string
-	UploadPathContext(ctx context.Context, localPath string, remotePath string, progress func(filexfer.TransferProgress)) error
-	DownloadPathContext(ctx context.Context, remotePath string, localPath string, progress func(filexfer.TransferProgress)) error
+	UploadPathContext(ctx context.Context, localPath, remotePath string, progress func(filexfer.TransferProgress)) error
+	DownloadPathContext(ctx context.Context, remotePath, localPath string, progress func(filexfer.TransferProgress)) error
 }
 
 type FileBrowserOptions struct {
@@ -204,7 +204,7 @@ func (p *filePane) ensureVisible(rows int) {
 	}
 }
 
-func (p *filePane) move(delta int, rows int) {
+func (p *filePane) move(delta, rows int) {
 	if len(p.entries) == 0 {
 		return
 	}
@@ -219,7 +219,7 @@ func (p *filePane) move(delta int, rows int) {
 	p.ensureVisible(rows)
 }
 
-func (p *filePane) page(delta int, rows int) {
+func (p *filePane) page(delta, rows int) {
 	p.move(delta*rows, rows)
 }
 
@@ -851,7 +851,7 @@ func deleteEntryCmd(side browserSide, fullPath string, remote FileBrowserRemote)
 	}
 }
 
-func renameEntryCmd(side browserSide, oldPath string, newPath string, remote FileBrowserRemote) tea.Cmd {
+func renameEntryCmd(side browserSide, oldPath, newPath string, remote FileBrowserRemote) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if side == browserSideRemote {
@@ -930,7 +930,7 @@ func validateBaseName(value string) error {
 	return nil
 }
 
-func joinPath(side browserSide, dir string, name string, remote FileBrowserRemote) string {
+func joinPath(side browserSide, dir, name string, remote FileBrowserRemote) string {
 	if side == browserSideRemote {
 		return remote.RemoteJoin(dir, name)
 	}
@@ -999,14 +999,14 @@ func (m fileBrowserModel) View() tea.View {
 	return view
 }
 
-func (m fileBrowserModel) renderFileBody(width int, height int) string {
+func (m fileBrowserModel) renderFileBody(width, height int) string {
 	leftWidth, rightWidth := m.fileBodyWidths(width)
 	left := m.renderFilePane(m.localPane, leftWidth, height)
 	right := m.renderFilePane(m.remotePane, rightWidth, height)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
-func (m fileBrowserModel) renderFilePane(pane filePane, width int, height int) string {
+func (m fileBrowserModel) renderFilePane(pane filePane, width, height int) string {
 	style := m.styles.panel
 	titleStyle := m.styles.sectionTitle
 	metaStyle := m.styles.sectionMeta
@@ -1016,10 +1016,7 @@ func (m fileBrowserModel) renderFilePane(pane filePane, width int, height int) s
 		metaStyle = m.styles.metaActive
 	}
 
-	contentWidth := width - style.GetHorizontalFrameSize()
-	if contentWidth < 10 {
-		contentWidth = 10
-	}
+	contentWidth := max(width-style.GetHorizontalFrameSize(), 10)
 
 	title := "Local"
 	pathLabel := pane.cwd
@@ -1088,10 +1085,7 @@ func (m fileBrowserModel) renderFileEntry(pane filePane, item filexfer.Entry, wi
 
 	name := item.DisplayName()
 	meta := formatEntryMeta(item)
-	leftMax := width - lipgloss.Width(prefix) - lipgloss.Width(meta) - 1
-	if leftMax < 4 {
-		leftMax = 4
-	}
+	leftMax := max(width-lipgloss.Width(prefix)-lipgloss.Width(meta)-1, 4)
 	name = truncatePath(name, leftMax)
 
 	left := prefix + nameStyle.Render(name)
@@ -1104,10 +1098,7 @@ func (m fileBrowserModel) visiblePaneEntries(pane filePane) []filexfer.Entry {
 	}
 
 	rows := m.entriesViewportHeight()
-	start := pane.scroll
-	if start < 0 {
-		start = 0
-	}
+	start := max(pane.scroll, 0)
 	if start >= len(pane.entries) {
 		start = len(pane.entries) - 1
 	}
@@ -1251,10 +1242,7 @@ func (m fileBrowserModel) availableFileBodyHeight(parts ...string) int {
 		used += lipgloss.Height(part)
 	}
 
-	height := m.height - used
-	if height < 8 {
-		height = 8
-	}
+	height := max(m.height-used, 8)
 	return height
 }
 
@@ -1280,11 +1268,8 @@ func (m fileBrowserModel) entriesViewportHeight() int {
 	return rows
 }
 
-func joinAligned(left string, right string, width int) string {
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
+func joinAligned(left, right string, width int) string {
+	gap := max(width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
 }
 
@@ -1341,10 +1326,7 @@ func renderBar(ratio float64, width int) string {
 		ratio = 1
 	}
 
-	barWidth := width - 8
-	if barWidth < 8 {
-		barWidth = 8
-	}
+	barWidth := max(width-8, 8)
 	filled := min(int(ratio*float64(barWidth)), barWidth)
 	return "[" + strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled) + "] " + fmt.Sprintf("%3.0f%%", ratio*100)
 }

@@ -23,7 +23,7 @@ type Options struct {
 	CreateHost     func(input CreateHostInput) error
 	UpdateHost     func(input UpdateHostInput) error
 	DeleteHost     func(alias string) error
-	SetupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
+	SetupHostKey   func(alias string, stdin io.Reader, stdout, stderr io.Writer) error
 	OpenFiles      func(alias string) (*exec.Cmd, error)
 	InitialStatus  string
 	InitialQuery   string
@@ -92,7 +92,7 @@ type tuiModel struct {
 	createHost     func(input CreateHostInput) error
 	updateHost     func(input UpdateHostInput) error
 	deleteHost     func(alias string) error
-	setupHostKey   func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
+	setupHostKey   func(alias string, stdin io.Reader, stdout, stderr io.Writer) error
 	openFiles      func(alias string) (*exec.Cmd, error)
 }
 
@@ -616,7 +616,7 @@ func (m tuiModel) View() tea.View {
 	return view
 }
 
-func (m tuiModel) renderListPanel(width int, height int) string {
+func (m tuiModel) renderListPanel(width, height int) string {
 	contentWidth := m.listContentWidth(width)
 
 	// Title line: "vpsm" on the left, position/count on the right.
@@ -637,10 +637,7 @@ func (m tuiModel) renderListPanel(width int, height int) string {
 			titleRight = m.styles.statusBar.Render(fmt.Sprintf("\"%s\"", q)) + "  " + titleRight
 		}
 	}
-	gap := contentWidth - lipgloss.Width(titleLeft) - lipgloss.Width(titleRight)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(contentWidth-lipgloss.Width(titleLeft)-lipgloss.Width(titleRight), 1)
 	titleLine := titleLeft + strings.Repeat(" ", gap) + titleRight
 
 	rows := []string{
@@ -708,16 +705,13 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	meta := listMeta(host)
 	right := metaStyle.Render(meta)
 
-	gap := contentWidth - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 2 {
-		gap = 2
-	}
+	gap := max(contentWidth-lipgloss.Width(left)-lipgloss.Width(right), 2)
 
 	line := left + strings.Repeat(" ", gap) + right
 	return m.styles.listItem.MaxWidth(contentWidth).Render(line)
 }
 
-func (m tuiModel) renderDetailsPanel(width int, height int) string {
+func (m tuiModel) renderDetailsPanel(width, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Details"),
 	}
@@ -800,7 +794,7 @@ func (m tuiModel) renderDetailsPanel(width int, height int) string {
 	return m.styles.panel.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
-func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
+func (m tuiModel) renderDeleteConfirmPanel(width, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Delete Server"),
 	}
@@ -836,7 +830,7 @@ func (m tuiModel) renderDeleteConfirmPanel(width int, height int) string {
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
-func (m tuiModel) renderKeySetupConfirmPanel(width int, height int) string {
+func (m tuiModel) renderKeySetupConfirmPanel(width, height int) string {
 	rows := []string{
 		m.styles.sectionTitle.Render("Configure SSH Key"),
 		m.styles.sectionMeta.Render("This uploads a public key to the selected server."),
@@ -881,7 +875,7 @@ func (m tuiModel) renderKeySetupConfirmPanel(width int, height int) string {
 	return m.styles.panelActive.Width(width).Height(height).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
-func (m tuiModel) detailRow(label string, value string) string {
+func (m tuiModel) detailRow(label, value string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top,
 		m.styles.label.Render(label),
 		m.styles.value.Render(value),
@@ -898,10 +892,7 @@ func (m tuiModel) visibleHosts() []model.Host {
 		return m.filtered
 	}
 
-	start := m.cursor - rowsPerPage/2
-	if start < 0 {
-		start = 0
-	}
+	start := max(m.cursor-rowsPerPage/2, 0)
 	end := start + rowsPerPage
 	if end > len(m.filtered) {
 		end = len(m.filtered)
@@ -929,7 +920,7 @@ func (m tuiModel) listRowsPerPage() int {
 	return available
 }
 
-func (m tuiModel) renderCompactBody(width int, height int) string {
+func (m tuiModel) renderCompactBody(width, height int) string {
 	switch m.mode {
 	case modeAdd:
 		return m.addForm.view(m.styles, width, height)
@@ -952,10 +943,7 @@ func (m tuiModel) bodyWidths(width int) (int, int) {
 		return width, width
 	}
 
-	left := width * 45 / 100
-	if left < 38 {
-		left = 38
-	}
+	left := max(width*45/100, 38)
 	right := width - left - 1
 	if right < 32 {
 		right = 32
@@ -1009,10 +997,7 @@ func (m tuiModel) availableBodyHeight(parts ...string) int {
 		used += lipgloss.Height(part)
 	}
 
-	height := m.height - used
-	if height < 4 {
-		height = 4
-	}
+	height := max(m.height-used, 4)
 	return height
 }
 
@@ -1160,11 +1145,7 @@ func (m tuiModel) isCompactLayout() bool {
 
 func formInputWidth(panelWidth int) int {
 	// 6 = panel border+padding, formLabelWidth = label column
-	width := panelWidth - 6 - formLabelWidth
-	if width < 16 {
-		width = 16
-	}
-	return width
+	return max(panelWidth-6-formLabelWidth, 16)
 }
 
 // formField defines a field in the add/edit form with its rendering order.
@@ -1177,23 +1158,18 @@ type formField struct {
 
 // scrollFormContent scrolls the joined body string so that focusLine is visible
 // within the given available height. Returns the (possibly trimmed) body.
-func scrollFormContent(body string, focusLine int, availableHeight int) string {
+func scrollFormContent(body string, focusLine, availableHeight int) string {
 	lines := strings.Split(body, "\n")
 	total := len(lines)
 	if total <= availableHeight {
 		return body
 	}
 
-	start := focusLine - availableHeight/2
-	if start < 0 {
-		start = 0
-	}
+	start := max(focusLine-availableHeight/2, 0)
 	if start+availableHeight > total {
 		start = total - availableHeight
 	}
-	if start < 0 {
-		start = 0
-	}
+	start = max(start, 0)
 
 	end := min(start+availableHeight, total)
 

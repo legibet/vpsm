@@ -15,7 +15,7 @@ const (
 	overlayCommentPrefix     = "# vpsm-overlay"
 )
 
-func EnsureManagedConfig(mainConfigPath string, managedConfigPath string) error {
+func EnsureManagedConfig(mainConfigPath, managedConfigPath string) error {
 	mainConfigPath, err := filepath.Abs(mainConfigPath)
 	if err != nil {
 		return fmt.Errorf("resolve ssh config path: %w", err)
@@ -60,7 +60,7 @@ func EnsureManagedConfig(mainConfigPath string, managedConfigPath string) error 
 	return nil
 }
 
-func hasManagedInclude(mainConfigPath string, managedConfigPath string, content string) bool {
+func hasManagedInclude(mainConfigPath, managedConfigPath, content string) bool {
 	baseDir := filepath.Dir(mainConfigPath)
 	for rawLine := range strings.SplitSeq(content, "\n") {
 		line := sanitizeLine(rawLine)
@@ -158,7 +158,7 @@ func UpsertOverlay(managedConfigPath string, host ImportedHost) error {
 	return writeManagedHosts(managedConfigPath, hosts)
 }
 
-func DeleteManagedHost(managedConfigPath string, alias string) error {
+func DeleteManagedHost(managedConfigPath, alias string) error {
 	hosts, err := ListManagedHosts(managedConfigPath)
 	if err != nil {
 		return err
@@ -355,7 +355,7 @@ func normalizeManagedDisplayName(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func samePath(left string, right string) bool {
+func samePath(left, right string) bool {
 	left = filepath.Clean(left)
 	right = filepath.Clean(right)
 	return left == right

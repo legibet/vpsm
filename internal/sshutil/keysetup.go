@@ -24,7 +24,7 @@ type KeySetupPlan struct {
 
 // PlanKeySetup decides which key path vpsm should use for a host and whether a
 // new key pair needs to be generated.
-func PlanKeySetup(alias string, identityFile string) (KeySetupPlan, error) {
+func PlanKeySetup(alias, identityFile string) (KeySetupPlan, error) {
 	alias = strings.TrimSpace(alias)
 	if err := sshconfig.ValidateAlias(alias); err != nil {
 		return KeySetupPlan{}, err
@@ -109,7 +109,7 @@ func ReadPublicKey(plan KeySetupPlan) (string, error) {
 
 // InstallPublicKeyContext appends the public key to ~/.ssh/authorized_keys when
 // it is not already present.
-func InstallPublicKeyContext(ctx context.Context, host model.Host, password string, publicKey string) error {
+func InstallPublicKeyContext(ctx context.Context, host model.Host, password, publicKey string) error {
 	return InstallPublicKeyWithCredentials(ctx, host, AuthCredentials{Password: password}, publicKey)
 }
 

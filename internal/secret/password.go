@@ -10,7 +10,7 @@ import (
 	"vpsm/internal/config"
 )
 
-func SetPassword(alias string, password string) error {
+func SetPassword(alias, password string) error {
 	if !Available() {
 		return ErrKeyringUnavailable
 	}

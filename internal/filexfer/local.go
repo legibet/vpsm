@@ -56,7 +56,7 @@ func RemoveLocal(path string) error {
 	return nil
 }
 
-func RenameLocal(oldPath string, newPath string) error {
+func RenameLocal(oldPath, newPath string) error {
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return fmt.Errorf("rename local path %q to %q: %w", oldPath, newPath, err)
 	}

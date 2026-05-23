@@ -227,7 +227,7 @@ func (s Service) hydrateSecretStatus(host *model.Host) {
 	}
 }
 
-func compareLastConnected(left *time.Time, right *time.Time) int {
+func compareLastConnected(left, right *time.Time) int {
 	if left == nil && right == nil {
 		return 0
 	}

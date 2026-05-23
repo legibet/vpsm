@@ -201,7 +201,7 @@ func (s *Store) migrate() error {
 	return nil
 }
 
-func (s *Store) ensureColumn(name string, definition string) error {
+func (s *Store) ensureColumn(name, definition string) error {
 	row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('hosts') WHERE name = ?`, name)
 	var count int
 	if err := row.Scan(&count); err != nil {

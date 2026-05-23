@@ -33,7 +33,7 @@ func (s *stubFileBrowserRemote) Mkdir(fullPath string) error {
 	return nil
 }
 
-func (s *stubFileBrowserRemote) Rename(oldPath string, newPath string) error {
+func (s *stubFileBrowserRemote) Rename(oldPath, newPath string) error {
 	s.renameOld = oldPath
 	s.renameNew = newPath
 	return nil
@@ -47,11 +47,11 @@ func (s *stubFileBrowserRemote) RemoteJoin(parts ...string) string {
 	return path.Join(parts...)
 }
 
-func (s *stubFileBrowserRemote) UploadPathContext(ctx context.Context, localPath string, remotePath string, progress func(filexfer.TransferProgress)) error {
+func (s *stubFileBrowserRemote) UploadPathContext(ctx context.Context, localPath, remotePath string, progress func(filexfer.TransferProgress)) error {
 	return nil
 }
 
-func (s *stubFileBrowserRemote) DownloadPathContext(ctx context.Context, remotePath string, localPath string, progress func(filexfer.TransferProgress)) error {
+func (s *stubFileBrowserRemote) DownloadPathContext(ctx context.Context, remotePath, localPath string, progress func(filexfer.TransferProgress)) error {
 	return nil
 }
 

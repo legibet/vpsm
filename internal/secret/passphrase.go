@@ -9,7 +9,7 @@ import (
 	"vpsm/internal/config"
 )
 
-func SetPassphrase(alias string, passphrase string) error {
+func SetPassphrase(alias, passphrase string) error {
 	if !Available() {
 		return ErrKeyringUnavailable
 	}

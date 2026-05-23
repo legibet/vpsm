@@ -28,13 +28,13 @@ type managedHostStore interface {
 
 type passwordStore interface {
 	GetPasswordIfExists(alias string) (string, bool, error)
-	SetPassword(alias string, password string) error
+	SetPassword(alias, password string) error
 	DeletePassword(alias string) error
 }
 
 type passphraseStore interface {
 	GetPassphraseIfExists(alias string) (string, bool, error)
-	SetPassphrase(alias string, passphrase string) error
+	SetPassphrase(alias, passphrase string) error
 	DeletePassphrase(alias string) error
 }
 
@@ -184,7 +184,6 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		return withRollback(err, rollbackErr)
 	}
 
-	favoriteTouched := false
 	if input.Favorite {
 		if err := s.metadata.EnsureHost(ctx, alias); err != nil {
 			rollbackErr := s.restorePassphrase(alias, passphraseState)
@@ -192,11 +191,10 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
-		favoriteTouched = true
 
 		value := true
 		if _, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
-			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, favoriteTouched)
+			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, true)
 			rollbackErr = joinErrors(rollbackErr, s.restorePassphrase(alias, passphraseState))
 			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
 			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
@@ -560,7 +558,7 @@ func (s HostService) DeleteOverlay(ctx context.Context, alias string) error {
 
 // SetupSystemHostKey creates a key pair and installs it on a system host,
 // writing the IdentityFile into an overlay block in vpsm.conf.
-func (s HostService) SetupSystemHostKey(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+func (s HostService) SetupSystemHostKey(ctx context.Context, host model.Host, stdin io.Reader, stdout, stderr io.Writer) error {
 	alias := NormalizeAlias(host.Alias)
 
 	password, _, err := s.passwords.GetPasswordIfExists(alias)
@@ -665,14 +663,14 @@ func (s HostService) loadFavoriteSnapshot(ctx context.Context, alias string) (fa
 	return favoriteSnapshot{}, err
 }
 
-func (s HostService) applyAddPassword(alias string, password string) error {
+func (s HostService) applyAddPassword(alias, password string) error {
 	if strings.TrimSpace(password) != "" {
 		return s.passwords.SetPassword(alias, password)
 	}
 	return s.passwords.DeletePassword(alias)
 }
 
-func (s HostService) applyAddPassphrase(alias string, passphrase string) error {
+func (s HostService) applyAddPassphrase(alias, passphrase string) error {
 	if strings.TrimSpace(passphrase) != "" {
 		return s.passphrases.SetPassphrase(alias, passphrase)
 	}
@@ -770,7 +768,7 @@ func hasOverlayFields(host sshconfig.ImportedHost) bool {
 		strings.TrimSpace(host.ForwardAgent) != ""
 }
 
-func joinErrors(current error, next error) error {
+func joinErrors(current, next error) error {
 	if current == nil {
 		return next
 	}
@@ -780,11 +778,11 @@ func joinErrors(current error, next error) error {
 	return errors.Join(current, next)
 }
 
-func withRollback(err error, rollbackErr error) error {
+func withRollback(err, rollbackErr error) error {
 	if rollbackErr == nil {
 		return err
 	}
-	return fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+	return fmt.Errorf("%w; rollback failed: %w", err, rollbackErr)
 }
 
 type fileManagedHostStore struct {
@@ -855,7 +853,7 @@ func (systemPasswordStore) GetPasswordIfExists(alias string) (string, bool, erro
 	return secret.GetPasswordIfExists(alias)
 }
 
-func (systemPasswordStore) SetPassword(alias string, password string) error {
+func (systemPasswordStore) SetPassword(alias, password string) error {
 	return secret.SetPassword(alias, password)
 }
 
@@ -869,7 +867,7 @@ func (systemPassphraseStore) GetPassphraseIfExists(alias string) (string, bool, 
 	return secret.GetPassphraseIfExists(alias)
 }
 
-func (systemPassphraseStore) SetPassphrase(alias string, passphrase string) error {
+func (systemPassphraseStore) SetPassphrase(alias, passphrase string) error {
 	return secret.SetPassphrase(alias, passphrase)
 }
 
@@ -896,6 +894,6 @@ func splitForwardValue(value string) []string {
 	return result
 }
 
-func samePath(left string, right string) bool {
+func samePath(left, right string) bool {
 	return filepath.Clean(left) == filepath.Clean(right)
 }

@@ -61,7 +61,7 @@ func promptPassphrase(alias string) (string, error) {
 	return promptSecret(alias, "Passphrase")
 }
 
-func promptSecret(alias string, label string) (string, error) {
+func promptSecret(alias, label string) (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return "", fmt.Errorf("%s prompt requires a terminal; use --value for non-interactive input", strings.ToLower(label))
 	}

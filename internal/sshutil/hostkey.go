@@ -26,7 +26,7 @@ type resolvedSSHConfig struct {
 
 // EnsureHostKeyAcceptedContext makes the first host-key confirmation explicit
 // before password automation takes over the interactive prompts.
-func EnsureHostKeyAcceptedContext(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+func EnsureHostKeyAcceptedContext(ctx context.Context, host model.Host, stdin io.Reader, stdout, stderr io.Writer) error {
 	cfg, err := resolveSSHConfig(ctx, host)
 	if err != nil {
 		return err
@@ -245,7 +245,7 @@ func isKnownHostsFile(path string) (bool, error) {
 	return false, err
 }
 
-func knownHostsFileContains(ctx context.Context, file string, target string) (bool, error) {
+func knownHostsFileContains(ctx context.Context, file, target string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "ssh-keygen", "-F", target, "-f", file)
 	output, err := cmd.Output()
 	if err == nil {
@@ -260,7 +260,7 @@ func knownHostsFileContains(ctx context.Context, file string, target string) (bo
 	return false, fmt.Errorf("search known_hosts file %q for %q: %w", file, target, err)
 }
 
-func confirmUnknownHostKeyContext(ctx context.Context, host model.Host, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+func confirmUnknownHostKeyContext(ctx context.Context, host model.Host, stdin io.Reader, stdout, stderr io.Writer) error {
 	args, err := BuildArgs(host)
 	if err != nil {
 		return err

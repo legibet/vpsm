@@ -52,7 +52,7 @@ func BuildRemoteCommandContext(ctx context.Context, host model.Host, remoteComma
 
 // BuildRemoteCommandWithPasswordContext builds an ssh command that runs a remote
 // command and configures askpass when needed.
-func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host, password string, remoteCommand string) (*exec.Cmd, error) {
+func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host, password, remoteCommand string) (*exec.Cmd, error) {
 	extraArgs := []string{}
 	if strings.TrimSpace(remoteCommand) != "" {
 		extraArgs = append(extraArgs, remoteCommand)
@@ -62,7 +62,7 @@ func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host,
 
 // BuildSubsystemCommandWithPasswordContext builds an ssh command that requests a
 // remote subsystem such as "sftp".
-func BuildSubsystemCommandWithPasswordContext(ctx context.Context, host model.Host, password string, subsystem string) (*exec.Cmd, error) {
+func BuildSubsystemCommandWithPasswordContext(ctx context.Context, host model.Host, password, subsystem string) (*exec.Cmd, error) {
 	return BuildSubsystemCommandWithCredentials(ctx, host, AuthCredentials{Password: password}, subsystem)
 }
 
@@ -151,4 +151,3 @@ func normalizePort(port int) int {
 
 	return port
 }
-

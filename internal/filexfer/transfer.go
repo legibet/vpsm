@@ -28,7 +28,7 @@ type transferPlan struct {
 	filesTotal int
 }
 
-func (f *RemoteFS) UploadPathContext(ctx context.Context, localPath string, remotePath string, progress func(TransferProgress)) error {
+func (f *RemoteFS) UploadPathContext(ctx context.Context, localPath, remotePath string, progress func(TransferProgress)) error {
 	plan, err := buildUploadPlan(localPath, remotePath)
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ func (f *RemoteFS) UploadPathContext(ctx context.Context, localPath string, remo
 	})
 }
 
-func (f *RemoteFS) DownloadPathContext(ctx context.Context, remotePath string, localPath string, progress func(TransferProgress)) error {
+func (f *RemoteFS) DownloadPathContext(ctx context.Context, remotePath, localPath string, progress func(TransferProgress)) error {
 	plan, err := f.buildDownloadPlan(ctx, remotePath, localPath)
 	if err != nil {
 		return err
@@ -153,7 +153,7 @@ func (f *RemoteFS) downloadFileAtomically(ctx context.Context, item transferItem
 	return nil
 }
 
-func buildUploadPlan(localPath string, remotePath string) (transferPlan, error) {
+func buildUploadPlan(localPath, remotePath string) (transferPlan, error) {
 	entry, err := StatLocal(localPath)
 	if err != nil {
 		return transferPlan{}, err
@@ -234,7 +234,7 @@ func buildUploadPlan(localPath string, remotePath string) (transferPlan, error) 
 	}, nil
 }
 
-func (f *RemoteFS) buildDownloadPlan(ctx context.Context, remotePath string, localPath string) (transferPlan, error) {
+func (f *RemoteFS) buildDownloadPlan(ctx context.Context, remotePath, localPath string) (transferPlan, error) {
 	entry, err := f.Stat(remotePath)
 	if err != nil {
 		return transferPlan{}, err
@@ -287,8 +287,8 @@ func buildDownloadPlanWithReader(ctx context.Context, root Entry, localPath stri
 	var bytesTotal int64
 	filesTotal := 0
 
-	var walk func(remoteBase string, localBase string) error
-	walk = func(remoteBase string, localBase string) error {
+	var walk func(remoteBase, localBase string) error
+	walk = func(remoteBase, localBase string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

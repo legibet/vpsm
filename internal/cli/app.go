@@ -225,7 +225,7 @@ func (a App) runTUI() error {
 			}
 			return errors.New("system host — edit your SSH config directly to remove")
 		},
-		SetupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		SetupHostKey: func(alias string, stdin io.Reader, stdout, stderr io.Writer) error {
 			current, err := a.inventory.Get(a.ctx, alias)
 			if err != nil {
 				return err
@@ -475,24 +475,25 @@ func (a App) runDelete(alias string) error {
 		return err
 	}
 
-	if host.Managed {
+	switch {
+	case host.Managed:
 		if err := a.hosts.DeleteManagedHost(a.ctx, alias); err != nil {
 			return err
 		}
 		fmt.Printf("Deleted %s\n", alias)
-	} else if host.HasOverride {
+	case host.HasOverride:
 		if err := a.hosts.DeleteOverlay(a.ctx, alias); err != nil {
 			return err
 		}
 		fmt.Printf("Removed override for %s (reverted to system config)\n", alias)
-	} else {
+	default:
 		return errors.New("system host — edit your SSH config directly to remove")
 	}
 
 	return nil
 }
 
-func (a App) runFavorite(alias string, mode string) error {
+func (a App) runFavorite(alias, mode string) error {
 	alias = hosts.NormalizeAlias(alias)
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
 		return err

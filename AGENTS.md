@@ -63,7 +63,8 @@ Automately update this file when you make changes to the codebase, architecture,
 - Format all Go files via Make: `make fmt`
 - Run lint via Make: `make lint`
 - Run vet via Make: `make vet`
-- Keep code clean for the current `golangci-lint` default checks unless an explicit repo config is added later.
+- Lint configuration lives in `.golangci.yml` and uses golangci-lint v2 syntax.
+- Keep code clean for the configured golangci-lint standard set plus the repository's enabled consistency, bug-risk, and formatting checks.
 
 ## Test Commands
 

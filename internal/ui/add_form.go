@@ -245,7 +245,7 @@ func (f *addForm) values() (CreateHostInput, error) {
 	}, nil
 }
 
-func (f addForm) view(styles styleSet, width int, height int) string {
+func (f addForm) view(styles styleSet, width, height int) string {
 	fieldWidth := formInputWidth(width)
 
 	rows := []string{

@@ -352,7 +352,7 @@ func (f editForm) isEditable(fieldIndex int) bool {
 	return slices.Contains(f.focusOrder, fieldIndex)
 }
 
-func (f editForm) view(styles styleSet, width int, height int) string {
+func (f editForm) view(styles styleSet, width, height int) string {
 	fieldWidth := formInputWidth(width)
 
 	rows := []string{

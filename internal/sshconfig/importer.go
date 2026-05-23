@@ -104,7 +104,7 @@ func ParsePathExcluding(path string, excludePaths ...string) ([]ImportedHost, er
 	return result, nil
 }
 
-func LookupPathExcluding(path string, alias string, excludePaths ...string) (ImportedHost, bool, error) {
+func LookupPathExcluding(path, alias string, excludePaths ...string) (ImportedHost, bool, error) {
 	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return ImportedHost{}, false, nil
@@ -433,7 +433,7 @@ func skipAlias(alias string) bool {
 	return alias == "" || strings.HasPrefix(alias, "!") || strings.ContainsAny(alias, "*?")
 }
 
-func mergeParsedHost(existing parsedHost, next parsedHost) parsedHost {
+func mergeParsedHost(existing, next parsedHost) parsedHost {
 	if existing.displayName == "" && next.displayName != "" {
 		existing.displayName = next.displayName
 	}

@@ -256,10 +256,7 @@ func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
 
 	// Each item occupies 1 line, no separators.
 	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	want := available
-	if want < 1 {
-		want = 1
-	}
+	want := max(available, 1)
 
 	if got := m.listRowsPerPage(); got != want {
 		t.Fatalf("expected list rows per page = %d, got %d", want, got)
@@ -487,7 +484,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 		styles:       newStyles(true),
 		width:        120,
 		height:       24,
-		setupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error { return nil },
+		setupHostKey: func(alias string, stdin io.Reader, stdout, stderr io.Writer) error { return nil },
 	}
 	m.applyFilter()
 
@@ -583,7 +580,7 @@ func TestEditAllowedOnSystemHost(t *testing.T) {
 		height:     24,
 		updateHost: func(input UpdateHostInput) error { return nil },
 		deleteHost: func(alias string) error { return nil },
-		setupHostKey: func(alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		setupHostKey: func(alias string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return nil
 		},
 	}

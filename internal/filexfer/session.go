@@ -140,7 +140,7 @@ func (f *RemoteFS) Mkdir(fullPath string) error {
 	return nil
 }
 
-func (f *RemoteFS) Rename(oldPath string, newPath string) error {
+func (f *RemoteFS) Rename(oldPath, newPath string) error {
 	var err error
 	if _, ok := f.client.HasExtension("posix-rename@openssh.com"); ok {
 		err = f.client.PosixRename(oldPath, newPath)
@@ -153,7 +153,7 @@ func (f *RemoteFS) Rename(oldPath string, newPath string) error {
 	return nil
 }
 
-func (f *RemoteFS) replaceFile(oldPath string, newPath string) error {
+func (f *RemoteFS) replaceFile(oldPath, newPath string) error {
 	if _, ok := f.client.HasExtension("posix-rename@openssh.com"); ok {
 		if err := f.client.PosixRename(oldPath, newPath); err != nil {
 			return fmt.Errorf("replace remote file %q with %q: %w", newPath, oldPath, err)

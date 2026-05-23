@@ -740,7 +740,7 @@ func (s *fakePasswordStore) GetPasswordIfExists(alias string) (string, bool, err
 	return value, ok, nil
 }
 
-func (s *fakePasswordStore) SetPassword(alias string, password string) error {
+func (s *fakePasswordStore) SetPassword(alias, password string) error {
 	if s.failSetOnce {
 		s.failSetOnce = false
 		return errors.New("set password failed")
@@ -773,7 +773,7 @@ func (s *fakePassphraseStore) GetPassphraseIfExists(alias string) (string, bool,
 	return value, ok, nil
 }
 
-func (s *fakePassphraseStore) SetPassphrase(alias string, passphrase string) error {
+func (s *fakePassphraseStore) SetPassphrase(alias, passphrase string) error {
 	if s.failSetOnce {
 		s.failSetOnce = false
 		return errors.New("set passphrase failed")
@@ -862,7 +862,7 @@ type fakeKeySetupRunner struct {
 	lastCreds sshutil.AuthCredentials
 }
 
-func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
+func (s *fakeKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout, stderr io.Writer) (keySetupResult, error) {
 	s.calls++
 	s.lastAlias = host.Alias
 	s.lastCreds = creds

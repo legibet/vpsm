@@ -361,7 +361,7 @@ func testPaths(t *testing.T) config.Paths {
 	}
 }
 
-func writeTestFile(t *testing.T, path string, content string) {
+func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

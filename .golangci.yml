@@ -1,0 +1,76 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.25"
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - errcheck
+    - errorlint
+    - fatcontext
+    - gocheckcompilerdirectives
+    - govet
+    - ineffassign
+    - intrange
+    - makezero
+    - misspell
+    - modernize
+    - nolintlint
+    - nosprintfhostport
+    - predeclared
+    - sqlclosecheck
+    - staticcheck
+    - unconvert
+    - unused
+    - usestdlibvars
+    - usetesting
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: strict
+    presets:
+      - comments
+      - common-false-positives
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(vpsm)
+        - blank
+        - dot
+      custom-order: true
+    gofmt:
+      simplify: true
+    gofumpt:
+      module-path: vpsm
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - vpsm
+  exclusions:
+    generated: strict
+
+output:
+  sort-order:
+    - file
+    - linter

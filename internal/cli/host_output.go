@@ -306,8 +306,8 @@ func timePointer(value time.Time) *time.Time {
 	if value.IsZero() {
 		return nil
 	}
-	copy := value
-	return &copy
+	copied := value
+	return &copied
 }
 
 func fitListCell(value string, width int) string {

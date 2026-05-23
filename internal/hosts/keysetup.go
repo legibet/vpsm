@@ -14,12 +14,12 @@ type keySetupResult struct {
 }
 
 type keySetupRunner interface {
-	Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error)
+	Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout, stderr io.Writer) (keySetupResult, error)
 }
 
 // SetupManagedHostKey ensures the selected managed host has a local key pair and
 // uploads the corresponding public key to the remote server.
-func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdin io.Reader, stdout, stderr io.Writer) error {
 	managedHost, err := s.getManagedHost(alias)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdi
 
 type systemKeySetupRunner struct{}
 
-func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout io.Writer, stderr io.Writer) (keySetupResult, error) {
+func (systemKeySetupRunner) Setup(ctx context.Context, host model.Host, creds sshutil.AuthCredentials, stdin io.Reader, stdout, stderr io.Writer) (keySetupResult, error) {
 	plan, err := sshutil.PlanKeySetup(host.Alias, host.IdentityFile)
 	if err != nil {
 		return keySetupResult{}, err
