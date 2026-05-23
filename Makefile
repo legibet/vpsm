@@ -1,45 +1,53 @@
 .PHONY: help fmt lint vet test test-no-cache build build-bin run smoke check
 
-BINARY := vpsm
+BINARY ?= vpsm
+GO ?= go
+GOLANGCI_LINT ?= golangci-lint
+PKGS := ./...
 
 help:
 	@printf '%s\n' \
-		'make fmt           Run gofmt on all Go files' \
-		'make lint          Run golangci-lint' \
-		'make vet           Run go vet' \
-		'make test          Run go test ./...' \
-		'make test-no-cache Run go test ./... -count=1' \
-		'make build         Run go build ./...' \
-		'make build-bin     Build ./$(BINARY)' \
-		'make run           Run the app' \
-		'make smoke         Run help smoke test' \
-		'make check         Run lint, vet, test, and build'
+		'Quality:' \
+		'  make fmt           Format Go files using golangci-lint formatters' \
+		'  make lint          Run golangci-lint' \
+		'  make vet           Run go vet' \
+		'  make check         Run lint, vet, test, and build' \
+		'' \
+		'Tests:' \
+		'  make test          Run go test ./...' \
+		'  make test-no-cache Run go test ./... -count=1' \
+		'  make smoke         Run help smoke test' \
+		'' \
+		'Build and run:' \
+		'  make build         Run go build ./...' \
+		'  make build-bin     Build ./$(BINARY)' \
+		'  make run           Run the app'
 
 fmt:
-	@gofmt -w $$(find . -name '*.go' -type f)
+	$(GOLANGCI_LINT) fmt
 
 lint:
-	golangci-lint run
+	$(GOLANGCI_LINT) run
 
 vet:
-	go vet ./...
+	$(GO) vet $(PKGS)
 
 test:
-	go test ./...
+	$(GO) test $(PKGS)
 
 test-no-cache:
-	go test ./... -count=1
+	$(GO) test $(PKGS) -count=1
 
 build:
-	go build ./...
+	$(GO) build $(PKGS)
 
 build-bin:
-	go build -o $(BINARY) .
+	$(GO) build -o $(BINARY) .
 
 run:
-	go run .
+	$(GO) run .
 
 smoke:
-	go run . help
+	$(GO) run . help
 
 check: lint vet test build

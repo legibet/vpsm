@@ -60,7 +60,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 ## Formatting / Lint Commands
 
-- Format all Go files via Make: `make fmt`
+- Format Go files with the configured golangci-lint formatters via Make: `make fmt`
 - Run lint via Make: `make lint`
 - Run vet via Make: `make vet`
 - Lint configuration lives in `.golangci.yml` and uses golangci-lint v2 syntax.
