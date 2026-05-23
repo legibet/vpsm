@@ -820,7 +820,7 @@ func (s *fakeMetadataStore) EnsureHost(ctx context.Context, alias string) error 
 	return nil
 }
 
-func (s *fakeMetadataStore) UpdateHost(ctx context.Context, alias string, patch store.HostPatch) (model.Host, error) {
+func (s *fakeMetadataStore) SetFavorite(ctx context.Context, alias string, favorite bool) (model.Host, error) {
 	if s.updateErr != nil {
 		return model.Host{}, s.updateErr
 	}
@@ -828,9 +828,7 @@ func (s *fakeMetadataStore) UpdateHost(ctx context.Context, alias string, patch 
 	if !ok {
 		return model.Host{}, sql.ErrNoRows
 	}
-	if patch.Favorite != nil {
-		host.Favorite = *patch.Favorite
-	}
+	host.Favorite = favorite
 	s.hosts[alias] = host
 	return host, nil
 }

@@ -41,7 +41,7 @@ type passphraseStore interface {
 type metadataStore interface {
 	GetHost(ctx context.Context, alias string) (model.Host, error)
 	EnsureHost(ctx context.Context, alias string) error
-	UpdateHost(ctx context.Context, alias string, patch store.HostPatch) (model.Host, error)
+	SetFavorite(ctx context.Context, alias string, favorite bool) (model.Host, error)
 	DeleteMetadata(ctx context.Context, alias string) error
 	RenameHost(ctx context.Context, oldAlias, newAlias string) error
 }
@@ -173,31 +173,30 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 
 	if err := s.applyAddPassword(alias, input.Password); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 		return withRollback(err, rollbackErr)
 	}
 
 	if err := s.applyAddPassphrase(alias, input.Passphrase); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 		return withRollback(err, rollbackErr)
 	}
 
 	if input.Favorite {
 		if err := s.metadata.EnsureHost(ctx, alias); err != nil {
 			rollbackErr := s.restorePassphrase(alias, passphraseState)
-			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+			rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+			rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
 
-		value := true
-		if _, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value}); err != nil {
+		if _, err := s.metadata.SetFavorite(ctx, alias, true); err != nil {
 			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, true)
-			rollbackErr = joinErrors(rollbackErr, s.restorePassphrase(alias, passphraseState))
-			rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-			rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
+			rollbackErr = errors.Join(rollbackErr, s.restorePassphrase(alias, passphraseState))
+			rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+			rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
 	}
@@ -265,14 +264,14 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 
 	if err := s.applyUpdatedPassword(alias, input); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
 	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
@@ -426,19 +425,19 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 	}
 	if err := s.passwords.DeletePassword(alias); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 	if err := s.passphrases.DeletePassphrase(alias); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 	if err := s.metadata.DeleteMetadata(ctx, alias); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
-		rollbackErr = joinErrors(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
+		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
@@ -524,16 +523,16 @@ func (s HostService) UpdateSystemHostOverlay(ctx context.Context, _ model.Host, 
 	if err := s.applyUpdatedPassword(alias, input); err != nil {
 		rollbackErr := s.restorePassword(alias, passwordState)
 		if overlayTouched {
-			rollbackErr = joinErrors(rollbackErr, s.restoreOverlay(alias, overlayState))
+			rollbackErr = errors.Join(rollbackErr, s.restoreOverlay(alias, overlayState))
 		}
 		return withRollback(err, rollbackErr)
 	}
 
 	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
 		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = joinErrors(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
 		if overlayTouched {
-			rollbackErr = joinErrors(rollbackErr, s.restoreOverlay(alias, overlayState))
+			rollbackErr = errors.Join(rollbackErr, s.restoreOverlay(alias, overlayState))
 		}
 		return withRollback(err, rollbackErr)
 	}
@@ -752,8 +751,7 @@ func (s HostService) restoreFavorite(ctx context.Context, alias string, snapshot
 		return s.metadata.DeleteMetadata(ctx, alias)
 	}
 
-	value := snapshot.favorite
-	_, err := s.metadata.UpdateHost(ctx, alias, store.HostPatch{Favorite: &value})
+	_, err := s.metadata.SetFavorite(ctx, alias, snapshot.favorite)
 	return err
 }
 
@@ -766,16 +764,6 @@ func hasOverlayFields(host sshconfig.ImportedHost) bool {
 		strings.TrimSpace(host.ProxyJump) != "" ||
 		strings.TrimSpace(host.ProxyCommand) != "" ||
 		strings.TrimSpace(host.ForwardAgent) != ""
-}
-
-func joinErrors(current, next error) error {
-	if current == nil {
-		return next
-	}
-	if next == nil {
-		return current
-	}
-	return errors.Join(current, next)
 }
 
 func withRollback(err, rollbackErr error) error {

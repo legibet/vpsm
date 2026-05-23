@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -98,6 +99,30 @@ func ListManagedHosts(managedConfigPath string) ([]ImportedHost, error) {
 	return hosts, nil
 }
 
+// ValidateAlias reports whether an SSH host alias can be written and parsed
+// safely by vpsm-managed config handling.
+func ValidateAlias(alias string) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return fmt.Errorf("alias is required")
+	}
+
+	for _, r := range alias {
+		switch {
+		case unicode.IsSpace(r):
+			return fmt.Errorf("alias must not contain whitespace")
+		case r == '*' || r == '?':
+			return fmt.Errorf("alias must not contain wildcard characters")
+		case r == '!':
+			return fmt.Errorf("alias must not contain negation markers")
+		case r == '"' || r == '\'':
+			return fmt.Errorf("alias must not contain quotes")
+		}
+	}
+
+	return nil
+}
+
 func UpsertManagedHost(managedConfigPath string, host ImportedHost) error {
 	alias := strings.TrimSpace(host.Alias)
 	hostName := strings.TrimSpace(host.HostName)
@@ -181,21 +206,20 @@ func DeleteManagedHost(managedConfigPath, alias string) error {
 }
 
 func normalizeManagedHost(managedConfigPath string, host ImportedHost) ImportedHost {
-	host.Source = managedConfigPath
-	host.Alias = strings.TrimSpace(host.Alias)
-	host.DisplayName = normalizeManagedDisplayName(host.DisplayName)
-	host.HostName = strings.TrimSpace(host.HostName)
-	host.User = strings.TrimSpace(host.User)
-	host.IdentityFile = strings.TrimSpace(host.IdentityFile)
-	host.ProxyJump = strings.TrimSpace(host.ProxyJump)
-	host.ProxyCommand = strings.TrimSpace(host.ProxyCommand)
-	host.ForwardAgent = strings.TrimSpace(host.ForwardAgent)
+	host = normalizeHost(managedConfigPath, host)
 	host.Port = defaultPort(host.Port)
 	host.Overlay = false
 	return host
 }
 
 func normalizeOverlayHost(managedConfigPath string, host ImportedHost) ImportedHost {
+	host = normalizeHost(managedConfigPath, host)
+	host.Overlay = true
+	// Do not normalize port for overlays; 0 means "not overridden".
+	return host
+}
+
+func normalizeHost(managedConfigPath string, host ImportedHost) ImportedHost {
 	host.Source = managedConfigPath
 	host.Alias = strings.TrimSpace(host.Alias)
 	host.DisplayName = normalizeManagedDisplayName(host.DisplayName)
@@ -205,8 +229,6 @@ func normalizeOverlayHost(managedConfigPath string, host ImportedHost) ImportedH
 	host.ProxyJump = strings.TrimSpace(host.ProxyJump)
 	host.ProxyCommand = strings.TrimSpace(host.ProxyCommand)
 	host.ForwardAgent = strings.TrimSpace(host.ForwardAgent)
-	host.Overlay = true
-	// Do not normalize port for overlays; 0 means "not overridden".
 	return host
 }
 
@@ -249,48 +271,20 @@ func writeFullBlock(b *strings.Builder, host ImportedHost) {
 	b.WriteString("Host ")
 	b.WriteString(host.Alias)
 	b.WriteByte('\n')
-	b.WriteString("  HostName ")
-	b.WriteString(host.HostName)
-	b.WriteByte('\n')
-	if host.User != "" {
-		b.WriteString("  User ")
-		b.WriteString(host.User)
-		b.WriteByte('\n')
-	}
+	writeDirective(b, "HostName", host.HostName)
+	writeDirective(b, "User", host.User)
 	if host.Port != 22 {
-		b.WriteString("  Port ")
-		b.WriteString(strconv.Itoa(host.Port))
-		b.WriteByte('\n')
+		writeDirective(b, "Port", strconv.Itoa(host.Port))
 	}
-	if host.IdentityFile != "" {
-		b.WriteString("  IdentityFile ")
-		b.WriteString(host.IdentityFile)
-		b.WriteByte('\n')
-	}
-	if host.ProxyJump != "" {
-		b.WriteString("  ProxyJump ")
-		b.WriteString(host.ProxyJump)
-		b.WriteByte('\n')
-	}
-	if host.ProxyCommand != "" {
-		b.WriteString("  ProxyCommand ")
-		b.WriteString(host.ProxyCommand)
-		b.WriteByte('\n')
-	}
-	if host.ForwardAgent != "" {
-		b.WriteString("  ForwardAgent ")
-		b.WriteString(host.ForwardAgent)
-		b.WriteByte('\n')
-	}
+	writeDirective(b, "IdentityFile", host.IdentityFile)
+	writeDirective(b, "ProxyJump", host.ProxyJump)
+	writeDirective(b, "ProxyCommand", host.ProxyCommand)
+	writeDirective(b, "ForwardAgent", host.ForwardAgent)
 	for _, lf := range host.LocalForward {
-		b.WriteString("  LocalForward ")
-		b.WriteString(lf)
-		b.WriteByte('\n')
+		writeDirective(b, "LocalForward", lf)
 	}
 	for _, rf := range host.RemoteForward {
-		b.WriteString("  RemoteForward ")
-		b.WriteString(rf)
-		b.WriteByte('\n')
+		writeDirective(b, "RemoteForward", rf)
 	}
 }
 
@@ -308,42 +302,29 @@ func writeOverlayBlock(b *strings.Builder, host ImportedHost) {
 	b.WriteString("Host ")
 	b.WriteString(host.Alias)
 	b.WriteByte('\n')
-	if host.HostName != "" {
-		b.WriteString("  HostName ")
-		b.WriteString(host.HostName)
-		b.WriteByte('\n')
-	}
-	if host.User != "" {
-		b.WriteString("  User ")
-		b.WriteString(host.User)
-		b.WriteByte('\n')
-	}
+	writeDirective(b, "HostName", host.HostName)
+	writeDirective(b, "User", host.User)
 	if host.Port > 0 {
-		b.WriteString("  Port ")
-		b.WriteString(strconv.Itoa(host.Port))
-		b.WriteByte('\n')
+		writeDirective(b, "Port", strconv.Itoa(host.Port))
 	}
 	if host.IdentityFile != "" {
-		b.WriteString("  IdentityFile ")
-		b.WriteString(host.IdentityFile)
-		b.WriteByte('\n')
+		writeDirective(b, "IdentityFile", host.IdentityFile)
 		b.WriteString("  IdentitiesOnly yes\n")
 	}
-	if host.ProxyJump != "" {
-		b.WriteString("  ProxyJump ")
-		b.WriteString(host.ProxyJump)
-		b.WriteByte('\n')
+	writeDirective(b, "ProxyJump", host.ProxyJump)
+	writeDirective(b, "ProxyCommand", host.ProxyCommand)
+	writeDirective(b, "ForwardAgent", host.ForwardAgent)
+}
+
+func writeDirective(b *strings.Builder, name, value string) {
+	if value == "" {
+		return
 	}
-	if host.ProxyCommand != "" {
-		b.WriteString("  ProxyCommand ")
-		b.WriteString(host.ProxyCommand)
-		b.WriteByte('\n')
-	}
-	if host.ForwardAgent != "" {
-		b.WriteString("  ForwardAgent ")
-		b.WriteString(host.ForwardAgent)
-		b.WriteByte('\n')
-	}
+	b.WriteString("  ")
+	b.WriteString(name)
+	b.WriteByte(' ')
+	b.WriteString(value)
+	b.WriteByte('\n')
 }
 
 func normalizeManagedDisplayName(value string) string {

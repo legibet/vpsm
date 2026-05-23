@@ -20,50 +20,9 @@ type AuthCredentials struct {
 	Passphrase string
 }
 
-// BuildCommand builds an ssh command without password automation.
-func BuildCommand(host model.Host) (*exec.Cmd, error) {
-	return BuildCommandContext(context.Background(), host)
-}
-
-// BuildCommandWithPassword builds an ssh command and configures askpass when needed.
-func BuildCommandWithPassword(host model.Host, password string) (*exec.Cmd, error) {
-	return BuildCommandWithPasswordContext(context.Background(), host, password)
-}
-
-// BuildCommandContext builds an ssh command bound to the provided context.
-func BuildCommandContext(ctx context.Context, host model.Host) (*exec.Cmd, error) {
-	return BuildCommandWithCredentials(ctx, host, AuthCredentials{})
-}
-
-// BuildCommandWithPasswordContext builds an ssh command bound to the provided context.
-func BuildCommandWithPasswordContext(ctx context.Context, host model.Host, password string) (*exec.Cmd, error) {
-	return BuildCommandWithCredentials(ctx, host, AuthCredentials{Password: password})
-}
-
 // BuildCommandWithCredentials builds an ssh command with full credential support.
 func BuildCommandWithCredentials(ctx context.Context, host model.Host, creds AuthCredentials) (*exec.Cmd, error) {
 	return buildSSHCommandContext(ctx, host, creds, nil)
-}
-
-// BuildRemoteCommandContext builds an ssh command that runs a remote command.
-func BuildRemoteCommandContext(ctx context.Context, host model.Host, remoteCommand string) (*exec.Cmd, error) {
-	return BuildRemoteCommandWithPasswordContext(ctx, host, "", remoteCommand)
-}
-
-// BuildRemoteCommandWithPasswordContext builds an ssh command that runs a remote
-// command and configures askpass when needed.
-func BuildRemoteCommandWithPasswordContext(ctx context.Context, host model.Host, password, remoteCommand string) (*exec.Cmd, error) {
-	extraArgs := []string{}
-	if strings.TrimSpace(remoteCommand) != "" {
-		extraArgs = append(extraArgs, remoteCommand)
-	}
-	return buildSSHCommandContext(ctx, host, AuthCredentials{Password: password}, extraArgs)
-}
-
-// BuildSubsystemCommandWithPasswordContext builds an ssh command that requests a
-// remote subsystem such as "sftp".
-func BuildSubsystemCommandWithPasswordContext(ctx context.Context, host model.Host, password, subsystem string) (*exec.Cmd, error) {
-	return BuildSubsystemCommandWithCredentials(ctx, host, AuthCredentials{Password: password}, subsystem)
 }
 
 // BuildSubsystemCommandWithCredentials builds an ssh subsystem command with full

@@ -107,12 +107,6 @@ func ReadPublicKey(plan KeySetupPlan) (string, error) {
 	return publicKey, nil
 }
 
-// InstallPublicKeyContext appends the public key to ~/.ssh/authorized_keys when
-// it is not already present.
-func InstallPublicKeyContext(ctx context.Context, host model.Host, password, publicKey string) error {
-	return InstallPublicKeyWithCredentials(ctx, host, AuthCredentials{Password: password}, publicKey)
-}
-
 // InstallPublicKeyWithCredentials appends the public key to ~/.ssh/authorized_keys
 // using full credential support (password + passphrase).
 func InstallPublicKeyWithCredentials(ctx context.Context, host model.Host, creds AuthCredentials, publicKey string) error {

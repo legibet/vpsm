@@ -73,7 +73,7 @@ Automately update this file when you make changes to the codebase, architecture,
 - Disable test cache with Make: `make test-no-cache`
 - Run one package: `go test ./internal/sshconfig`
 - Run one specific test by name: `go test ./internal/sshconfig -run '^TestEnsureManagedConfigAddsIncludeAtTop$'`
-- Another single-test example: `go test ./internal/sshutil -run '^TestBuildCommandWithPasswordUsesAskpass$'`
+- Another single-test example: `go test ./internal/sshutil -run '^TestBuildCommandWithCredentialsUsesAskpassForPassword$'`
 - UI single-test example: `go test ./internal/ui -run '^TestUpdateForwardsPasteToEditForm$'`
 
 ## Test File Layout
@@ -108,7 +108,7 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - Prefer concrete structs over interfaces unless an interface is clearly useful for a boundary.
 - Small local interfaces are acceptable for testing or scanning helpers; see `scanner` in `internal/store/store.go`.
-- Keep patch structs narrow and task-oriented; `store.HostPatch` is intentionally limited to the metadata fields that still exist.
+- Keep metadata operations concrete; use `store.SetFavorite` instead of patch-style update structs.
 - Use zero values deliberately, especially for optional fields.
 
 ## Error Handling
@@ -148,8 +148,8 @@ Automately update this file when you make changes to the codebase, architecture,
 
 - Keep using system `ssh`.
 - Build arguments through `internal/sshutil.BuildArgs`.
-- Prefer `internal/sshutil.BuildCommandContext` or `BuildCommandWithPasswordContext` on main code paths so cancellation propagates correctly.
-- Files mode opens a remote SFTP subsystem through system `ssh` using `internal/sshutil.BuildSubsystemCommandWithPasswordContext`; do not replace this with a Go SSH client transport.
+- Prefer `internal/sshutil.BuildCommandWithCredentials` on main code paths so cancellation and password/passphrase askpass support propagate correctly.
+- Files mode opens a remote SFTP subsystem through system `ssh` using `internal/sshutil.BuildSubsystemCommandWithCredentials`; do not replace this with a Go SSH client transport.
 - For stored-password connections, run `internal/sshutil.EnsureHostKeyAcceptedContext` before askpass so first-connect host key confirmation happens explicitly.
 - TUI key setup should reuse an existing `IdentityFile` when possible; otherwise it generates a host-specific ed25519 key under `~/.ssh/vpsm/`.
 - TUI key setup only supports concrete local `IdentityFile` paths (absolute or `~/...`); reject SSH token or environment-variable forms instead of guessing a filesystem location.

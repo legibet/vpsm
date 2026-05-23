@@ -30,7 +30,7 @@ func TestEnsureHostCreatesMetadataRow(t *testing.T) {
 	}
 }
 
-func TestUpdateHostAndToggleFavorite(t *testing.T) {
+func TestSetFavoriteAndToggleFavorite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -40,8 +40,7 @@ func TestUpdateHostAndToggleFavorite(t *testing.T) {
 		t.Fatalf("ensure host: %v", err)
 	}
 
-	favorite := true
-	host, err := st.UpdateHost(ctx, "web-1", HostPatch{Favorite: &favorite})
+	host, err := st.SetFavorite(ctx, "web-1", true)
 	if err != nil {
 		t.Fatalf("update host: %v", err)
 	}

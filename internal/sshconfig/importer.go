@@ -34,20 +34,8 @@ type parser struct {
 }
 
 type hostBlock struct {
-	aliases       []string
-	displayName   string
-	hostName      string
-	user          string
-	port          int
-	portSet       bool
-	identityFile  string
-	proxyJump     string
-	proxyCommand  string
-	forwardAgent  string
-	localForward  []string
-	remoteForward []string
-	source        string
-	overlay       bool
+	parsedHost
+	aliases []string
 }
 
 type parsedHost struct {
@@ -158,22 +146,8 @@ func (p *parser) parseFile(path string) error {
 				continue
 			}
 
-			host := parsedHost{
-				alias:         alias,
-				displayName:   current.displayName,
-				hostName:      current.hostName,
-				user:          current.user,
-				port:          current.port,
-				portSet:       current.portSet,
-				identityFile:  current.identityFile,
-				proxyJump:     current.proxyJump,
-				proxyCommand:  current.proxyCommand,
-				forwardAgent:  current.forwardAgent,
-				localForward:  current.localForward,
-				remoteForward: current.remoteForward,
-				source:        current.source,
-				overlay:       current.overlay,
-			}
+			host := current.parsedHost
+			host.alias = alias
 
 			if existing, exists := p.hosts[alias]; exists {
 				p.hosts[alias] = mergeParsedHost(existing, host)
@@ -222,10 +196,12 @@ func (p *parser) parseFile(path string) error {
 		case "host":
 			flush()
 			current = hostBlock{
-				aliases:     parseValues(value),
-				displayName: pendingDisplayName,
-				source:      absolutePath,
-				overlay:     pendingOverlay,
+				aliases: parseValues(value),
+				parsedHost: parsedHost{
+					displayName: pendingDisplayName,
+					source:      absolutePath,
+					overlay:     pendingOverlay,
+				},
 			}
 			pendingDisplayName = ""
 			pendingOverlay = false
@@ -472,7 +448,10 @@ func mergeParsedHost(existing, next parsedHost) parsedHost {
 }
 
 func (h parsedHost) export() ImportedHost {
-	hostName := firstNonEmpty(h.hostName, h.alias)
+	hostName := h.hostName
+	if strings.TrimSpace(hostName) == "" {
+		hostName = h.alias
+	}
 	port := defaultPort(h.port)
 	if h.overlay {
 		// Overlay blocks preserve zero values to mean "not overridden".
@@ -501,13 +480,4 @@ func defaultPort(port int) int {
 		return 22
 	}
 	return port
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

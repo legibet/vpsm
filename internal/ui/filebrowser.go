@@ -367,11 +367,11 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		pane.cwd = msg.dir
 
-		entries := append(make([]filexfer.Entry, 0, len(msg.entries)+1), msg.entries...)
 		if parentPath, ok := parentDir(msg.side, msg.dir); ok {
-			entries = append([]filexfer.Entry{filexfer.ParentEntry(parentPath)}, entries...)
+			pane.setEntries(append([]filexfer.Entry{filexfer.ParentEntry(parentPath)}, msg.entries...), msg.selectName)
+		} else {
+			pane.setEntries(msg.entries, msg.selectName)
 		}
-		pane.setEntries(entries, msg.selectName)
 		pane.ensureVisible(m.entriesViewportHeight())
 		if m.statusType == statusInfo && (m.status == "Loading directories..." || m.status == "Refreshing directories...") {
 			m.setStatus("", statusInfo)

@@ -87,14 +87,14 @@ func TestBuildArgsIncludesIdentityFile(t *testing.T) {
 	}
 }
 
-func TestBuildCommandWithPasswordUsesAskpass(t *testing.T) {
+func TestBuildCommandWithCredentialsUsesAskpassForPassword(t *testing.T) {
 	t.Parallel()
 
-	cmd, err := BuildCommandWithPassword(model.Host{
+	cmd, err := BuildCommandWithCredentials(context.Background(), model.Host{
 		Alias:    "demo",
 		HostName: "10.0.0.5",
 		User:     "root",
-	}, "s3cr3t")
+	}, AuthCredentials{Password: "s3cr3t"})
 	if err != nil {
 		t.Fatalf("build command: %v", err)
 	}
@@ -175,14 +175,14 @@ func TestBuildCommandWithCredentialsBothPasswordAndPassphrase(t *testing.T) {
 	}
 }
 
-func TestBuildRemoteCommandWithPasswordIncludesRemoteCommand(t *testing.T) {
+func TestBuildSSHCommandContextIncludesExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	cmd, err := BuildRemoteCommandWithPasswordContext(context.Background(), model.Host{
+	cmd, err := buildSSHCommandContext(context.Background(), model.Host{
 		Alias:    "demo",
 		HostName: "10.0.0.5",
 		User:     "root",
-	}, "s3cr3t", "echo hello")
+	}, AuthCredentials{Password: "s3cr3t"}, []string{"echo hello"})
 	if err != nil {
 		t.Fatalf("build remote command: %v", err)
 	}
@@ -192,14 +192,14 @@ func TestBuildRemoteCommandWithPasswordIncludesRemoteCommand(t *testing.T) {
 	}
 }
 
-func TestBuildSubsystemCommandWithPasswordIncludesSubsystemRequest(t *testing.T) {
+func TestBuildSubsystemCommandWithCredentialsIncludesSubsystemRequest(t *testing.T) {
 	t.Parallel()
 
-	cmd, err := BuildSubsystemCommandWithPasswordContext(context.Background(), model.Host{
+	cmd, err := BuildSubsystemCommandWithCredentials(context.Background(), model.Host{
 		Alias:    "demo",
 		HostName: "10.0.0.5",
 		User:     "root",
-	}, "s3cr3t", "sftp")
+	}, AuthCredentials{Password: "s3cr3t"}, "sftp")
 	if err != nil {
 		t.Fatalf("build subsystem command: %v", err)
 	}

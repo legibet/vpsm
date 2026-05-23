@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,6 +165,58 @@ func (s *Store) RenameHost(ctx context.Context, oldAlias, newAlias string) error
 	}
 
 	return nil
+}
+
+// SetFavorite updates the favorite flag for a host metadata row.
+func (s *Store) SetFavorite(ctx context.Context, alias string, favorite bool) (model.Host, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return model.Host{}, errors.New("alias is required")
+	}
+
+	if err := s.EnsureHost(ctx, alias); err != nil {
+		return model.Host{}, err
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE hosts
+		SET favorite = ?, updated_at = ?
+		WHERE alias = ?
+	`, favorite, now, alias); err != nil {
+		return model.Host{}, fmt.Errorf("update host %q: %w", alias, err)
+	}
+
+	return s.GetHost(ctx, alias)
+}
+
+// DeleteMetadata removes all local metadata for a host alias.
+func (s *Store) DeleteMetadata(ctx context.Context, alias string) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return errors.New("alias is required")
+	}
+
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM hosts WHERE alias = ?`, alias); err != nil {
+		return fmt.Errorf("delete metadata for host %q: %w", alias, err)
+	}
+
+	return nil
+}
+
+// ToggleFavorite flips the favorite flag for a host.
+func (s *Store) ToggleFavorite(ctx context.Context, alias string) (model.Host, error) {
+	if err := s.EnsureHost(ctx, alias); err != nil {
+		return model.Host{}, err
+	}
+
+	host, err := s.GetHost(ctx, alias)
+	if err != nil {
+		return model.Host{}, err
+	}
+
+	next := !host.Favorite
+	return s.SetFavorite(ctx, alias, next)
 }
 
 func (s *Store) migrate() error {

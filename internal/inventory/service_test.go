@@ -44,11 +44,10 @@ func TestListShowsManagedAndSystemHosts(t *testing.T) {
 		t.Fatalf("upsert managed host: %v", err)
 	}
 
-	favorite := true
 	if err := st.EnsureHost(ctx, "managed-box"); err != nil {
 		t.Fatalf("ensure host metadata: %v", err)
 	}
-	if _, err := st.UpdateHost(ctx, "managed-box", store.HostPatch{Favorite: &favorite}); err != nil {
+	if _, err := st.SetFavorite(ctx, "managed-box", true); err != nil {
 		t.Fatalf("mark favorite: %v", err)
 	}
 
@@ -303,11 +302,10 @@ func TestGetHydratesOnlyRequestedAlias(t *testing.T) {
 		_ = st.Close()
 	})
 
-	favorite := true
 	if err := st.EnsureHost(ctx, "app-2"); err != nil {
 		t.Fatalf("ensure host metadata: %v", err)
 	}
-	if _, err := st.UpdateHost(ctx, "app-2", store.HostPatch{Favorite: &favorite}); err != nil {
+	if _, err := st.SetFavorite(ctx, "app-2", true); err != nil {
 		t.Fatalf("update host metadata: %v", err)
 	}
 

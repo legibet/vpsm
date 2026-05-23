@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
@@ -218,6 +219,21 @@ func (m *tuiModel) appendSearchPaste(content string) {
 	}
 	m.query += content
 	m.applyFilter()
+}
+
+func normalizeSearchPaste(content string) string {
+	buf := make([]rune, 0, len(content))
+	for _, r := range content {
+		switch r {
+		case '\r', '\n', '\t':
+			buf = append(buf, ' ')
+		default:
+			if !unicode.IsControl(r) {
+				buf = append(buf, r)
+			}
+		}
+	}
+	return string(buf)
 }
 
 func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

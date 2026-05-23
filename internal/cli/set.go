@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"vpsm/internal/cmdutil"
 	"vpsm/internal/hosts"
 	"vpsm/internal/model"
 )
@@ -25,21 +24,36 @@ type setUpdatePlan struct {
 	remoteForwardSet bool
 }
 
+type optionalString struct {
+	set   bool
+	value string
+}
+
+func (o *optionalString) String() string {
+	return o.value
+}
+
+func (o *optionalString) Set(value string) error {
+	o.set = true
+	o.value = value
+	return nil
+}
+
 func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 	fs := flag.NewFlagSet("set", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	var newAlias cmdutil.OptionalString
-	var displayName cmdutil.OptionalString
-	var hostName cmdutil.OptionalString
-	var user cmdutil.OptionalString
+	var newAlias optionalString
+	var displayName optionalString
+	var hostName optionalString
+	var user optionalString
 	var portValue string
-	var proxyJump cmdutil.OptionalString
-	var proxyCommand cmdutil.OptionalString
-	var forwardAgent cmdutil.OptionalString
-	var localForward cmdutil.OptionalString
-	var remoteForward cmdutil.OptionalString
-	var identityFile cmdutil.OptionalString
+	var proxyJump optionalString
+	var proxyCommand optionalString
+	var forwardAgent optionalString
+	var localForward optionalString
+	var remoteForward optionalString
+	var identityFile optionalString
 	var password string
 	var clearPassword bool
 	var passphrase string
@@ -86,8 +100,8 @@ func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 	}
 
 	changed := false
-	if newAlias.IsSet() {
-		normalized := hosts.NormalizeAlias(newAlias.Value())
+	if newAlias.set {
+		normalized := hosts.NormalizeAlias(newAlias.value)
 		if normalized == "" {
 			return setUpdatePlan{}, errors.New("alias is required")
 		}
@@ -99,16 +113,16 @@ func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 			changed = true
 		}
 	}
-	if displayName.IsSet() {
-		input.DisplayName = displayName.Value()
+	if displayName.set {
+		input.DisplayName = displayName.value
 		changed = true
 	}
-	if hostName.IsSet() {
-		input.HostName = hostName.Value()
+	if hostName.set {
+		input.HostName = hostName.value
 		changed = true
 	}
-	if user.IsSet() {
-		input.User = user.Value()
+	if user.set {
+		input.User = user.value
 		changed = true
 	}
 	if strings.TrimSpace(portValue) != "" {
@@ -119,28 +133,28 @@ func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 		input.Port = parsed
 		changed = true
 	}
-	if proxyJump.IsSet() {
-		input.ProxyJump = proxyJump.Value()
+	if proxyJump.set {
+		input.ProxyJump = proxyJump.value
 		changed = true
 	}
-	if proxyCommand.IsSet() {
-		input.ProxyCommand = proxyCommand.Value()
+	if proxyCommand.set {
+		input.ProxyCommand = proxyCommand.value
 		changed = true
 	}
-	if forwardAgent.IsSet() {
-		input.ForwardAgent = forwardAgent.Value()
+	if forwardAgent.set {
+		input.ForwardAgent = forwardAgent.value
 		changed = true
 	}
-	if localForward.IsSet() {
-		input.LocalForward = localForward.Value()
+	if localForward.set {
+		input.LocalForward = localForward.value
 		changed = true
 	}
-	if remoteForward.IsSet() {
-		input.RemoteForward = remoteForward.Value()
+	if remoteForward.set {
+		input.RemoteForward = remoteForward.value
 		changed = true
 	}
-	if identityFile.IsSet() {
-		input.IdentityFile = identityFile.Value()
+	if identityFile.set {
+		input.IdentityFile = identityFile.value
 		changed = true
 	}
 	if strings.TrimSpace(password) != "" {
@@ -171,7 +185,7 @@ func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 	return setUpdatePlan{
 		input:            input,
 		effectiveAlias:   effectiveAlias,
-		localForwardSet:  localForward.IsSet(),
-		remoteForwardSet: remoteForward.IsSet(),
+		localForwardSet:  localForward.set,
+		remoteForwardSet: remoteForward.set,
 	}, nil
 }

@@ -164,8 +164,7 @@ func (a App) runTUI() error {
 				return nil, "", err
 			}
 
-			items := append(make([]ui.HostItem, 0, len(hostItems)), hostItems...)
-			return items, fmt.Sprintf("Reloaded %d host(s)", len(hostItems)), nil
+			return hostItems, fmt.Sprintf("Reloaded %d host(s)", len(hostItems)), nil
 		},
 		CreateHost: func(input ui.CreateHostInput) error {
 			return a.hosts.AddManagedHost(a.ctx, hosts.AddManagedHostInput{
@@ -371,55 +370,22 @@ func (a App) runSet(alias string, args []string) error {
 }
 
 func (a App) runSetPassword(alias string, args []string) error {
-	if !secret.Available() {
-		return secret.ErrKeyringUnavailable
-	}
-	alias = hosts.NormalizeAlias(alias)
-	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
-		return err
-	}
-
-	fs := flag.NewFlagSet("set-password", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-
-	var value string
-	fs.StringVar(&value, "value", "", "Password value")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	password := value
-	if password == "" {
-		var err error
-		password, err = promptPassword(alias)
-		if err != nil {
-			return err
-		}
-	}
-
-	if err := secret.SetPassword(alias, password); err != nil {
-		return err
-	}
-
-	fmt.Printf("Stored password for %s\n", alias)
-	return a.runShow(alias, nil)
+	return a.runSetSecret(alias, args, "set-password", "Password", promptPassword, secret.SetPassword)
 }
 
 func (a App) runClearPassword(alias string) error {
-	alias = hosts.NormalizeAlias(alias)
-	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
-		return err
-	}
-
-	if err := secret.DeletePassword(alias); err != nil {
-		return err
-	}
-
-	fmt.Printf("Cleared password for %s\n", alias)
-	return a.runShow(alias, nil)
+	return a.runClearSecret(alias, "password", secret.DeletePassword)
 }
 
 func (a App) runSetPassphrase(alias string, args []string) error {
+	return a.runSetSecret(alias, args, "set-passphrase", "Passphrase", promptPassphrase, secret.SetPassphrase)
+}
+
+func (a App) runClearPassphrase(alias string) error {
+	return a.runClearSecret(alias, "passphrase", secret.DeletePassphrase)
+}
+
+func (a App) runSetSecret(alias string, args []string, commandName, label string, prompt func(string) (string, error), set func(string, string) error) error {
 	if !secret.Available() {
 		return secret.ErrKeyringUnavailable
 	}
@@ -428,43 +394,42 @@ func (a App) runSetPassphrase(alias string, args []string) error {
 		return err
 	}
 
-	fs := flag.NewFlagSet("set-passphrase", flag.ContinueOnError)
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	var value string
-	fs.StringVar(&value, "value", "", "Passphrase value")
+	fs.StringVar(&value, "value", "", label+" value")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	passphrase := value
-	if passphrase == "" {
+	if value == "" {
 		var err error
-		passphrase, err = promptPassphrase(alias)
+		value, err = prompt(alias)
 		if err != nil {
 			return err
 		}
 	}
 
-	if err := secret.SetPassphrase(alias, passphrase); err != nil {
+	if err := set(alias, value); err != nil {
 		return err
 	}
 
-	fmt.Printf("Stored passphrase for %s\n", alias)
+	fmt.Printf("Stored %s for %s\n", strings.ToLower(label), alias)
 	return a.runShow(alias, nil)
 }
 
-func (a App) runClearPassphrase(alias string) error {
+func (a App) runClearSecret(alias, label string, clearSecret func(string) error) error {
 	alias = hosts.NormalizeAlias(alias)
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
 		return err
 	}
 
-	if err := secret.DeletePassphrase(alias); err != nil {
+	if err := clearSecret(alias); err != nil {
 		return err
 	}
 
-	fmt.Printf("Cleared passphrase for %s\n", alias)
+	fmt.Printf("Cleared %s for %s\n", strings.ToLower(label), alias)
 	return a.runShow(alias, nil)
 }
 
@@ -507,11 +472,9 @@ func (a App) runFavorite(alias, mode string) error {
 	case "", "toggle":
 		_, err = a.store.ToggleFavorite(a.ctx, alias)
 	case "on", "true", "1":
-		value := true
-		_, err = a.store.UpdateHost(a.ctx, alias, store.HostPatch{Favorite: &value})
+		_, err = a.store.SetFavorite(a.ctx, alias, true)
 	case "off", "false", "0":
-		value := false
-		_, err = a.store.UpdateHost(a.ctx, alias, store.HostPatch{Favorite: &value})
+		_, err = a.store.SetFavorite(a.ctx, alias, false)
 	default:
 		return fmt.Errorf("unknown favorite mode %q", mode)
 	}

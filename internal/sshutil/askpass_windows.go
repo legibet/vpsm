@@ -8,12 +8,6 @@ import (
 	"path/filepath"
 )
 
-// CanAutoFillPassword reports whether the askpass helper can be prepared on this system.
-func CanAutoFillPassword() bool {
-	_, err := ensureAskpassHelper()
-	return err == nil
-}
-
 func ensureAskpassHelper() (string, error) {
 	path := filepath.Join(os.TempDir(), "vpsm-ssh-askpass.cmd")
 	// Delegate to PowerShell so that passwords containing cmd.exe special
