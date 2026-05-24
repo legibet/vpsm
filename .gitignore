@@ -4,3 +4,7 @@
 /tmp/
 /*.db
 /*.sqlite
+.agents/
+.claude/
+skills-lock.json
+CLAUDE.md
