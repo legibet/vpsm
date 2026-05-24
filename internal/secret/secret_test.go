@@ -67,72 +67,73 @@ func TestAvailableReturnsFalseWithBrokenKeyring(t *testing.T) {
 	}
 }
 
-func TestSetPasswordFailsWhenUnavailable(t *testing.T) {
+func TestSetSecretFailsWhenKeyringUnavailable(t *testing.T) {
 	keyring.MockInitWithError(errors.New("dbus: connection refused"))
 	resetAvailable()
 
-	err := SetPassword("demo", "secret")
-	if !errors.Is(err, ErrKeyringUnavailable) {
-		t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
+	tests := []struct {
+		name string
+		set  func(string, string) error
+	}{
+		{name: "password", set: SetPassword},
+		{name: "passphrase", set: SetPassphrase},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.set("demo", "secret")
+			if !errors.Is(err, ErrKeyringUnavailable) {
+				t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
+			}
+		})
 	}
 }
 
-func TestGetPasswordIfExistsReturnsEmptyWhenUnavailable(t *testing.T) {
+func TestGetSecretIfExistsReturnsEmptyWhenKeyringUnavailable(t *testing.T) {
 	keyring.MockInitWithError(errors.New("dbus: connection refused"))
 	resetAvailable()
 
-	password, exists, err := GetPasswordIfExists("demo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tests := []struct {
+		name string
+		get  func(string) (string, bool, error)
+	}{
+		{name: "password", get: GetPasswordIfExists},
+		{name: "passphrase", get: GetPassphraseIfExists},
 	}
-	if exists {
-		t.Fatal("expected password not to exist when keyring unavailable")
-	}
-	if password != "" {
-		t.Fatalf("expected empty password, got %q", password)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			secret, exists, err := tt.get("demo")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if exists {
+				t.Fatal("expected secret not to exist when keyring unavailable")
+			}
+			if secret != "" {
+				t.Fatalf("expected empty secret, got %q", secret)
+			}
+		})
 	}
 }
 
-func TestDeletePasswordNoopWhenUnavailable(t *testing.T) {
+func TestDeleteSecretNoopWhenKeyringUnavailable(t *testing.T) {
 	keyring.MockInitWithError(errors.New("dbus: connection refused"))
 	resetAvailable()
 
-	if err := DeletePassword("demo"); err != nil {
-		t.Fatalf("expected nil error for delete when unavailable, got %v", err)
+	tests := []struct {
+		name   string
+		delete func(string) error
+	}{
+		{name: "password", delete: DeletePassword},
+		{name: "passphrase", delete: DeletePassphrase},
 	}
-}
 
-func TestSetPassphraseFailsWhenUnavailable(t *testing.T) {
-	keyring.MockInitWithError(errors.New("dbus: connection refused"))
-	resetAvailable()
-
-	err := SetPassphrase("demo", "my-passphrase")
-	if !errors.Is(err, ErrKeyringUnavailable) {
-		t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
-	}
-}
-
-func TestGetPassphraseIfExistsReturnsEmptyWhenUnavailable(t *testing.T) {
-	keyring.MockInitWithError(errors.New("dbus: connection refused"))
-	resetAvailable()
-
-	passphrase, exists, err := GetPassphraseIfExists("demo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if exists {
-		t.Fatal("expected passphrase not to exist when keyring unavailable")
-	}
-	if passphrase != "" {
-		t.Fatalf("expected empty passphrase, got %q", passphrase)
-	}
-}
-
-func TestDeletePassphraseNoopWhenUnavailable(t *testing.T) {
-	keyring.MockInitWithError(errors.New("dbus: connection refused"))
-	resetAvailable()
-
-	if err := DeletePassphrase("demo"); err != nil {
-		t.Fatalf("expected nil error for delete when unavailable, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.delete("demo"); err != nil {
+				t.Fatalf("expected nil error for delete when unavailable, got %v", err)
+			}
+		})
 	}
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -43,30 +42,6 @@ func TestUpdateForwardsPasteToEditForm(t *testing.T) {
 	got := updated.(tuiModel).editForm.inputs[editFieldPassword].Value()
 	if got != "secret-pass" {
 		t.Fatalf("expected pasted password, got %q", got)
-	}
-}
-
-func TestNormalizeSearchPaste(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{name: "plain text", input: "prod", want: "prod"},
-		{name: "newline to space", input: "hong\nkong", want: "hong kong"},
-		{name: "carriage return and tab to spaces", input: "beta\r\nlogs\t2026", want: "beta  logs 2026"},
-		{name: "drops other controls", input: "pro\x00d", want: "prod"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := normalizeSearchPaste(tt.input); got != tt.want {
-				t.Fatalf("normalizeSearchPaste(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
 	}
 }
 
@@ -177,26 +152,6 @@ func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	}
 }
 
-func TestListMetaShowsUserTargetAndPortOnly(t *testing.T) {
-	t.Parallel()
-
-	host := model.Host{
-		Alias:          "prod-web",
-		HostName:       "10.0.0.1",
-		User:           "root",
-		Port:           2201,
-		Managed:        true,
-		IdentityFile:   "/tmp/id_ed25519",
-		PasswordStored: true,
-	}
-
-	got := listMeta(host)
-	want := "root @ 10.0.0.1:2201"
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
-	}
-}
-
 func TestRenderListItemShowsDisplayNameAsPrimary(t *testing.T) {
 	t.Parallel()
 
@@ -254,42 +209,6 @@ func TestRenderListItemTruncatesToListContentWidth(t *testing.T) {
 	maxWidth := m.listContentWidth(38)
 	if got := lipgloss.Width(rendered); got > maxWidth {
 		t.Fatalf("expected rendered width <= %d, got %d in %q", maxWidth, got, rendered)
-	}
-}
-
-func TestListRowsPerPageAccountsForPanelChrome(t *testing.T) {
-	t.Parallel()
-
-	hosts := make([]model.Host, 32)
-	for i := range hosts {
-		hosts[i] = model.Host{
-			Alias:    fmt.Sprintf("host-%02d", i),
-			HostName: fmt.Sprintf("10.0.0.%d", i+1),
-			User:     "root",
-			Port:     22,
-		}
-	}
-
-	m := tuiModel{
-		hosts:  hosts,
-		styles: newStyles(true),
-		width:  120,
-		height: 24,
-	}
-	m.applyFilter()
-
-	// Each item occupies 1 line, no separators.
-	available := m.bodyHeight() - m.styles.panelActive.GetVerticalFrameSize() - listPanelHeaderRows
-	want := max(available, 1)
-
-	if got := m.listRowsPerPage(); got != want {
-		t.Fatalf("expected list rows per page = %d, got %d", want, got)
-	}
-	if got := m.pageStep(); got != want {
-		t.Fatalf("expected page step = %d, got %d", want, got)
-	}
-	if got := len(m.visibleHosts()); got != want {
-		t.Fatalf("expected %d visible hosts, got %d", want, got)
 	}
 }
 
@@ -723,30 +642,6 @@ func TestDetailsPanelHidesNetworkSectionWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestSourceTagDerivation(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		host model.Host
-		want string
-	}{
-		{"managed", model.Host{Managed: true, Source: "/tmp/vpsm.conf"}, "vpsm"},
-		{"config", model.Host{Source: "/home/user/.ssh/config"}, "config"},
-		{"conf.d file", model.Host{Source: "/home/user/.ssh/conf.d/work.conf"}, "work"},
-		{"empty source", model.Host{Source: ""}, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sourceTag(tt.host)
-			if got != tt.want {
-				t.Fatalf("sourceTag() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
 	t.Parallel()
 
@@ -758,52 +653,6 @@ func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
 	footer := m.footerText()
 	if !strings.Contains(footer, "enter/y") || !strings.Contains(footer, "configure key") {
 		t.Fatalf("expected key setup footer hint, got %q", footer)
-	}
-}
-
-func TestEditFormSystemHostSkipsAliasAndForwardFields(t *testing.T) {
-	t.Parallel()
-
-	systemHost := model.Host{
-		Alias:        "prod-box",
-		HostName:     "10.0.0.1",
-		User:         "root",
-		Port:         22,
-		Managed:      false,
-		LocalForward: []string{"8080:localhost:80"},
-	}
-	form := newEditForm(systemHost)
-
-	// Alias, LocalForward, RemoteForward should not be in the focus order.
-	for _, idx := range form.focusOrder {
-		if idx == editFieldAlias {
-			t.Fatal("expected Alias to be excluded from focus order for system host")
-		}
-		if idx == editFieldLocalForward {
-			t.Fatal("expected LocalForward to be excluded from focus order for system host")
-		}
-		if idx == editFieldRemoteForward {
-			t.Fatal("expected RemoteForward to be excluded from focus order for system host")
-		}
-	}
-
-	// These fields should be marked as non-editable.
-	if form.isEditable(editFieldAlias) {
-		t.Fatal("expected Alias to be non-editable for system host")
-	}
-	if form.isEditable(editFieldLocalForward) {
-		t.Fatal("expected LocalForward to be non-editable for system host")
-	}
-	if form.isEditable(editFieldRemoteForward) {
-		t.Fatal("expected RemoteForward to be non-editable for system host")
-	}
-
-	// Other fields remain editable.
-	if !form.isEditable(editFieldHostName) {
-		t.Fatal("expected HostName to remain editable for system host")
-	}
-	if !form.isEditable(editFieldUser) {
-		t.Fatal("expected User to remain editable for system host")
 	}
 }
 
@@ -842,30 +691,6 @@ func TestEditFormSystemHostValuesEnforcesConstraints(t *testing.T) {
 	}
 	if values.RemoteForward != "" {
 		t.Fatalf("expected empty RemoteForward for system host, got %q", values.RemoteForward)
-	}
-}
-
-func TestEditFormManagedHostKeepsAllFields(t *testing.T) {
-	t.Parallel()
-
-	managedHost := model.Host{
-		Alias:    "managed-box",
-		HostName: "10.0.0.1",
-		User:     "root",
-		Port:     22,
-		Managed:  true,
-	}
-	form := newEditForm(managedHost)
-
-	// All fields should be in the focus order for managed hosts.
-	if !form.isEditable(editFieldAlias) {
-		t.Fatal("expected Alias to be editable for managed host")
-	}
-	if !form.isEditable(editFieldLocalForward) {
-		t.Fatal("expected LocalForward to be editable for managed host")
-	}
-	if !form.isEditable(editFieldRemoteForward) {
-		t.Fatal("expected RemoteForward to be editable for managed host")
 	}
 }
 

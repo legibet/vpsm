@@ -1196,18 +1196,6 @@ func listMeta(host model.Host) string {
 	return listTargetLabel(host)
 }
 
-func sourceTag(host model.Host) string {
-	if host.Source == "" {
-		return ""
-	}
-	base := filepath.Base(host.Source)
-	base = strings.TrimSuffix(base, ".conf")
-	if base == "" || base == "." {
-		return ""
-	}
-	return base
-}
-
 func sourceLabel(host model.Host) string {
 	if host.Managed {
 		return "vpsm managed"

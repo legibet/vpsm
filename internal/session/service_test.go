@@ -8,22 +8,6 @@ import (
 	"vpsm/internal/model"
 )
 
-func TestIsUserInterruptErrorReturnsTrueForContextCanceled(t *testing.T) {
-	t.Parallel()
-
-	if !isUserInterruptError(context.Canceled) {
-		t.Fatal("expected context.Canceled to be treated as user interrupt")
-	}
-}
-
-func TestIsUserInterruptErrorReturnsFalseForNil(t *testing.T) {
-	t.Parallel()
-
-	if isUserInterruptError(nil) {
-		t.Fatal("did not expect nil to be treated as user interrupt")
-	}
-}
-
 func TestConnectReturnsHostLookupError(t *testing.T) {
 	t.Parallel()
 

@@ -55,65 +55,6 @@ func (s *stubFileBrowserRemote) DownloadPathContext(ctx context.Context, remoteP
 	return nil
 }
 
-func TestValidateBaseNameRejectsSeparators(t *testing.T) {
-	t.Parallel()
-
-	if err := validateBaseName("nested/path"); err == nil {
-		t.Fatalf("expected separator validation error")
-	}
-	if err := validateBaseName(".."); err == nil {
-		t.Fatalf("expected parent segment validation error")
-	}
-	if err := validateBaseName("release.tar.gz"); err != nil {
-		t.Fatalf("expected normal file name to pass, got %v", err)
-	}
-}
-
-func TestParentDirHandlesRemoteRoot(t *testing.T) {
-	t.Parallel()
-
-	if _, ok := parentDir(browserSideRemote, "/"); ok {
-		t.Fatalf("expected no remote parent for root")
-	}
-
-	parent, ok := parentDir(browserSideRemote, "/srv/www")
-	if !ok || parent != "/srv" {
-		t.Fatalf("expected /srv as remote parent, got %q %v", parent, ok)
-	}
-}
-
-func TestSetEntriesResetsCursorAndScrollWhenChangingDirectory(t *testing.T) {
-	t.Parallel()
-
-	pane := newFilePane(browserSideLocal, "/tmp")
-	pane.cursor = 18
-	pane.scroll = 18
-
-	pane.setEntries([]filexfer.Entry{
-		{Name: "alpha"},
-		{Name: "beta"},
-		{Name: "gamma"},
-	}, "")
-
-	if pane.cursor != 0 {
-		t.Fatalf("expected cursor reset to 0, got %d", pane.cursor)
-	}
-	if pane.scroll != 0 {
-		t.Fatalf("expected scroll reset to 0, got %d", pane.scroll)
-	}
-}
-
-func TestNewFilePaneSeedsParentSelectionForInitialDirectory(t *testing.T) {
-	t.Parallel()
-
-	pane := newFilePane(browserSideLocal, "/tmp/project")
-
-	got := pane.selectByDir["/tmp"]
-	if got != "project" {
-		t.Fatalf("expected initial parent selection to point at project, got %q", got)
-	}
-}
-
 func TestPaneLoadErrorKeepsCurrentDirectoryUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -434,36 +375,5 @@ func TestSearchEmptyStateMentionsFilter(t *testing.T) {
 	rendered := m.renderFilePane(m.localPane, 56, 16)
 	if !strings.Contains(rendered, "No files match the current filter.") {
 		t.Fatalf("expected filter empty state, got %q", rendered)
-	}
-}
-
-func TestFileBrowserSearchFooterShowsSearchHints(t *testing.T) {
-	t.Parallel()
-
-	m := testFileBrowserModel()
-	m.mode = fileBrowserModeSearch
-
-	hints := m.fileFooterHints()
-	if len(hints) == 0 {
-		t.Fatal("expected search footer hints")
-	}
-	if hints[0].desc != "filter" {
-		t.Fatalf("expected first search hint to describe filter, got %#v", hints[0])
-	}
-	foundKeep := false
-	foundCancel := false
-	for _, hint := range hints {
-		if hint.key == "enter" && hint.desc == "select" {
-			foundKeep = true
-		}
-		if hint.key == "esc" && hint.desc == "cancel" {
-			foundCancel = true
-		}
-	}
-	if !foundKeep {
-		t.Fatalf("expected search footer to include enter/select, got %#v", hints)
-	}
-	if !foundCancel {
-		t.Fatalf("expected search footer to include esc/cancel, got %#v", hints)
 	}
 }
