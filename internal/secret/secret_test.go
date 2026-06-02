@@ -2,6 +2,7 @@ package secret
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -65,6 +66,13 @@ func TestAvailableReturnsFalseWithBrokenKeyring(t *testing.T) {
 	if Available() {
 		t.Fatal("expected keyring to be unavailable with error backend")
 	}
+	err := AvailableError()
+	if !errors.Is(err, ErrKeyringUnavailable) {
+		t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "dbus: connection refused") {
+		t.Fatalf("expected dbus error in message, got %v", err)
+	}
 }
 
 func TestSetSecretFailsWhenKeyringUnavailable(t *testing.T) {
@@ -85,7 +93,20 @@ func TestSetSecretFailsWhenKeyringUnavailable(t *testing.T) {
 			if !errors.Is(err, ErrKeyringUnavailable) {
 				t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
 			}
+			if !strings.Contains(err.Error(), "dbus: connection refused") {
+				t.Fatalf("expected underlying error in message, got %v", err)
+			}
 		})
+	}
+}
+
+func TestKeyringUnavailableErrorExplainsLockedLoginKeyring(t *testing.T) {
+	err := keyringUnavailableError(errors.New("failed to unlock correct collection '/org/freedesktop/secrets/collection/login'"))
+	if !errors.Is(err, ErrKeyringUnavailable) {
+		t.Fatalf("expected ErrKeyringUnavailable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "login keyring is locked") {
+		t.Fatalf("expected locked login keyring hint, got %v", err)
 	}
 }
 

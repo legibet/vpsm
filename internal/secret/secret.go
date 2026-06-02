@@ -13,11 +13,11 @@ import (
 
 // ErrKeyringUnavailable is returned when the system keyring backend cannot be
 // reached (e.g. no D-Bus Secret Service on a headless Linux server).
-var ErrKeyringUnavailable = errors.New("keyring is not available; on Linux, install gnome-keyring or kwallet")
+var ErrKeyringUnavailable = errors.New("keyring is not available; on Linux, start and unlock a Secret Service keyring such as gnome-keyring")
 
 var (
 	availableOnce sync.Once
-	available     bool
+	availableErr  error
 )
 
 type keychainCredential struct {
@@ -68,15 +68,21 @@ func GetPassphraseIfExists(alias string) (string, bool, error) {
 // Available reports whether the system keyring is functional. The result is
 // probed once and cached for the lifetime of the process.
 func Available() bool {
+	return AvailableError() == nil
+}
+
+// AvailableError reports why the system keyring is unavailable. The result is
+// probed once and cached for the lifetime of the process.
+func AvailableError() error {
 	availableOnce.Do(func() {
-		available = probeKeyring()
+		availableErr = keyringUnavailableError(probeKeyring())
 	})
-	return available
+	return availableErr
 }
 
 func (c keychainCredential) set(alias, value string) error {
-	if !Available() {
-		return ErrKeyringUnavailable
+	if err := AvailableError(); err != nil {
+		return err
 	}
 	alias = normalizeAlias(alias)
 	if alias == "" {
@@ -145,15 +151,29 @@ func (c keychainCredential) has(alias string) (bool, error) {
 	return ok, err
 }
 
-func probeKeyring() bool {
+func probeKeyring() error {
 	_, err := keyring.Get(passwordCredential().service, "__vpsm_probe__")
-	return err == nil || errors.Is(err, keyring.ErrNotFound)
+	if err == nil || errors.Is(err, keyring.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func keyringUnavailableError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if strings.Contains(message, "failed to unlock correct collection") {
+		message += "; the login keyring is locked or the unlock prompt cannot be shown in this session"
+	}
+	return fmt.Errorf("%w: %s", ErrKeyringUnavailable, message)
 }
 
 // resetAvailable resets cached state so tests can re-probe.
 func resetAvailable() {
 	availableOnce = sync.Once{}
-	available = false
+	availableErr = nil
 }
 
 func normalizeAlias(alias string) string {

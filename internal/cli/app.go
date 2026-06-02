@@ -386,8 +386,8 @@ func (a App) runClearPassphrase(alias string) error {
 }
 
 func (a App) runSetSecret(alias string, args []string, commandName, label string, prompt func(string) (string, error), set func(string, string) error) error {
-	if !secret.Available() {
-		return secret.ErrKeyringUnavailable
+	if err := secret.AvailableError(); err != nil {
+		return err
 	}
 	alias = hosts.NormalizeAlias(alias)
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
