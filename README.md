@@ -92,9 +92,12 @@ In the file browser:
 - `j` / `k`: move
 - `/`: search current directory
 - `t`: transfer selected file or directory to the other pane
-- `m`: create directory
-- `R`: rename
-- `x`: delete
+- `a`: create directory
+- `r`: rename
+- `d`: delete
+- `.`: show or hide hidden files
+- `R`: refresh
+- `q`: quit
 
 ## How Data Is Stored
 
@@ -112,7 +115,6 @@ In the file browser:
 - LocalForward and RemoteForward are read-only for system-host overlays because SSH accumulates them across matching blocks.
 - Press `i` in the TUI to generate or reuse an SSH key and append the public key to remote `authorized_keys` when missing.
 - File browser mode uses `ssh -s sftp`; it needs stored credentials or non-interactive key auth such as `ssh-agent`.
-- Non-ASCII aliases fall back to direct `user@host` SSH targets.
 
 ## Platforms
 
