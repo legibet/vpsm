@@ -15,11 +15,9 @@ import (
 )
 
 type KeySetupPlan struct {
-	IdentityFile          string
-	ResolvedIdentityFile  string
-	PublicKeyFile         string
-	ResolvedPublicKeyFile string
-	GenerateKeyPair       bool
+	IdentityFile         string
+	ResolvedIdentityFile string
+	GenerateKeyPair      bool
 }
 
 // PlanKeySetup decides which key path vpsm should use for a host and whether a
@@ -49,11 +47,9 @@ func PlanKeySetup(alias, identityFile string) (KeySetupPlan, error) {
 	}
 
 	return KeySetupPlan{
-		IdentityFile:          identityFile,
-		ResolvedIdentityFile:  resolvedIdentityFile,
-		PublicKeyFile:         identityFile + ".pub",
-		ResolvedPublicKeyFile: resolvedIdentityFile + ".pub",
-		GenerateKeyPair:       !exists,
+		IdentityFile:         identityFile,
+		ResolvedIdentityFile: resolvedIdentityFile,
+		GenerateKeyPair:      !exists,
 	}, nil
 }
 
@@ -91,17 +87,18 @@ func EnsureKeyPairContext(ctx context.Context, plan KeySetupPlan, comment string
 
 // ReadPublicKey loads the public key that should be installed on the remote host.
 func ReadPublicKey(plan KeySetupPlan) (string, error) {
-	content, err := os.ReadFile(plan.ResolvedPublicKeyFile)
+	publicKeyFile := plan.IdentityFile + ".pub"
+	content, err := os.ReadFile(plan.ResolvedIdentityFile + ".pub")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("public key %q does not exist", plan.PublicKeyFile)
+			return "", fmt.Errorf("public key %q does not exist", publicKeyFile)
 		}
-		return "", fmt.Errorf("read public key %q: %w", plan.PublicKeyFile, err)
+		return "", fmt.Errorf("read public key %q: %w", publicKeyFile, err)
 	}
 
 	publicKey := strings.TrimSpace(string(content))
 	if publicKey == "" {
-		return "", fmt.Errorf("public key %q is empty", plan.PublicKeyFile)
+		return "", fmt.Errorf("public key %q is empty", publicKeyFile)
 	}
 
 	return publicKey, nil
@@ -115,7 +112,7 @@ func InstallPublicKeyWithCredentials(ctx context.Context, host model.Host, creds
 		return errors.New("public key is required")
 	}
 
-	extraArgs := []string{installAuthorizedKeyScript()}
+	extraArgs := []string{installAuthorizedKeyScript}
 	cmd, err := buildSSHCommandContext(ctx, host, creds, extraArgs)
 	if err != nil {
 		return err
@@ -206,6 +203,4 @@ func pathExists(path string) (bool, error) {
 	return false, err
 }
 
-func installAuthorizedKeyScript() string {
-	return `sh -c 'set -eu; ssh_dir="$HOME/.ssh"; auth_file="$ssh_dir/authorized_keys"; umask 077; mkdir -p "$ssh_dir"; chmod 700 "$ssh_dir"; touch "$auth_file"; chmod 600 "$auth_file"; IFS= read -r key; grep -qxF "$key" "$auth_file" || printf "%s\n" "$key" >> "$auth_file"'`
-}
+const installAuthorizedKeyScript = `sh -c 'set -eu; ssh_dir="$HOME/.ssh"; auth_file="$ssh_dir/authorized_keys"; umask 077; mkdir -p "$ssh_dir"; chmod 700 "$ssh_dir"; touch "$auth_file"; chmod 600 "$auth_file"; IFS= read -r key; grep -qxF "$key" "$auth_file" || printf "%s\n" "$key" >> "$auth_file"'`

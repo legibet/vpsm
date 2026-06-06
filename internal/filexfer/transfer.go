@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -363,10 +362,7 @@ func (f *RemoteFS) runTransfer(ctx context.Context, direction string, plan trans
 		}
 
 		if !item.dir {
-			state.progress.CurrentPath = item.localPath
-			if direction == "download" {
-				state.progress.CurrentPath = item.remotePath
-			}
+			state.progress.CurrentPath = pathLabel(direction, item)
 			state.progress.CurrentBytes = 0
 			state.progress.CurrentTotal = item.size
 			state.emitProgress()
@@ -441,7 +437,7 @@ func (s *transferState) emitProgress() {
 }
 
 func pathLabel(direction string, item transferItem) string {
-	if strings.EqualFold(direction, "download") {
+	if direction == "download" {
 		return item.remotePath
 	}
 	return item.localPath
