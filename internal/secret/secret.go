@@ -49,10 +49,6 @@ func SetPassphrase(alias, passphrase string) error {
 	return passphraseCredential().set(alias, passphrase)
 }
 
-func GetPassphrase(alias string) (string, error) {
-	return passphraseCredential().get(alias)
-}
-
 func DeletePassphrase(alias string) error {
 	return passphraseCredential().delete(alias)
 }
