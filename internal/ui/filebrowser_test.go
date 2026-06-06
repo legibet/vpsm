@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"errors"
-	"path"
 	"strings"
 	"testing"
 
@@ -41,10 +40,6 @@ func (s *stubFileBrowserRemote) Rename(oldPath, newPath string) error {
 
 func (s *stubFileBrowserRemote) Remove(fullPath string) error {
 	return nil
-}
-
-func (s *stubFileBrowserRemote) RemoteJoin(parts ...string) string {
-	return path.Join(parts...)
 }
 
 func (s *stubFileBrowserRemote) UploadPathContext(ctx context.Context, localPath, remotePath string, progress func(filexfer.TransferProgress)) error {

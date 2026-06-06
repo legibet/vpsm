@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -55,11 +55,7 @@ type parsedHost struct {
 	overlay       bool
 }
 
-func ParsePath(path string) ([]ImportedHost, error) {
-	return ParsePathExcluding(path)
-}
-
-func ParsePathExcluding(path string, excludePaths ...string) ([]ImportedHost, error) {
+func ParsePath(path string, excludePaths ...string) ([]ImportedHost, error) {
 	cleanPath, err := expandHome(path)
 	if err != nil {
 		return nil, err
@@ -85,8 +81,8 @@ func ParsePathExcluding(path string, excludePaths ...string) ([]ImportedHost, er
 		result = append(result, host.export())
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(result[i].Alias) < strings.ToLower(result[j].Alias)
+	slices.SortFunc(result, func(a, b ImportedHost) int {
+		return strings.Compare(strings.ToLower(a.Alias), strings.ToLower(b.Alias))
 	})
 
 	return result, nil
@@ -98,7 +94,7 @@ func LookupPathExcluding(path, alias string, excludePaths ...string) (ImportedHo
 		return ImportedHost{}, false, nil
 	}
 
-	hosts, err := ParsePathExcluding(path, excludePaths...)
+	hosts, err := ParsePath(path, excludePaths...)
 	if err != nil {
 		return ImportedHost{}, false, err
 	}
@@ -365,7 +361,7 @@ func resolveIncludes(baseFile string, includes []string) ([]string, error) {
 		resolved = append(resolved, matches...)
 	}
 
-	sort.Strings(resolved)
+	slices.Sort(resolved)
 	return resolved, nil
 }
 

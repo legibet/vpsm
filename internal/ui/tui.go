@@ -319,12 +319,12 @@ func (m tuiModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.filtered) - 1
 		}
 	case "pgup":
-		m.cursor -= m.pageStep()
+		m.cursor -= m.listRowsPerPage()
 		if m.cursor < 0 {
 			m.cursor = 0
 		}
 	case "pgdown":
-		m.cursor += m.pageStep()
+		m.cursor += m.listRowsPerPage()
 		if m.cursor >= len(m.filtered) {
 			m.cursor = len(m.filtered) - 1
 		}
@@ -530,10 +530,6 @@ func (m *tuiModel) setStatus(text string, kind statusKind) {
 	m.statusType = kind
 }
 
-func (m tuiModel) pageStep() int {
-	return m.listRowsPerPage()
-}
-
 func refreshHostsCmd(refresh func() ([]HostItem, string, error), selectAlias string) tea.Cmd {
 	return func() tea.Msg {
 		items, status, err := refresh()
@@ -541,26 +537,28 @@ func refreshHostsCmd(refresh func() ([]HostItem, string, error), selectAlias str
 	}
 }
 
+// reloadMsg refreshes the host list (when refresh is set) and returns a
+// hostsLoadedMsg whose status combines base with any status from the refresh.
+func reloadMsg(refresh func() ([]HostItem, string, error), base, selectAlias string) tea.Msg {
+	if refresh == nil {
+		return hostsLoadedMsg{status: base, selectAlias: selectAlias}
+	}
+	items, refreshStatus, err := refresh()
+	if err != nil {
+		return hostsLoadedMsg{err: err}
+	}
+	if strings.TrimSpace(refreshStatus) != "" {
+		base += "; " + refreshStatus
+	}
+	return hostsLoadedMsg{hosts: items, status: base, selectAlias: selectAlias}
+}
+
 func toggleFavoriteCmd(alias string, toggle func(string) error, refresh func() ([]HostItem, string, error)) tea.Cmd {
 	return func() tea.Msg {
 		if err := toggle(alias); err != nil {
 			return hostsLoadedMsg{err: err}
 		}
-
-		if refresh == nil {
-			return hostsLoadedMsg{status: "Favorite toggled for " + alias, selectAlias: alias}
-		}
-
-		items, status, err := refresh()
-		if err != nil {
-			return hostsLoadedMsg{err: err}
-		}
-		if strings.TrimSpace(status) == "" {
-			status = "Favorite toggled for " + alias
-		} else {
-			status = "Favorite toggled for " + alias + "; " + status
-		}
-		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
+		return reloadMsg(refresh, "Favorite toggled for "+alias, alias)
 	}
 }
 
@@ -572,20 +570,7 @@ func createHostCmd(input CreateHostInput, create func(CreateHostInput) error, re
 		if err := create(input); err != nil {
 			return hostsLoadedMsg{err: err}
 		}
-
-		status := "Added " + input.Alias
-		if refresh == nil {
-			return hostsLoadedMsg{status: status, selectAlias: input.Alias}
-		}
-
-		items, refreshStatus, err := refresh()
-		if err != nil {
-			return hostsLoadedMsg{err: err}
-		}
-		if strings.TrimSpace(refreshStatus) != "" {
-			status = status + "; " + refreshStatus
-		}
-		return hostsLoadedMsg{hosts: items, status: status, selectAlias: input.Alias}
+		return reloadMsg(refresh, "Added "+input.Alias, input.Alias)
 	}
 }
 
@@ -718,7 +703,7 @@ func (m tuiModel) renderListItem(host model.Host, width int) string {
 	left := gutter + starPart + primaryStyle.Render(primary)
 
 	// Right side: connection meta.
-	meta := listMeta(host)
+	meta := listTargetLabel(host)
 	right := metaStyle.Render(meta)
 
 	gap := max(contentWidth-lipgloss.Width(left)-lipgloss.Width(right), 2)
@@ -751,11 +736,9 @@ func (m tuiModel) renderDetailsPanel(width, height int) string {
 		rows = append(rows, m.styles.detailName.Render(selected.Alias))
 	}
 
-	sourceLabel := sourceLabel(selected)
-
 	rows = append(rows,
 		"",
-		m.detailRow("Source", sourceLabel),
+		m.detailRow("Source", sourceLabel(selected)),
 		m.detailRow("Target", selected.TargetName()),
 		m.detailRow("User", firstNonEmpty(selected.User, "-")),
 		m.detailRow("Port", fmt.Sprintf("%d", port)),
@@ -1192,10 +1175,6 @@ func scrollFormContent(body string, focusLine, availableHeight int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
-func listMeta(host model.Host) string {
-	return listTargetLabel(host)
-}
-
 func sourceLabel(host model.Host) string {
 	if host.Managed {
 		return "vpsm managed"
@@ -1250,20 +1229,7 @@ func updateHostCmd(input UpdateHostInput, update func(UpdateHostInput) error, re
 		if newAlias := strings.TrimSpace(input.NewAlias); newAlias != "" && newAlias != input.Alias {
 			effectiveAlias = newAlias
 		}
-
-		status := "Updated " + effectiveAlias
-		if refresh == nil {
-			return hostsLoadedMsg{status: status, selectAlias: effectiveAlias}
-		}
-
-		items, refreshStatus, err := refresh()
-		if err != nil {
-			return hostsLoadedMsg{err: err}
-		}
-		if strings.TrimSpace(refreshStatus) != "" {
-			status = status + "; " + refreshStatus
-		}
-		return hostsLoadedMsg{hosts: items, status: status, selectAlias: effectiveAlias}
+		return reloadMsg(refresh, "Updated "+effectiveAlias, effectiveAlias)
 	}
 }
 
@@ -1275,20 +1241,7 @@ func deleteHostCmd(alias string, remove func(string) error, refresh func() ([]Ho
 		if err := remove(alias); err != nil {
 			return hostsLoadedMsg{err: err}
 		}
-
-		status := "Deleted " + alias
-		if refresh == nil {
-			return hostsLoadedMsg{status: status}
-		}
-
-		items, refreshStatus, err := refresh()
-		if err != nil {
-			return hostsLoadedMsg{err: err}
-		}
-		if strings.TrimSpace(refreshStatus) != "" {
-			status = status + "; " + refreshStatus
-		}
-		return hostsLoadedMsg{hosts: items, status: status}
+		return reloadMsg(refresh, "Deleted "+alias, "")
 	}
 }
 
@@ -1308,20 +1261,7 @@ func setupHostKeyCmd(alias string, setup func(string, io.Reader, io.Writer, io.W
 		if err != nil {
 			return hostsLoadedMsg{err: err}
 		}
-
-		status := "Configured SSH key for " + alias
-		if refresh == nil {
-			return hostsLoadedMsg{status: status, selectAlias: alias}
-		}
-
-		items, refreshStatus, refreshErr := refresh()
-		if refreshErr != nil {
-			return hostsLoadedMsg{err: refreshErr}
-		}
-		if strings.TrimSpace(refreshStatus) != "" {
-			status = status + "; " + refreshStatus
-		}
-		return hostsLoadedMsg{hosts: items, status: status, selectAlias: alias}
+		return reloadMsg(refresh, "Configured SSH key for "+alias, alias)
 	})
 }
 

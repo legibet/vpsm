@@ -25,7 +25,6 @@ type FileBrowserRemote interface {
 	Mkdir(fullPath string) error
 	Rename(oldPath, newPath string) error
 	Remove(fullPath string) error
-	RemoteJoin(parts ...string) string
 	UploadPathContext(ctx context.Context, localPath, remotePath string, progress func(filexfer.TransferProgress)) error
 	DownloadPathContext(ctx context.Context, remotePath, localPath string, progress func(filexfer.TransferProgress)) error
 }
@@ -421,10 +420,7 @@ func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = fileBrowserModeBrowse
 		if errors.Is(err, context.Canceled) {
 			m.setStatus("Transfer canceled", statusInfo)
-			return m, tea.Batch(
-				loadPaneCmd(m.ctx, browserSideLocal, m.localPane.cwd, m.showHidden, m.remote, m.localPane.currentName()),
-				loadPaneCmd(m.ctx, browserSideRemote, m.remotePane.cwd, m.showHidden, m.remote, m.remotePane.currentName()),
-			)
+			return m, m.reloadBothPanesCmd()
 		}
 		if err != nil {
 			m.setStatus(err.Error(), statusError)
@@ -545,16 +541,10 @@ func (m fileBrowserModel) updateBrowseMode(msg tea.KeyPressMsg) (tea.Model, tea.
 			label = "Hidden files hidden"
 		}
 		m.setStatus(label, statusInfo)
-		return m, tea.Batch(
-			loadPaneCmd(m.ctx, browserSideLocal, m.localPane.cwd, m.showHidden, m.remote, m.localPane.currentName()),
-			loadPaneCmd(m.ctx, browserSideRemote, m.remotePane.cwd, m.showHidden, m.remote, m.remotePane.currentName()),
-		)
+		return m, m.reloadBothPanesCmd()
 	case "R":
 		m.setStatus("Refreshing directories...", statusInfo)
-		return m, tea.Batch(
-			loadPaneCmd(m.ctx, browserSideLocal, m.localPane.cwd, m.showHidden, m.remote, m.localPane.currentName()),
-			loadPaneCmd(m.ctx, browserSideRemote, m.remotePane.cwd, m.showHidden, m.remote, m.remotePane.currentName()),
-		)
+		return m, m.reloadBothPanesCmd()
 	default:
 		return m, nil
 	}
@@ -618,13 +608,13 @@ func (m fileBrowserModel) updatePromptMode(msg tea.KeyPressMsg) (tea.Model, tea.
 		side := m.prompt.side
 		switch m.prompt.kind {
 		case promptKindMkdir:
-			fullPath := joinPath(side, m.pane(side).cwd, value, m.remote)
+			fullPath := joinPath(side, m.pane(side).cwd, value)
 			m.mode = fileBrowserModeBrowse
 			m.prompt = promptState{}
 			return m, mkdirEntryCmd(side, fullPath, m.remote)
 		case promptKindRename:
 			oldPath := m.prompt.source.Path
-			targetPath := joinPath(side, dirPath(side, oldPath), value, m.remote)
+			targetPath := joinPath(side, dirPath(side, oldPath), value)
 			m.mode = fileBrowserModeBrowse
 			m.prompt = promptState{}
 			return m, renameEntryCmd(side, oldPath, targetPath, m.remote)
@@ -702,6 +692,14 @@ func (m fileBrowserModel) inactiveSide() browserSide {
 func (m *fileBrowserModel) setStatus(text string, kind statusKind) {
 	m.status = text
 	m.statusType = kind
+}
+
+// reloadBothPanesCmd reloads both panes, keeping each pane's current selection.
+func (m fileBrowserModel) reloadBothPanesCmd() tea.Cmd {
+	return tea.Batch(
+		loadPaneCmd(m.ctx, browserSideLocal, m.localPane.cwd, m.showHidden, m.remote, m.localPane.currentName()),
+		loadPaneCmd(m.ctx, browserSideRemote, m.remotePane.cwd, m.showHidden, m.remote, m.remotePane.currentName()),
+	)
 }
 
 func (m fileBrowserModel) navigateInto() (tea.Model, tea.Cmd) {
@@ -791,7 +789,7 @@ func (m fileBrowserModel) prepareTransfer() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	targetSide := m.inactiveSide()
-	targetPath := joinPath(targetSide, m.pane(targetSide).cwd, source.Name, m.remote)
+	targetPath := joinPath(targetSide, m.pane(targetSide).cwd, source.Name)
 	return m, checkTransferCmd(targetSide, source, targetPath, m.remote)
 }
 
@@ -930,9 +928,9 @@ func validateBaseName(value string) error {
 	return nil
 }
 
-func joinPath(side browserSide, dir, name string, remote FileBrowserRemote) string {
+func joinPath(side browserSide, dir, name string) string {
 	if side == browserSideRemote {
-		return remote.RemoteJoin(dir, name)
+		return path.Join(dir, name)
 	}
 	return filepath.Join(dir, name)
 }
@@ -1182,8 +1180,9 @@ func (m fileBrowserModel) renderFileStatusBar(width int) string {
 }
 
 func (m fileBrowserModel) renderFileFooterBar(width int) string {
-	parts := make([]string, 0, len(m.fileFooterHints()))
-	for _, hint := range m.fileFooterHints() {
+	hints := m.fileFooterHints()
+	parts := make([]string, 0, len(hints))
+	for _, hint := range hints {
 		parts = append(parts, m.styles.footerKey.Render(hint.key)+" "+m.styles.muted.Render(hint.desc))
 	}
 	return m.styles.footerBar.Width(width).Render(strings.Join(parts, "  "))

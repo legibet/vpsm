@@ -173,10 +173,6 @@ func (f *RemoteFS) Remove(fullPath string) error {
 	return nil
 }
 
-func (f *RemoteFS) RemoteJoin(parts ...string) string {
-	return path.Join(parts...)
-}
-
 func (f *RemoteFS) wrapCommandError(action string, err error) error {
 	message := strings.TrimSpace(f.stderr.String())
 	if message == "" {
@@ -212,8 +208,5 @@ func (f *RemoteFS) clientWriter(path string, mode os.FileMode) (io.WriteCloser, 
 }
 
 func isRemoteNotExist(err error) bool {
-	if err == nil {
-		return false
-	}
 	return errors.Is(err, os.ErrNotExist)
 }

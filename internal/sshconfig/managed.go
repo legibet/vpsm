@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -189,16 +189,10 @@ func DeleteManagedHost(managedConfigPath, alias string) error {
 		return err
 	}
 
-	filtered := hosts[:0]
-	removed := false
-	for _, host := range hosts {
-		if host.Alias == alias {
-			removed = true
-			continue
-		}
-		filtered = append(filtered, host)
-	}
-	if !removed {
+	filtered := slices.DeleteFunc(hosts, func(host ImportedHost) bool {
+		return host.Alias == alias
+	})
+	if len(filtered) == len(hosts) {
 		return fmt.Errorf("host %q is not managed by vpsm", alias)
 	}
 
@@ -233,8 +227,8 @@ func normalizeHost(managedConfigPath string, host ImportedHost) ImportedHost {
 }
 
 func writeManagedHosts(managedConfigPath string, hosts []ImportedHost) error {
-	sort.Slice(hosts, func(i, j int) bool {
-		return strings.ToLower(hosts[i].Alias) < strings.ToLower(hosts[j].Alias)
+	slices.SortFunc(hosts, func(a, b ImportedHost) int {
+		return strings.Compare(strings.ToLower(a.Alias), strings.ToLower(b.Alias))
 	})
 
 	var b strings.Builder

@@ -463,9 +463,6 @@ func (a App) runFavorite(alias, mode string) error {
 	if _, err := a.inventory.Get(a.ctx, alias); err != nil {
 		return err
 	}
-	if err := a.store.EnsureHost(a.ctx, alias); err != nil {
-		return err
-	}
 
 	var err error
 	switch strings.ToLower(strings.TrimSpace(mode)) {
