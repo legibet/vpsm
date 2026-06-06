@@ -264,7 +264,9 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 
 	if err := applyUpdatedSecret(s.passphrases, alias, input.Passphrase, input.ClearPassphrase); err != nil {
 		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
+		if passwordTouched {
+			rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
+		}
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
@@ -498,7 +500,9 @@ func (s HostService) UpdateSystemHostOverlay(ctx context.Context, _ model.Host, 
 
 	if err := applyUpdatedSecret(s.passphrases, alias, input.Passphrase, input.ClearPassphrase); err != nil {
 		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
+		if passwordTouched {
+			rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
+		}
 		if overlayTouched {
 			rollbackErr = errors.Join(rollbackErr, s.restoreOverlay(alias, overlayState))
 		}

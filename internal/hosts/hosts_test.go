@@ -354,6 +354,55 @@ func TestUpdateManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 	}
 }
 
+func TestUpdateManagedHostPassphraseFailurePreservesUntouchedPassword(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:    "prod-1",
+		HostName: "203.0.113.10",
+		User:     "root",
+	}
+	passwords := newFakeSecretStore()
+	passwords.values["prod-1"] = "stored-password"
+	passphrases := newFakeSecretStore()
+	passphrases.failSetOnce = true
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		passphrases:  passphrases,
+		metadata:     newFakeMetadataStore(),
+	}
+
+	err := svc.UpdateManagedHost(ctx, UpdateManagedHostInput{
+		Alias:      "prod-1",
+		HostName:   "203.0.113.11",
+		User:       "ubuntu",
+		Passphrase: "new-passphrase",
+	})
+	if err == nil {
+		t.Fatal("expected passphrase write error")
+	}
+
+	host, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get managed host: %v", err)
+	}
+	if !ok || host.HostName != "203.0.113.10" || host.User != "root" {
+		t.Fatalf("expected original host state, got %+v", host)
+	}
+
+	password, ok, err := passwords.GetIfExists("prod-1")
+	if err != nil {
+		t.Fatalf("get password: %v", err)
+	}
+	if !ok || password != "stored-password" {
+		t.Fatalf("expected untouched password to remain, got %q", password)
+	}
+}
+
 func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
 	t.Parallel()
 
@@ -529,6 +578,72 @@ func TestUpdateSystemHostOverlayRestoresOverlayWhenSecretWriteFails(t *testing.T
 	}
 	if !ok || password != "old-secret" {
 		t.Fatalf("expected original password to remain, got %q", password)
+	}
+}
+
+func TestUpdateSystemHostOverlayPassphraseFailurePreservesUntouchedPassword(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	managed := newFakeManagedHostStore()
+	managed.hosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:        "prod-1",
+		User:         "ubuntu",
+		IdentityFile: "~/.ssh/id_prod",
+		Overlay:      true,
+	}
+	managed.systemHosts["prod-1"] = sshconfig.ImportedHost{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "root",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_root",
+	}
+	passwords := newFakeSecretStore()
+	passwords.values["prod-1"] = "stored-password"
+	passphrases := newFakeSecretStore()
+	passphrases.failSetOnce = true
+
+	svc := HostService{
+		managedHosts: managed,
+		passwords:    passwords,
+		passphrases:  passphrases,
+		metadata:     newFakeMetadataStore(),
+	}
+
+	err := svc.UpdateSystemHostOverlay(ctx, model.Host{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "ubuntu",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_prod",
+		HasOverride:  true,
+	}, UpdateManagedHostInput{
+		Alias:        "prod-1",
+		HostName:     "203.0.113.10",
+		User:         "deploy",
+		Port:         22,
+		IdentityFile: "~/.ssh/id_prod",
+		Passphrase:   "new-passphrase",
+	})
+	if err == nil {
+		t.Fatal("expected passphrase write error")
+	}
+
+	overlay, ok, err := managed.Get("prod-1")
+	if err != nil {
+		t.Fatalf("get overlay: %v", err)
+	}
+	if !ok || !overlay.Overlay || overlay.User != "ubuntu" || overlay.IdentityFile != "~/.ssh/id_prod" {
+		t.Fatalf("expected original overlay to be restored, got %+v", overlay)
+	}
+
+	password, ok, err := passwords.GetIfExists("prod-1")
+	if err != nil {
+		t.Fatalf("get password: %v", err)
+	}
+	if !ok || password != "stored-password" {
+		t.Fatalf("expected untouched password to remain, got %q", password)
 	}
 }
 
