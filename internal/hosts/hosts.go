@@ -26,16 +26,14 @@ type managedHostStore interface {
 	HasAliasConflict(alias string) (bool, error)
 }
 
-type passwordStore interface {
-	GetPasswordIfExists(alias string) (string, bool, error)
-	SetPassword(alias, password string) error
-	DeletePassword(alias string) error
-}
-
-type passphraseStore interface {
-	GetPassphraseIfExists(alias string) (string, bool, error)
-	SetPassphrase(alias, passphrase string) error
-	DeletePassphrase(alias string) error
+// secretStore is the keychain mechanics shared by passwords and passphrases:
+// one string secret stored per host alias, with identical CRUD and rollback
+// behavior. Password (server login) and passphrase (private-key unlock) are
+// distinct secrets backed by separate instances of this store, not one secret.
+type secretStore interface {
+	GetIfExists(alias string) (string, bool, error)
+	Set(alias, value string) error
+	Delete(alias string) error
 }
 
 type metadataStore interface {
@@ -49,8 +47,8 @@ type metadataStore interface {
 // HostService coordinates managed-host workflows across SSH config, keychain, and metadata.
 type HostService struct {
 	managedHosts managedHostStore
-	passwords    passwordStore
-	passphrases  passphraseStore
+	passwords    secretStore
+	passphrases  secretStore
 	metadata     metadataStore
 	keySetup     keySetupRunner
 }
@@ -109,12 +107,8 @@ type managedHostSnapshot struct {
 	ok   bool
 }
 
-type passwordSnapshot struct {
-	value string
-	ok    bool
-}
-
-type passphraseSnapshot struct {
+// secretSnapshot captures a secret's value and presence for rollback.
+type secretSnapshot struct {
 	value string
 	ok    bool
 }
@@ -137,11 +131,11 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		return err
 	}
 
-	passwordState, err := s.loadPasswordSnapshot(alias)
+	passwordState, err := loadSecretSnapshot(s.passwords, alias)
 	if err != nil {
 		return err
 	}
-	passphraseState, err := s.loadPassphraseSnapshot(alias)
+	passphraseState, err := loadSecretSnapshot(s.passphrases, alias)
 	if err != nil {
 		return err
 	}
@@ -171,31 +165,31 @@ func (s HostService) AddManagedHost(ctx context.Context, input AddManagedHostInp
 		return err
 	}
 
-	if err := s.applyAddPassword(alias, input.Password); err != nil {
-		rollbackErr := s.restorePassword(alias, passwordState)
+	if err := applyAddSecret(s.passwords, alias, input.Password); err != nil {
+		rollbackErr := restoreSecret(s.passwords, alias, passwordState)
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 		return withRollback(err, rollbackErr)
 	}
 
-	if err := s.applyAddPassphrase(alias, input.Passphrase); err != nil {
-		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+	if err := applyAddSecret(s.passphrases, alias, input.Passphrase); err != nil {
+		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 		return withRollback(err, rollbackErr)
 	}
 
 	if input.Favorite {
 		if err := s.metadata.EnsureHost(ctx, alias); err != nil {
-			rollbackErr := s.restorePassphrase(alias, passphraseState)
-			rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+			rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+			rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 			rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
 
 		if _, err := s.metadata.SetFavorite(ctx, alias, true); err != nil {
 			rollbackErr := s.restoreFavorite(ctx, alias, favoriteState, true)
-			rollbackErr = errors.Join(rollbackErr, s.restorePassphrase(alias, passphraseState))
-			rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+			rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passphrases, alias, passphraseState))
+			rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 			rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, managedHostSnapshot{}))
 			return withRollback(err, rollbackErr)
 		}
@@ -226,18 +220,18 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 	}
 
 	passwordTouched := input.ClearPassword || strings.TrimSpace(input.Password) != ""
-	passwordState := passwordSnapshot{}
+	passwordState := secretSnapshot{}
 	if passwordTouched {
-		passwordState, err = s.loadPasswordSnapshot(alias)
+		passwordState, err = loadSecretSnapshot(s.passwords, alias)
 		if err != nil {
 			return err
 		}
 	}
 
 	passphraseTouched := input.ClearPassphrase || strings.TrimSpace(input.Passphrase) != ""
-	passphraseState := passphraseSnapshot{}
+	passphraseState := secretSnapshot{}
 	if passphraseTouched {
-		passphraseState, err = s.loadPassphraseSnapshot(alias)
+		passphraseState, err = loadSecretSnapshot(s.passphrases, alias)
 		if err != nil {
 			return err
 		}
@@ -262,15 +256,15 @@ func (s HostService) updateManagedHostFields(ctx context.Context, alias string, 
 
 	currentSnapshot := managedHostSnapshot{host: currentHost, ok: true}
 
-	if err := s.applyUpdatedPassword(alias, input); err != nil {
-		rollbackErr := s.restorePassword(alias, passwordState)
+	if err := applyUpdatedSecret(s.passwords, alias, input.Password, input.ClearPassword); err != nil {
+		rollbackErr := restoreSecret(s.passwords, alias, passwordState)
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 
-	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
-		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+	if err := applyUpdatedSecret(s.passphrases, alias, input.Passphrase, input.ClearPassphrase); err != nil {
+		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
@@ -289,11 +283,11 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 		return err
 	}
 
-	passwordState, err := s.loadPasswordSnapshot(oldAlias)
+	passwordState, err := loadSecretSnapshot(s.passwords, oldAlias)
 	if err != nil {
 		return err
 	}
-	passphraseState, err := s.loadPassphraseSnapshot(oldAlias)
+	passphraseState, err := loadSecretSnapshot(s.passphrases, oldAlias)
 	if err != nil {
 		return err
 	}
@@ -323,20 +317,20 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 	}
 
 	// Migrate keychain: apply new password rules, then migrate the stored secret.
-	if err := s.migratePassword(ctx, oldAlias, newAlias, passwordState, input); err != nil {
+	if err := migrateSecret(s.passwords, oldAlias, newAlias, input.Password, input.ClearPassword, passwordState); err != nil {
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
-		_ = s.passwords.DeletePassword(newAlias)
+		_ = s.passwords.Delete(newAlias)
 		return err
 	}
 
 	// Migrate passphrase.
-	if err := s.migratePassphrase(ctx, oldAlias, newAlias, passphraseState, input); err != nil {
+	if err := migrateSecret(s.passphrases, oldAlias, newAlias, input.Passphrase, input.ClearPassphrase, passphraseState); err != nil {
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
-		_ = s.restorePassword(oldAlias, passwordState)
-		_ = s.passwords.DeletePassword(newAlias)
-		_ = s.passphrases.DeletePassphrase(newAlias)
+		_ = restoreSecret(s.passwords, oldAlias, passwordState)
+		_ = s.passwords.Delete(newAlias)
+		_ = s.passphrases.Delete(newAlias)
 		return err
 	}
 
@@ -344,59 +338,33 @@ func (s HostService) renameManagedHost(ctx context.Context, oldAlias, newAlias s
 	if err := s.metadata.RenameHost(ctx, oldAlias, newAlias); err != nil {
 		_ = s.managedHosts.Delete(newAlias)
 		_ = s.managedHosts.Upsert(currentHost)
-		_ = s.restorePassword(oldAlias, passwordState)
-		_ = s.passwords.DeletePassword(newAlias)
-		_ = s.restorePassphrase(oldAlias, passphraseState)
-		_ = s.passphrases.DeletePassphrase(newAlias)
+		_ = restoreSecret(s.passwords, oldAlias, passwordState)
+		_ = s.passwords.Delete(newAlias)
+		_ = restoreSecret(s.passphrases, oldAlias, passphraseState)
+		_ = s.passphrases.Delete(newAlias)
 		return err
 	}
 
 	return nil
 }
 
-// migratePassphrase handles keychain passphrase updates when renaming a host.
-// Priority: explicit new passphrase > ClearPassphrase flag > copy existing secret.
-func (s HostService) migratePassphrase(_ context.Context, oldAlias, newAlias string, oldState passphraseSnapshot, input UpdateManagedHostInput) error {
-	newPassphrase := strings.TrimSpace(input.Passphrase)
-	if newPassphrase != "" {
-		if err := s.passphrases.SetPassphrase(newAlias, newPassphrase); err != nil {
+// migrateSecret moves a secret from oldAlias to newAlias when renaming a host.
+// Priority: explicit new value > clear flag > copy the existing secret.
+func migrateSecret(store secretStore, oldAlias, newAlias, value string, clearSecret bool, oldState secretSnapshot) error {
+	if newValue := strings.TrimSpace(value); newValue != "" {
+		if err := store.Set(newAlias, newValue); err != nil {
 			return err
 		}
-		return s.passphrases.DeletePassphrase(oldAlias)
+		return store.Delete(oldAlias)
 	}
-	if input.ClearPassphrase {
-		return s.passphrases.DeletePassphrase(oldAlias)
+	if clearSecret {
+		return store.Delete(oldAlias)
 	}
 	if oldState.ok {
-		if err := s.passphrases.SetPassphrase(newAlias, oldState.value); err != nil {
+		if err := store.Set(newAlias, oldState.value); err != nil {
 			return err
 		}
-		return s.passphrases.DeletePassphrase(oldAlias)
-	}
-	return nil
-}
-
-// migratePassword handles keychain updates when renaming a host.
-// Priority: explicit new password > ClearPassword flag > copy existing secret.
-func (s HostService) migratePassword(_ context.Context, oldAlias, newAlias string, oldState passwordSnapshot, input UpdateManagedHostInput) error {
-	newPassword := strings.TrimSpace(input.Password)
-	if newPassword != "" {
-		// User provided a new password: store it under the new alias.
-		if err := s.passwords.SetPassword(newAlias, newPassword); err != nil {
-			return err
-		}
-		return s.passwords.DeletePassword(oldAlias)
-	}
-	if input.ClearPassword {
-		// User explicitly cleared the password.
-		return s.passwords.DeletePassword(oldAlias)
-	}
-	if oldState.ok {
-		// No change requested: copy the existing secret to the new alias.
-		if err := s.passwords.SetPassword(newAlias, oldState.value); err != nil {
-			return err
-		}
-		return s.passwords.DeletePassword(oldAlias)
+		return store.Delete(oldAlias)
 	}
 	return nil
 }
@@ -409,11 +377,11 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 		return err
 	}
 
-	passwordState, err := s.loadPasswordSnapshot(alias)
+	passwordState, err := loadSecretSnapshot(s.passwords, alias)
 	if err != nil {
 		return err
 	}
-	passphraseState, err := s.loadPassphraseSnapshot(alias)
+	passphraseState, err := loadSecretSnapshot(s.passphrases, alias)
 	if err != nil {
 		return err
 	}
@@ -423,20 +391,20 @@ func (s HostService) DeleteManagedHost(ctx context.Context, alias string) error 
 	if err := s.managedHosts.Delete(alias); err != nil {
 		return err
 	}
-	if err := s.passwords.DeletePassword(alias); err != nil {
-		rollbackErr := s.restorePassword(alias, passwordState)
+	if err := s.passwords.Delete(alias); err != nil {
+		rollbackErr := restoreSecret(s.passwords, alias, passwordState)
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
-	if err := s.passphrases.DeletePassphrase(alias); err != nil {
-		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+	if err := s.passphrases.Delete(alias); err != nil {
+		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
 	if err := s.metadata.DeleteMetadata(ctx, alias); err != nil {
-		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 		rollbackErr = errors.Join(rollbackErr, s.restoreManagedHost(alias, currentSnapshot))
 		return withRollback(err, rollbackErr)
 	}
@@ -463,18 +431,18 @@ func (s HostService) UpdateSystemHostOverlay(ctx context.Context, _ model.Host, 
 	}
 
 	passwordTouched := input.ClearPassword || strings.TrimSpace(input.Password) != ""
-	var passwordState passwordSnapshot
+	var passwordState secretSnapshot
 	if passwordTouched {
-		passwordState, err = s.loadPasswordSnapshot(alias)
+		passwordState, err = loadSecretSnapshot(s.passwords, alias)
 		if err != nil {
 			return err
 		}
 	}
 
 	passphraseTouched := input.ClearPassphrase || strings.TrimSpace(input.Passphrase) != ""
-	var passphraseState passphraseSnapshot
+	var passphraseState secretSnapshot
 	if passphraseTouched {
-		passphraseState, err = s.loadPassphraseSnapshot(alias)
+		passphraseState, err = loadSecretSnapshot(s.passphrases, alias)
 		if err != nil {
 			return err
 		}
@@ -520,17 +488,17 @@ func (s HostService) UpdateSystemHostOverlay(ctx context.Context, _ model.Host, 
 		overlayTouched = true
 	}
 
-	if err := s.applyUpdatedPassword(alias, input); err != nil {
-		rollbackErr := s.restorePassword(alias, passwordState)
+	if err := applyUpdatedSecret(s.passwords, alias, input.Password, input.ClearPassword); err != nil {
+		rollbackErr := restoreSecret(s.passwords, alias, passwordState)
 		if overlayTouched {
 			rollbackErr = errors.Join(rollbackErr, s.restoreOverlay(alias, overlayState))
 		}
 		return withRollback(err, rollbackErr)
 	}
 
-	if err := s.applyUpdatedPassphrase(alias, input); err != nil {
-		rollbackErr := s.restorePassphrase(alias, passphraseState)
-		rollbackErr = errors.Join(rollbackErr, s.restorePassword(alias, passwordState))
+	if err := applyUpdatedSecret(s.passphrases, alias, input.Passphrase, input.ClearPassphrase); err != nil {
+		rollbackErr := restoreSecret(s.passphrases, alias, passphraseState)
+		rollbackErr = errors.Join(rollbackErr, restoreSecret(s.passwords, alias, passwordState))
 		if overlayTouched {
 			rollbackErr = errors.Join(rollbackErr, s.restoreOverlay(alias, overlayState))
 		}
@@ -560,11 +528,11 @@ func (s HostService) DeleteOverlay(ctx context.Context, alias string) error {
 func (s HostService) SetupSystemHostKey(ctx context.Context, host model.Host, stdin io.Reader, stdout, stderr io.Writer) error {
 	alias := NormalizeAlias(host.Alias)
 
-	password, _, err := s.passwords.GetPasswordIfExists(alias)
+	password, _, err := s.passwords.GetIfExists(alias)
 	if err != nil {
 		return err
 	}
-	passphrase, _, err := s.passphrases.GetPassphraseIfExists(alias)
+	passphrase, _, err := s.passphrases.GetIfExists(alias)
 	if err != nil {
 		return err
 	}
@@ -640,12 +608,40 @@ func (s HostService) ensureManagedAliasAvailable(alias string) error {
 	return nil
 }
 
-func (s HostService) loadPasswordSnapshot(alias string) (passwordSnapshot, error) {
-	value, ok, err := s.passwords.GetPasswordIfExists(alias)
+// loadSecretSnapshot captures the current secret for rollback.
+func loadSecretSnapshot(store secretStore, alias string) (secretSnapshot, error) {
+	value, ok, err := store.GetIfExists(alias)
 	if err != nil {
-		return passwordSnapshot{}, err
+		return secretSnapshot{}, err
 	}
-	return passwordSnapshot{value: value, ok: ok}, nil
+	return secretSnapshot{value: value, ok: ok}, nil
+}
+
+// applyAddSecret stores value when non-blank, otherwise clears any existing secret.
+func applyAddSecret(store secretStore, alias, value string) error {
+	if strings.TrimSpace(value) != "" {
+		return store.Set(alias, value)
+	}
+	return store.Delete(alias)
+}
+
+// applyUpdatedSecret stores a new value, clears on request, or leaves it untouched.
+func applyUpdatedSecret(store secretStore, alias, value string, clearSecret bool) error {
+	if strings.TrimSpace(value) != "" {
+		return store.Set(alias, value)
+	}
+	if clearSecret {
+		return store.Delete(alias)
+	}
+	return nil
+}
+
+// restoreSecret puts the secret back to its snapshot state.
+func restoreSecret(store secretStore, alias string, snapshot secretSnapshot) error {
+	if snapshot.ok {
+		return store.Set(alias, snapshot.value)
+	}
+	return store.Delete(alias)
 }
 
 func (s HostService) loadFavoriteSnapshot(ctx context.Context, alias string) (favoriteSnapshot, error) {
@@ -662,40 +658,6 @@ func (s HostService) loadFavoriteSnapshot(ctx context.Context, alias string) (fa
 	return favoriteSnapshot{}, err
 }
 
-func (s HostService) applyAddPassword(alias, password string) error {
-	if strings.TrimSpace(password) != "" {
-		return s.passwords.SetPassword(alias, password)
-	}
-	return s.passwords.DeletePassword(alias)
-}
-
-func (s HostService) applyAddPassphrase(alias, passphrase string) error {
-	if strings.TrimSpace(passphrase) != "" {
-		return s.passphrases.SetPassphrase(alias, passphrase)
-	}
-	return s.passphrases.DeletePassphrase(alias)
-}
-
-func (s HostService) applyUpdatedPassword(alias string, input UpdateManagedHostInput) error {
-	if strings.TrimSpace(input.Password) != "" {
-		return s.passwords.SetPassword(alias, input.Password)
-	}
-	if input.ClearPassword {
-		return s.passwords.DeletePassword(alias)
-	}
-	return nil
-}
-
-func (s HostService) applyUpdatedPassphrase(alias string, input UpdateManagedHostInput) error {
-	if strings.TrimSpace(input.Passphrase) != "" {
-		return s.passphrases.SetPassphrase(alias, input.Passphrase)
-	}
-	if input.ClearPassphrase {
-		return s.passphrases.DeletePassphrase(alias)
-	}
-	return nil
-}
-
 func (s HostService) restoreManagedHost(alias string, snapshot managedHostSnapshot) error {
 	if snapshot.ok {
 		return s.managedHosts.Upsert(snapshot.host)
@@ -708,28 +670,6 @@ func (s HostService) restoreOverlay(alias string, snapshot managedHostSnapshot) 
 		return s.managedHosts.UpsertOverlay(snapshot.host)
 	}
 	return s.managedHosts.Delete(alias)
-}
-
-func (s HostService) restorePassword(alias string, snapshot passwordSnapshot) error {
-	if snapshot.ok {
-		return s.passwords.SetPassword(alias, snapshot.value)
-	}
-	return s.passwords.DeletePassword(alias)
-}
-
-func (s HostService) restorePassphrase(alias string, snapshot passphraseSnapshot) error {
-	if snapshot.ok {
-		return s.passphrases.SetPassphrase(alias, snapshot.value)
-	}
-	return s.passphrases.DeletePassphrase(alias)
-}
-
-func (s HostService) loadPassphraseSnapshot(alias string) (passphraseSnapshot, error) {
-	value, ok, err := s.passphrases.GetPassphraseIfExists(alias)
-	if err != nil {
-		return passphraseSnapshot{}, err
-	}
-	return passphraseSnapshot{value: value, ok: ok}, nil
 }
 
 func (s HostService) loadOverlaySnapshot(alias string) (managedHostSnapshot, error) {
@@ -837,29 +777,29 @@ func (s fileManagedHostStore) HasAliasConflict(alias string) (bool, error) {
 
 type systemPasswordStore struct{}
 
-func (systemPasswordStore) GetPasswordIfExists(alias string) (string, bool, error) {
+func (systemPasswordStore) GetIfExists(alias string) (string, bool, error) {
 	return secret.GetPasswordIfExists(alias)
 }
 
-func (systemPasswordStore) SetPassword(alias, password string) error {
-	return secret.SetPassword(alias, password)
+func (systemPasswordStore) Set(alias, value string) error {
+	return secret.SetPassword(alias, value)
 }
 
-func (systemPasswordStore) DeletePassword(alias string) error {
+func (systemPasswordStore) Delete(alias string) error {
 	return secret.DeletePassword(alias)
 }
 
 type systemPassphraseStore struct{}
 
-func (systemPassphraseStore) GetPassphraseIfExists(alias string) (string, bool, error) {
+func (systemPassphraseStore) GetIfExists(alias string) (string, bool, error) {
 	return secret.GetPassphraseIfExists(alias)
 }
 
-func (systemPassphraseStore) SetPassphrase(alias, passphrase string) error {
-	return secret.SetPassphrase(alias, passphrase)
+func (systemPassphraseStore) Set(alias, value string) error {
+	return secret.SetPassphrase(alias, value)
 }
 
-func (systemPassphraseStore) DeletePassphrase(alias string) error {
+func (systemPassphraseStore) Delete(alias string) error {
 	return secret.DeletePassphrase(alias)
 }
 

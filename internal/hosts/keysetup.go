@@ -25,11 +25,11 @@ func (s HostService) SetupManagedHostKey(ctx context.Context, alias string, stdi
 		return err
 	}
 
-	password, _, err := s.passwords.GetPasswordIfExists(managedHost.Alias)
+	password, _, err := s.passwords.GetIfExists(managedHost.Alias)
 	if err != nil {
 		return err
 	}
-	passphrase, _, err := s.passphrases.GetPassphraseIfExists(managedHost.Alias)
+	passphrase, _, err := s.passphrases.GetIfExists(managedHost.Alias)
 	if err != nil {
 		return err
 	}

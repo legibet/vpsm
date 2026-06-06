@@ -94,8 +94,8 @@ func buildSetUpdate(current model.Host, args []string) (setUpdatePlan, error) {
 		ProxyJump:     current.ProxyJump,
 		ProxyCommand:  current.ProxyCommand,
 		ForwardAgent:  current.ForwardAgent,
-		LocalForward:  joinForwardValues(current.LocalForward),
-		RemoteForward: joinForwardValues(current.RemoteForward),
+		LocalForward:  strings.Join(current.LocalForward, ", "),
+		RemoteForward: strings.Join(current.RemoteForward, ", "),
 		IdentityFile:  current.IdentityFile,
 	}
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -131,17 +132,35 @@ func (f *addForm) init() tea.Cmd {
 }
 
 func (f *addForm) setWidth(width int) {
+	setInputWidths(f.inputs, width, fieldPort, fieldForwardAgent)
+}
+
+// setInputWidths sizes every input to width, then narrows the listed fields to 8.
+func setInputWidths(inputs []textinput.Model, width int, narrow ...int) {
 	if width < 16 {
 		width = 16
 	}
-
-	for i := range f.inputs {
-		f.inputs[i].SetWidth(width)
+	for i := range inputs {
+		inputs[i].SetWidth(width)
 	}
 	if width > 8 {
-		f.inputs[fieldPort].SetWidth(8)
-		f.inputs[fieldForwardAgent].SetWidth(8)
+		for _, i := range narrow {
+			inputs[i].SetWidth(8)
+		}
 	}
+}
+
+// focusInputs focuses the input at focusIndex, blurs the rest, and batches the focus cmds.
+func focusInputs(inputs []textinput.Model, focusIndex int) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(inputs))
+	for i := range inputs {
+		if i == focusIndex {
+			cmds = append(cmds, inputs[i].Focus())
+			continue
+		}
+		inputs[i].Blur()
+	}
+	return tea.Batch(cmds...)
 }
 
 func (f *addForm) update(msg tea.Msg) (tea.Cmd, addFormAction) {
@@ -162,7 +181,7 @@ func (f *addForm) update(msg tea.Msg) (tea.Cmd, addFormAction) {
 }
 
 func (f *addForm) handleFocusKey(key string) (tea.Cmd, addFormAction) {
-	pos := addFormFocusPos(f.focusIndex)
+	pos := slices.Index(addFormFocusOrder, f.focusIndex)
 	switch key {
 	case "up", "shift+tab":
 		pos--
@@ -186,26 +205,9 @@ func (f *addForm) handleFocusKey(key string) (tea.Cmd, addFormAction) {
 	}
 }
 
-func addFormFocusPos(inputIndex int) int {
-	for i, idx := range addFormFocusOrder {
-		if idx == inputIndex {
-			return i
-		}
-	}
-	return 0
-}
-
 func (f *addForm) setFocus(index int) tea.Cmd {
 	f.focusIndex = index
-	cmds := make([]tea.Cmd, 0, len(f.inputs))
-	for i := range f.inputs {
-		if i == f.focusIndex {
-			cmds = append(cmds, f.inputs[i].Focus())
-			continue
-		}
-		f.inputs[i].Blur()
-	}
-	return tea.Batch(cmds...)
+	return focusInputs(f.inputs, index)
 }
 
 func (f *addForm) values() (CreateHostInput, error) {

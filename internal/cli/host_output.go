@@ -221,8 +221,8 @@ func writeHostDetails(w io.Writer, host model.Host, options showOptions) error {
 		{"ProxyJump", firstNonEmpty(host.ProxyJump, "-")},
 		{"ProxyCommand", firstNonEmpty(host.ProxyCommand, "-")},
 		{"ForwardAgent", firstNonEmpty(host.ForwardAgent, "-")},
-		{"LocalForward", firstNonEmpty(joinForwardValues(host.LocalForward), "-")},
-		{"RemoteForward", firstNonEmpty(joinForwardValues(host.RemoteForward), "-")},
+		{"LocalForward", firstNonEmpty(strings.Join(host.LocalForward, ", "), "-")},
+		{"RemoteForward", firstNonEmpty(strings.Join(host.RemoteForward, ", "), "-")},
 		{"Auth", host.AuthMethodsLabel()},
 		{"Identity File", host.IdentityFileLabel()},
 		{"Password Stored", host.PasswordStoredLabel()},
@@ -306,8 +306,7 @@ func timePointer(value time.Time) *time.Time {
 	if value.IsZero() {
 		return nil
 	}
-	copied := value
-	return &copied
+	return &value
 }
 
 func fitListCell(value string, width int) string {

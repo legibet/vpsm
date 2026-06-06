@@ -127,13 +127,13 @@ func TestUpdateManagedHostPersistsProxyCommand(t *testing.T) {
 		User:         "root",
 		ProxyCommand: "ssh -W %h:%p old-bastion",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	metadata := newFakeMetadataStore()
 
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 	}
 
@@ -202,14 +202,14 @@ func TestAddManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 
 	ctx := context.Background()
 	managed := newFakeManagedHostStore()
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.failSetOnce = true
 	metadata := newFakeMetadataStore()
 
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 	}
 
@@ -225,7 +225,7 @@ func TestAddManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 	if _, ok, _ := managed.Get("prod-1"); ok {
 		t.Fatal("expected managed host rollback to remove alias")
 	}
-	if _, ok, _ := passwords.GetPasswordIfExists("prod-1"); ok {
+	if _, ok, _ := passwords.GetIfExists("prod-1"); ok {
 		t.Fatal("expected password rollback to remove stored secret")
 	}
 }
@@ -235,8 +235,8 @@ func TestAddManagedHostRollsBackWhenPassphraseWriteFails(t *testing.T) {
 
 	ctx := context.Background()
 	managed := newFakeManagedHostStore()
-	passwords := newFakePasswordStore()
-	passphrases := newFakePassphraseStore()
+	passwords := newFakeSecretStore()
+	passphrases := newFakeSecretStore()
 	passphrases.failSetOnce = true
 	metadata := newFakeMetadataStore()
 
@@ -260,10 +260,10 @@ func TestAddManagedHostRollsBackWhenPassphraseWriteFails(t *testing.T) {
 	if _, ok, _ := managed.Get("prod-1"); ok {
 		t.Fatal("expected managed host rollback to remove alias")
 	}
-	if _, ok, _ := passwords.GetPasswordIfExists("prod-1"); ok {
+	if _, ok, _ := passwords.GetIfExists("prod-1"); ok {
 		t.Fatal("expected password rollback to remove stored secret")
 	}
-	if _, ok, _ := passphrases.GetPassphraseIfExists("prod-1"); ok {
+	if _, ok, _ := passphrases.GetIfExists("prod-1"); ok {
 		t.Fatal("expected passphrase rollback to remove stored secret")
 	}
 }
@@ -277,9 +277,9 @@ func TestDeleteManagedHostDeletesPassphrase(t *testing.T) {
 		Alias:    "prod-1",
 		HostName: "203.0.113.10",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "pw"
-	passphrases := newFakePassphraseStore()
+	passphrases := newFakeSecretStore()
 	passphrases.values["prod-1"] = "pp"
 	metadata := newFakeMetadataStore()
 
@@ -294,10 +294,10 @@ func TestDeleteManagedHostDeletesPassphrase(t *testing.T) {
 		t.Fatalf("delete managed host: %v", err)
 	}
 
-	if _, ok, _ := passwords.GetPasswordIfExists("prod-1"); ok {
+	if _, ok, _ := passwords.GetIfExists("prod-1"); ok {
 		t.Fatal("expected password to be deleted")
 	}
-	if _, ok, _ := passphrases.GetPassphraseIfExists("prod-1"); ok {
+	if _, ok, _ := passphrases.GetIfExists("prod-1"); ok {
 		t.Fatal("expected passphrase to be deleted")
 	}
 }
@@ -312,7 +312,7 @@ func TestUpdateManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 		HostName: "203.0.113.10",
 		User:     "root",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "old-secret"
 	passwords.failSetOnce = true
 	metadata := newFakeMetadataStore()
@@ -320,7 +320,7 @@ func TestUpdateManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 	}
 
@@ -345,7 +345,7 @@ func TestUpdateManagedHostRollsBackWhenPasswordWriteFails(t *testing.T) {
 		t.Fatalf("expected original host state, got %+v", host)
 	}
 
-	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	password, ok, err := passwords.GetIfExists("prod-1")
 	if err != nil {
 		t.Fatalf("get password: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
 		HostName: "203.0.113.10",
 		User:     "root",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "secret"
 	metadata := newFakeMetadataStore()
 	metadata.hosts["prod-1"] = model.Host{Alias: "prod-1", Favorite: true}
@@ -373,7 +373,7 @@ func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 	}
 
@@ -390,7 +390,7 @@ func TestDeleteManagedHostRestoresStateWhenDeleteMetadataFails(t *testing.T) {
 		t.Fatalf("expected managed host to be restored, got %+v", host)
 	}
 
-	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	password, ok, err := passwords.GetIfExists("prod-1")
 	if err != nil {
 		t.Fatalf("get password: %v", err)
 	}
@@ -419,12 +419,12 @@ func TestUpdateSystemHostOverlayPreservesExistingOverrideOnSecretOnlyUpdate(t *t
 		User:     "root",
 		Port:     22,
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     newFakeMetadataStore(),
 	}
 
@@ -455,7 +455,7 @@ func TestUpdateSystemHostOverlayPreservesExistingOverrideOnSecretOnlyUpdate(t *t
 	if !overlay.Overlay || overlay.User != "ubuntu" {
 		t.Fatalf("expected existing overlay to be preserved, got %+v", overlay)
 	}
-	password, ok, err := passwords.GetPasswordIfExists("prod-1")
+	password, ok, err := passwords.GetIfExists("prod-1")
 	if err != nil {
 		t.Fatalf("get password: %v", err)
 	}
@@ -482,14 +482,14 @@ func TestUpdateSystemHostOverlayRestoresOverlayWhenSecretWriteFails(t *testing.T
 		Port:         22,
 		IdentityFile: "~/.ssh/id_root",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "old-secret"
 	passwords.failSetOnce = true
 
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     newFakeMetadataStore(),
 	}
 
@@ -523,7 +523,7 @@ func TestUpdateSystemHostOverlayRestoresOverlayWhenSecretWriteFails(t *testing.T
 		t.Fatalf("expected original overlay to be restored, got %+v", overlay)
 	}
 
-	password, ok, getErr := passwords.GetPasswordIfExists("prod-1")
+	password, ok, getErr := passwords.GetIfExists("prod-1")
 	if getErr != nil {
 		t.Fatalf("get password: %v", getErr)
 	}
@@ -542,7 +542,7 @@ func TestSetupManagedHostKeyWritesBackIdentityFile(t *testing.T) {
 		HostName: "203.0.113.10",
 		User:     "root",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "secret"
 	metadata := newFakeMetadataStore()
 	keySetup := &fakeKeySetupRunner{
@@ -552,7 +552,7 @@ func TestSetupManagedHostKeyWritesBackIdentityFile(t *testing.T) {
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 		keySetup:     keySetup,
 	}
@@ -589,9 +589,9 @@ func TestSetupManagedHostKeyPassesBothCredentials(t *testing.T) {
 		HostName: "203.0.113.10",
 		User:     "root",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	passwords.values["prod-1"] = "pw"
-	passphrases := newFakePassphraseStore()
+	passphrases := newFakeSecretStore()
 	passphrases.values["prod-1"] = "pp"
 	metadata := newFakeMetadataStore()
 	keySetup := &fakeKeySetupRunner{
@@ -629,7 +629,7 @@ func TestSetupManagedHostKeyLeavesConfigUntouchedWhenIdentityFileUnchanged(t *te
 		User:         "root",
 		IdentityFile: "~/.ssh/id_existing",
 	}
-	passwords := newFakePasswordStore()
+	passwords := newFakeSecretStore()
 	metadata := newFakeMetadataStore()
 	keySetup := &fakeKeySetupRunner{
 		result: keySetupResult{IdentityFile: "~/.ssh/id_existing"},
@@ -638,7 +638,7 @@ func TestSetupManagedHostKeyLeavesConfigUntouchedWhenIdentityFileUnchanged(t *te
 	svc := HostService{
 		managedHosts: managed,
 		passwords:    passwords,
-		passphrases:  newFakePassphraseStore(),
+		passphrases:  newFakeSecretStore(),
 		metadata:     metadata,
 		keySetup:     keySetup,
 	}
@@ -725,67 +725,34 @@ func (s *fakeManagedHostStore) HasAliasConflict(alias string) (bool, error) {
 	return s.conflicts[alias], nil
 }
 
-type fakePasswordStore struct {
+type fakeSecretStore struct {
 	values         map[string]string
 	failSetOnce    bool
 	failDeleteOnce bool
 }
 
-func newFakePasswordStore() *fakePasswordStore {
-	return &fakePasswordStore{values: make(map[string]string)}
+func newFakeSecretStore() *fakeSecretStore {
+	return &fakeSecretStore{values: make(map[string]string)}
 }
 
-func (s *fakePasswordStore) GetPasswordIfExists(alias string) (string, bool, error) {
+func (s *fakeSecretStore) GetIfExists(alias string) (string, bool, error) {
 	value, ok := s.values[alias]
 	return value, ok, nil
 }
 
-func (s *fakePasswordStore) SetPassword(alias, password string) error {
+func (s *fakeSecretStore) Set(alias, value string) error {
 	if s.failSetOnce {
 		s.failSetOnce = false
-		return errors.New("set password failed")
+		return errors.New("set secret failed")
 	}
-	s.values[alias] = password
+	s.values[alias] = value
 	return nil
 }
 
-func (s *fakePasswordStore) DeletePassword(alias string) error {
+func (s *fakeSecretStore) Delete(alias string) error {
 	if s.failDeleteOnce {
 		s.failDeleteOnce = false
-		return errors.New("delete password failed")
-	}
-	delete(s.values, alias)
-	return nil
-}
-
-type fakePassphraseStore struct {
-	values         map[string]string
-	failSetOnce    bool
-	failDeleteOnce bool
-}
-
-func newFakePassphraseStore() *fakePassphraseStore {
-	return &fakePassphraseStore{values: make(map[string]string)}
-}
-
-func (s *fakePassphraseStore) GetPassphraseIfExists(alias string) (string, bool, error) {
-	value, ok := s.values[alias]
-	return value, ok, nil
-}
-
-func (s *fakePassphraseStore) SetPassphrase(alias, passphrase string) error {
-	if s.failSetOnce {
-		s.failSetOnce = false
-		return errors.New("set passphrase failed")
-	}
-	s.values[alias] = passphrase
-	return nil
-}
-
-func (s *fakePassphraseStore) DeletePassphrase(alias string) error {
-	if s.failDeleteOnce {
-		s.failDeleteOnce = false
-		return errors.New("delete passphrase failed")
+		return errors.New("delete secret failed")
 	}
 	delete(s.values, alias)
 	return nil

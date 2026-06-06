@@ -26,39 +26,39 @@ type keychainCredential struct {
 }
 
 func SetPassword(alias, password string) error {
-	return passwordCredential().set(alias, password)
+	return passwordCred.set(alias, password)
 }
 
 func GetPassword(alias string) (string, error) {
-	return passwordCredential().get(alias)
+	return passwordCred.get(alias)
 }
 
 func DeletePassword(alias string) error {
-	return passwordCredential().delete(alias)
+	return passwordCred.delete(alias)
 }
 
 func HasPassword(alias string) (bool, error) {
-	return passwordCredential().has(alias)
+	return passwordCred.has(alias)
 }
 
 func GetPasswordIfExists(alias string) (string, bool, error) {
-	return passwordCredential().exists(alias)
+	return passwordCred.exists(alias)
 }
 
 func SetPassphrase(alias, passphrase string) error {
-	return passphraseCredential().set(alias, passphrase)
+	return passphraseCred.set(alias, passphrase)
 }
 
 func DeletePassphrase(alias string) error {
-	return passphraseCredential().delete(alias)
+	return passphraseCred.delete(alias)
 }
 
 func HasPassphrase(alias string) (bool, error) {
-	return passphraseCredential().has(alias)
+	return passphraseCred.has(alias)
 }
 
 func GetPassphraseIfExists(alias string) (string, bool, error) {
-	return passphraseCredential().exists(alias)
+	return passphraseCred.exists(alias)
 }
 
 // Available reports whether the system keyring is functional. The result is
@@ -80,7 +80,7 @@ func (c keychainCredential) set(alias, value string) error {
 	if err := AvailableError(); err != nil {
 		return err
 	}
-	alias = normalizeAlias(alias)
+	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return errors.New("alias is required")
 	}
@@ -98,7 +98,7 @@ func (c keychainCredential) get(alias string) (string, error) {
 	if !Available() {
 		return "", keyring.ErrNotFound
 	}
-	alias = normalizeAlias(alias)
+	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return "", errors.New("alias is required")
 	}
@@ -117,7 +117,7 @@ func (c keychainCredential) delete(alias string) error {
 	if !Available() {
 		return nil
 	}
-	alias = normalizeAlias(alias)
+	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		return errors.New("alias is required")
 	}
@@ -148,7 +148,7 @@ func (c keychainCredential) has(alias string) (bool, error) {
 }
 
 func probeKeyring() error {
-	_, err := keyring.Get(passwordCredential().service, "__vpsm_probe__")
+	_, err := keyring.Get(passwordCred.service, "__vpsm_probe__")
 	if err == nil || errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
@@ -172,20 +172,7 @@ func resetAvailable() {
 	availableErr = nil
 }
 
-func normalizeAlias(alias string) string {
-	return strings.TrimSpace(alias)
-}
-
-func passwordCredential() keychainCredential {
-	return keychainCredential{
-		service: config.AppName + ".ssh-password",
-		name:    "password",
-	}
-}
-
-func passphraseCredential() keychainCredential {
-	return keychainCredential{
-		service: config.AppName + ".ssh-passphrase",
-		name:    "passphrase",
-	}
-}
+var (
+	passwordCred   = keychainCredential{service: config.AppName + ".ssh-password", name: "password"}
+	passphraseCred = keychainCredential{service: config.AppName + ".ssh-passphrase", name: "passphrase"}
+)

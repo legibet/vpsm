@@ -139,17 +139,10 @@ func loadCredentials(alias string) (sshutil.AuthCredentials, error) {
 }
 
 func isUserInterruptError(err error) bool {
-	if err == nil {
-		return false
-	}
 	if errors.Is(err, context.Canceled) {
 		return true
 	}
 
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 130 {
-		return true
-	}
-
-	return false
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 130
 }

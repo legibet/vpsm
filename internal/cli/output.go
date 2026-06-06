@@ -90,13 +90,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func joinForwardValues(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return strings.Join(values, ", ")
-}
-
 func connectionMode(host model.Host) string {
 	if strings.TrimSpace(host.IdentityFile) != "" {
 		if sshutil.CanUseAlias(host) {

@@ -3,7 +3,7 @@ package inventory
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,14 +77,17 @@ func (s Service) List(ctx context.Context) ([]model.Host, error) {
 		hosts = append(hosts, host)
 	}
 
-	sort.Slice(hosts, func(i, j int) bool {
-		if hosts[i].Favorite != hosts[j].Favorite {
-			return hosts[i].Favorite && !hosts[j].Favorite
+	slices.SortFunc(hosts, func(a, b model.Host) int {
+		if a.Favorite != b.Favorite {
+			if a.Favorite {
+				return -1
+			}
+			return 1
 		}
-		if compareLastConnected(hosts[i].LastConnectedAt, hosts[j].LastConnectedAt) != 0 {
-			return compareLastConnected(hosts[i].LastConnectedAt, hosts[j].LastConnectedAt) < 0
+		if c := compareLastConnected(a.LastConnectedAt, b.LastConnectedAt); c != 0 {
+			return c
 		}
-		return strings.ToLower(hosts[i].Alias) < strings.ToLower(hosts[j].Alias)
+		return strings.Compare(strings.ToLower(a.Alias), strings.ToLower(b.Alias))
 	})
 
 	return hosts, nil
@@ -227,21 +230,16 @@ func (s Service) hydrateSecretStatus(host *model.Host) {
 	}
 }
 
+// compareLastConnected orders more recent timestamps first; nil sorts last.
 func compareLastConnected(left, right *time.Time) int {
-	if left == nil && right == nil {
+	switch {
+	case left == nil && right == nil:
 		return 0
-	}
-	if left == nil {
+	case left == nil:
 		return 1
-	}
-	if right == nil {
+	case right == nil:
 		return -1
+	default:
+		return -left.Compare(*right)
 	}
-	if left.Equal(*right) {
-		return 0
-	}
-	if left.After(*right) {
-		return -1
-	}
-	return 1
 }

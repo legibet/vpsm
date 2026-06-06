@@ -143,13 +143,9 @@ func newEditForm(host model.Host) editForm {
 
 	focusOrder := editFormAllFields
 	if !host.Managed {
-		filtered := make([]int, 0, len(editFormAllFields))
-		for _, idx := range editFormAllFields {
-			if !editFormReadOnlyForOverlay[idx] {
-				filtered = append(filtered, idx)
-			}
-		}
-		focusOrder = filtered
+		focusOrder = slices.DeleteFunc(slices.Clone(editFormAllFields), func(idx int) bool {
+			return editFormReadOnlyForOverlay[idx]
+		})
 	}
 
 	return editForm{
@@ -167,17 +163,7 @@ func (f *editForm) init() tea.Cmd {
 }
 
 func (f *editForm) setWidth(width int) {
-	if width < 16 {
-		width = 16
-	}
-
-	for i := range f.inputs {
-		f.inputs[i].SetWidth(width)
-	}
-	if width > 8 {
-		f.inputs[editFieldPort].SetWidth(8)
-		f.inputs[editFieldForwardAgent].SetWidth(8)
-	}
+	setInputWidths(f.inputs, width, editFieldPort, editFieldForwardAgent)
 }
 
 func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
@@ -223,7 +209,7 @@ func (f *editForm) update(msg tea.Msg) (tea.Cmd, editFormAction) {
 }
 
 func (f *editForm) handleFocusKey(key string) (tea.Cmd, editFormAction) {
-	pos := f.focusPos(f.focusIndex)
+	pos := slices.Index(f.focusOrder, f.focusIndex)
 	switch key {
 	case "up", "shift+tab":
 		pos--
@@ -247,26 +233,9 @@ func (f *editForm) handleFocusKey(key string) (tea.Cmd, editFormAction) {
 	}
 }
 
-func (f *editForm) focusPos(inputIndex int) int {
-	for i, idx := range f.focusOrder {
-		if idx == inputIndex {
-			return i
-		}
-	}
-	return 0
-}
-
 func (f *editForm) setFocus(index int) tea.Cmd {
 	f.focusIndex = index
-	cmds := make([]tea.Cmd, 0, len(f.inputs))
-	for i := range f.inputs {
-		if i == f.focusIndex {
-			cmds = append(cmds, f.inputs[i].Focus())
-			continue
-		}
-		f.inputs[i].Blur()
-	}
-	return tea.Batch(cmds...)
+	return focusInputs(f.inputs, index)
 }
 
 func (f *editForm) values() (UpdateHostInput, error) {
