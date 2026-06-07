@@ -12,20 +12,20 @@ type Host struct {
 	User             string
 	Port             int
 	Source           string
-	Managed          bool
-	HasOverride      bool
 	IdentityFile     string
 	ProxyJump        string
 	ProxyCommand     string
 	ForwardAgent     string
 	LocalForward     []string
 	RemoteForward    []string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	LastConnectedAt  *time.Time
+	Managed          bool
+	HasOverride      bool
 	PasswordStored   bool
 	PassphraseStored bool
 	Favorite         bool
-	LastConnectedAt  *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
 }
 
 func (h Host) SearchText() string {

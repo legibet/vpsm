@@ -97,8 +97,8 @@ type UpdateManagedHostInput struct {
 	RemoteForward   string
 	IdentityFile    string
 	Password        string
-	ClearPassword   bool
 	Passphrase      string
+	ClearPassword   bool
 	ClearPassphrase bool
 }
 

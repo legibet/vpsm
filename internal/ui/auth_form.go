@@ -28,8 +28,8 @@ type UpdateHostInput struct {
 	RemoteForward   string
 	IdentityFile    string
 	Password        string
-	ClearPassword   bool
 	Passphrase      string
+	ClearPassword   bool
 	ClearPassphrase bool
 }
 
@@ -93,15 +93,15 @@ var editFormFields = []formField{
 
 type editForm struct {
 	alias            string
-	managed          bool
+	errorText        string
 	focusOrder       []int
+	inputs           []textinput.Model
+	focusIndex       int
+	managed          bool
 	passwordStored   bool
 	clearPassword    bool
 	passphraseStored bool
 	clearPassphrase  bool
-	inputs           []textinput.Model
-	focusIndex       int
-	errorText        string
 }
 
 func newEditForm(host model.Host) editForm {

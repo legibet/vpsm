@@ -15,10 +15,10 @@ import (
 type transferItem struct {
 	localPath  string
 	remotePath string
-	mode       os.FileMode
-	modTime    time.Time
 	size       int64
+	mode       os.FileMode
 	dir        bool
+	modTime    time.Time
 }
 
 type transferPlan struct {

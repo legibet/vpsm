@@ -44,14 +44,14 @@ type parsedHost struct {
 	hostName      string
 	user          string
 	port          int
-	portSet       bool
 	identityFile  string
 	proxyJump     string
 	proxyCommand  string
 	forwardAgent  string
+	source        string
 	localForward  []string
 	remoteForward []string
-	source        string
+	portSet       bool
 	overlay       bool
 }
 

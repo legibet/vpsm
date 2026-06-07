@@ -11,14 +11,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
-	"vpsm/internal/model"
+	M "vpsm/internal/model"
 	"vpsm/internal/sshutil"
 )
 
-type HostItem = model.Host
+type HostItem = M.Host
 
 type Options struct {
-	Hosts          []model.Host
+	Hosts          []M.Host
 	ToggleFavorite func(alias string) error
 	RefreshHosts   func() ([]HostItem, string, error)
 	CreateHost     func(input CreateHostInput) error
@@ -53,7 +53,7 @@ const (
 )
 
 type hostsLoadedMsg struct {
-	hosts       []model.Host
+	hosts       []M.Host
 	status      string
 	selectAlias string
 	err         error
@@ -68,8 +68,8 @@ const (
 )
 
 type tuiModel struct {
-	hosts          []model.Host
-	filtered       []model.Host
+	hosts          []M.Host
+	filtered       []M.Host
 	cursor         int
 	query          string
 	searchMode     bool
@@ -670,7 +670,7 @@ func (m tuiModel) renderListPanel(width, height int) string {
 // renderListItem returns a single-line representation of a host entry.
 // Format: [▸| ] [★| ] <primary>           <user@host:port>  <tag>
 // Primary is DisplayName when available, otherwise Alias.
-func (m tuiModel) renderListItem(host model.Host, width int) string {
+func (m tuiModel) renderListItem(host M.Host, width int) string {
 	contentWidth := m.listContentWidth(width)
 	selected := len(m.filtered) > 0 && host.Alias == m.filtered[m.cursor].Alias
 	primaryStyle := m.styles.alias
@@ -881,7 +881,7 @@ func (m tuiModel) detailRow(label, value string) string {
 	)
 }
 
-func (m tuiModel) visibleHosts() []model.Host {
+func (m tuiModel) visibleHosts() []M.Host {
 	if len(m.filtered) == 0 {
 		return nil
 	}
@@ -1175,7 +1175,7 @@ func scrollFormContent(body string, focusLine, availableHeight int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
-func sourceLabel(host model.Host) string {
+func sourceLabel(host M.Host) string {
 	if host.Managed {
 		return "vpsm managed"
 	}
@@ -1188,7 +1188,7 @@ func sourceLabel(host model.Host) string {
 	return filepath.Base(host.Source)
 }
 
-func listTargetLabel(host model.Host) string {
+func listTargetLabel(host M.Host) string {
 	target := host.TargetName()
 	if host.Port > 0 && host.Port != 22 {
 		target = fmt.Sprintf("%s:%d", target, host.Port)
@@ -1202,12 +1202,12 @@ func listTargetLabel(host model.Host) string {
 	return user + " @ " + target
 }
 
-func hasNetworkDirectives(host model.Host) bool {
+func hasNetworkDirectives(host M.Host) bool {
 	return host.ProxyJump != "" || host.ProxyCommand != "" || host.ForwardAgent != "" ||
 		len(host.LocalForward) > 0 || len(host.RemoteForward) > 0
 }
 
-func connectionMode(host model.Host) string {
+func connectionMode(host M.Host) string {
 	if sshutil.CanUseAlias(host) {
 		return "ssh-config alias"
 	}
@@ -1309,7 +1309,7 @@ func (c *keySetupExecCommand) SetStderr(stderr io.Writer) {
 	c.stderr = stderr
 }
 
-func connectionPreview(host model.Host) string {
+func connectionPreview(host M.Host) string {
 	args, err := sshutil.BuildArgs(host)
 	if err != nil {
 		return err.Error()

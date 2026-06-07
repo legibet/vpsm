@@ -105,20 +105,20 @@ type hostOutput struct {
 	Port              int        `json:"port"`
 	Type              string     `json:"type"`
 	Source            string     `json:"source,omitempty"`
-	Managed           bool       `json:"managed"`
-	HasOverride       bool       `json:"hasOverride"`
-	Favorite          bool       `json:"favorite"`
 	AuthMethods       string     `json:"authMethods"`
 	IdentityFile      string     `json:"identityFile,omitempty"`
-	PasswordStored    bool       `json:"passwordStored"`
-	PassphraseStored  bool       `json:"passphraseStored"`
 	ProxyJump         string     `json:"proxyJump,omitempty"`
 	ProxyCommand      string     `json:"proxyCommand,omitempty"`
 	ForwardAgent      string     `json:"forwardAgent,omitempty"`
-	LocalForward      []string   `json:"localForward,omitempty"`
-	RemoteForward     []string   `json:"remoteForward,omitempty"`
 	ConnectionMode    string     `json:"connectionMode"`
 	ConnectionPreview string     `json:"connectionPreview"`
+	LocalForward      []string   `json:"localForward,omitempty"`
+	RemoteForward     []string   `json:"remoteForward,omitempty"`
+	Managed           bool       `json:"managed"`
+	HasOverride       bool       `json:"hasOverride"`
+	Favorite          bool       `json:"favorite"`
+	PasswordStored    bool       `json:"passwordStored"`
+	PassphraseStored  bool       `json:"passphraseStored"`
 	LastConnectedAt   *time.Time `json:"lastConnectedAt,omitempty"`
 	CreatedAt         *time.Time `json:"createdAt,omitempty"`
 	UpdatedAt         *time.Time `json:"updatedAt,omitempty"`
