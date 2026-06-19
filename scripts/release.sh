@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage() {
-  echo "Usage: scripts/release.sh vX.Y.Z"
-}
-
 if [ "$#" -ne 1 ]; then
-  usage
+  echo "Usage: scripts/release.sh vX.Y.Z" >&2
   exit 2
 fi
 
@@ -17,9 +13,8 @@ if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 2
 fi
 
-current_branch="$(git branch --show-current)"
-if [ -z "$current_branch" ]; then
-  echo "Release must run from a branch, not a detached HEAD" >&2
+if [ "$(git branch --show-current)" != "main" ]; then
+  echo "Release must run from main" >&2
   exit 1
 fi
 
@@ -28,7 +23,14 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-if git rev-parse --verify --quiet "$version" >/dev/null; then
+git fetch --quiet origin main --tags
+
+if ! git merge-base --is-ancestor origin/main HEAD; then
+  echo "Local main is behind or diverged from origin/main" >&2
+  exit 1
+fi
+
+if git rev-parse --verify --quiet "refs/tags/$version" >/dev/null; then
   echo "Tag already exists: $version" >&2
   exit 1
 fi
@@ -40,7 +42,7 @@ fi
 
 make check
 
-git push origin "$current_branch"
+git push origin main
 git tag -a "$version" -m "Release $version"
 git push origin "$version"
 

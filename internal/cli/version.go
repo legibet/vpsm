@@ -20,14 +20,6 @@ type versionInfo struct {
 	Date    string `json:"date"`
 }
 
-func currentVersionInfo() versionInfo {
-	return versionInfo{
-		Version: Version,
-		Commit:  Commit,
-		Date:    Date,
-	}
-}
-
 func (a App) runVersion(args []string) error {
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -39,7 +31,11 @@ func (a App) runVersion(args []string) error {
 		return err
 	}
 
-	return writeVersion(os.Stdout, currentVersionInfo(), jsonOutput)
+	return writeVersion(os.Stdout, versionInfo{
+		Version: Version,
+		Commit:  Commit,
+		Date:    Date,
+	}, jsonOutput)
 }
 
 func writeVersion(w io.Writer, info versionInfo, jsonOutput bool) error {
