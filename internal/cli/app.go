@@ -132,6 +132,8 @@ func (a App) run(args []string) error {
 			return errors.New("usage: vpsm files <alias>")
 		}
 		return a.session.RunFiles(a.ctx, args[1])
+	case "version":
+		return a.runVersion(args[1:])
 	case "help", "-h", "--help":
 		printHelp()
 		return nil

@@ -1,5 +1,6 @@
 /.DS_Store
 /vpsm
+/dist/
 /debug.log
 /tmp/
 /*.db

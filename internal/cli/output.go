@@ -32,6 +32,7 @@ Usage:
   vpsm favorite <alias> off   Remove favorite mark
   vpsm ssh <alias>            Connect with system ssh
   vpsm files <alias>          Open the file browser
+  vpsm version [--json]       Show build version
   vpsm help                   Show this help
 `))
 }

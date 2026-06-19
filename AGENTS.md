@@ -59,6 +59,7 @@ Guidance for coding agents working in this repository. Keep this file current wh
 - Test: `make test`
 - Full baseline: `make check`
 - Run app: `go run .`
+- Publish release: `make release VERSION=v0.1.0`
 
 Use narrow package tests while iterating, then run `make check` before finishing. For platform-sensitive changes, also run:
 

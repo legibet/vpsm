@@ -4,7 +4,26 @@
 
 ## Install
 
-Build the binary:
+Download a binary from the [latest GitHub release](https://github.com/legibet/vpsm/releases/latest).
+
+macOS or Linux:
+
+```bash
+VERSION=0.1.0
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64) ARCH=amd64 ;;
+  arm64|aarch64) ARCH=arm64 ;;
+esac
+curl -L "https://github.com/legibet/vpsm/releases/download/v${VERSION}/vpsm_${VERSION}_${OS}_${ARCH}.tar.gz" |
+  tar -xz vpsm
+install -m 0755 vpsm /usr/local/bin/vpsm
+```
+
+Windows users can download the matching `.zip` file from GitHub Releases and place `vpsm.exe` in `PATH`.
+
+Build from source:
 
 ```bash
 make build-bin
@@ -16,15 +35,15 @@ Run from source:
 go run .
 ```
 
-Check the local build:
-
-```bash
-make check
-```
-
 ## Quick Start
 
-Add a managed host:
+Open the TUI:
+
+```bash
+vpsm
+```
+
+Add a managed host from cli:
 
 ```bash
 vpsm add \
@@ -33,12 +52,6 @@ vpsm add \
   --host 203.0.113.10 \
   --user root \
   --identity-file ~/.ssh/id_ed25519
-```
-
-Open the TUI:
-
-```bash
-vpsm
 ```
 
 Connect:
@@ -66,55 +79,16 @@ vpsm delete <alias>
 vpsm favorite <alias> [on|off|toggle]
 vpsm ssh <alias>
 vpsm files <alias>
+vpsm version [--json]
 ```
 
 `add` and `set` also support `--proxy-jump`, `--proxy-command`, `--forward-agent`, `--local-forward`, `--remote-forward`, `--password`, `--passphrase`, `--clear-password`, and `--clear-passphrase`. Forward flags accept comma-separated SSH forward rules.
 
-## TUI Keys
-
-- `j` / `k`: move
-- `/`: search
-- `n`: add host
-- `e`: edit host
-- `d`: delete managed host or overlay
-- `i`: configure or install SSH key
-- `o`: open file browser
-- `f`: toggle favorite
-- `r`: refresh
-- `tab`: switch panes in compact layout
-- `enter`: connect
-- `q`: quit
-
-In the file browser:
-
-- `tab`: switch local/remote pane
-- `h` / `l`: parent / enter directory
-- `j` / `k`: move
-- `/`: search current directory
-- `t`: transfer selected file or directory to the other pane
-- `a`: create directory
-- `r`: rename
-- `d`: delete
-- `.`: show or hide hidden files
-- `R`: refresh
-- `q`: quit
-
-## How Data Is Stored
-
-- Managed hosts are written to `~/.ssh/vpsm.conf`.
-- Existing concrete hosts from `~/.ssh/config` and its `Include` files are shown automatically.
-- Editing a system host writes a partial override to `~/.ssh/vpsm.conf`; your original SSH config is not modified.
-- Removing an override restores the original system-host values.
-- Favorites and connection history are local SQLite metadata.
-- Passwords and key passphrases are stored in the system keychain, not in SSH config or SQLite.
-
 ## Notes
 
-- Host aliases are used by commands. Managed aliases must be single tokens without whitespace, wildcards, negation markers, or quotes.
-- System-host overlays can change scalar fields such as HostName, User, Port, IdentityFile, ProxyJump, ProxyCommand, and ForwardAgent.
-- LocalForward and RemoteForward are read-only for system-host overlays because SSH accumulates them across matching blocks.
-- Press `i` in the TUI to generate or reuse an SSH key and append the public key to remote `authorized_keys` when missing.
-- File browser mode uses `ssh -s sftp`; it needs stored credentials or non-interactive key auth such as `ssh-agent`.
+- `vpsm` reads hosts from your SSH config and included config files.
+- Managed hosts are written to `~/.ssh/vpsm.conf`. Editing an existing SSH host creates an override in `~/.ssh/vpsm.conf`.
+- Press `i` in the TUI to generate or reuse an SSH key and install the public key on the remote host.
 
 ## Platforms
 

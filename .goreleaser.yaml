@@ -1,0 +1,47 @@
+version: 2
+
+project_name: vpsm
+
+builds:
+  - id: vpsm
+    main: .
+    binary: vpsm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X vpsm/internal/cli.Version={{ .Version }} -X vpsm/internal/cli.Commit={{ .Commit }} -X vpsm/internal/cli.Date={{ .Date }}
+
+archives:
+  - id: default
+    ids:
+      - vpsm
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

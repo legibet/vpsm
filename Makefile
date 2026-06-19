@@ -1,4 +1,4 @@
-.PHONY: help fmt lint vet test test-no-cache build build-bin run smoke check
+.PHONY: help fmt lint vet test test-no-cache build build-bin run smoke check release
 
 BINARY ?= vpsm
 GO ?= go
@@ -21,7 +21,8 @@ help:
 		'Build and run:' \
 		'  make build         Run go build ./...' \
 		'  make build-bin     Build ./$(BINARY)' \
-		'  make run           Run the app'
+		'  make run           Run the app' \
+		'  make release VERSION=v0.1.0  Check, tag, and push a release'
 
 fmt:
 	$(GOLANGCI_LINT) fmt
@@ -51,3 +52,7 @@ smoke:
 	$(GO) run . help
 
 check: lint vet test build
+
+release:
+	@test -n "$(VERSION)" || (printf '%s\n' 'VERSION is required, for example: make release VERSION=v0.1.0' >&2; exit 2)
+	scripts/release.sh $(VERSION)
