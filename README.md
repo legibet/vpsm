@@ -1,38 +1,15 @@
 # vpsm
 
-`vpsm` is a terminal SSH host manager. It shows hosts from your SSH config, lets you add managed hosts, stores optional credentials in the system keychain, and always connects with your system `ssh`.
+`vpsm` is a terminal SSH host manager. It lists hosts from your SSH config, lets you add managed hosts, and connects with your system `ssh`. Optional passwords and key passphrases go in the system keychain.
 
 ## Install
 
-Download a binary from the [latest GitHub release](https://github.com/legibet/vpsm/releases/latest).
+Download a binary from the [latest release](https://github.com/legibet/vpsm/releases/latest) and put it on your `PATH`.
 
-macOS or Linux:
-
-```bash
-VERSION=0.1.0
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64) ARCH=amd64 ;;
-  arm64|aarch64) ARCH=arm64 ;;
-esac
-curl -L "https://github.com/legibet/vpsm/releases/download/v${VERSION}/vpsm_${VERSION}_${OS}_${ARCH}.tar.gz" |
-  tar -xz vpsm
-install -m 0755 vpsm /usr/local/bin/vpsm
-```
-
-Windows users can download the matching `.zip` file from GitHub Releases and place `vpsm.exe` in `PATH`.
-
-Build from source:
+From source:
 
 ```bash
 make build-bin
-```
-
-Run from source:
-
-```bash
-go run .
 ```
 
 ## Quick Start
@@ -43,7 +20,7 @@ Open the TUI:
 vpsm
 ```
 
-Add a managed host from cli:
+Add a managed host:
 
 ```bash
 vpsm add \
@@ -71,29 +48,31 @@ vpsm set-passphrase hk-prod-01
 
 ```bash
 vpsm                       # open TUI
-vpsm list [filters]        # filters: --query, --favorite, --managed, --system, --json
+vpsm list [filters]        # --query, --favorite, --managed, --system, --json
 vpsm show <alias> [--json]
-vpsm add --alias ... --host ... [--name ... --user ... --port ... --identity-file ...]
+vpsm add --alias ... --host ...
 vpsm set <alias> [fields]
 vpsm delete <alias>
 vpsm favorite <alias> [on|off|toggle]
 vpsm ssh <alias>
 vpsm files <alias>
+vpsm set-password <alias>
+vpsm set-passphrase <alias>
 vpsm version [--json]
 ```
 
-`add` and `set` also support `--proxy-jump`, `--proxy-command`, `--forward-agent`, `--local-forward`, `--remote-forward`, `--password`, `--passphrase`, `--clear-password`, and `--clear-passphrase`. Forward flags accept comma-separated SSH forward rules.
+`add` and `set` also accept `--name`, `--user`, `--port`, `--identity-file`, `--proxy-jump`, `--proxy-command`, `--forward-agent`, `--local-forward`, `--remote-forward`, `--password`, `--passphrase`, `--clear-password`, and `--clear-passphrase`. Forward flags take comma-separated SSH rules.
 
 ## Notes
 
 - `vpsm` reads hosts from your SSH config and included config files.
-- Managed hosts are written to `~/.ssh/vpsm.conf`. Editing an existing SSH host creates an override in `~/.ssh/vpsm.conf`.
+- Managed hosts are written to `~/.ssh/vpsm.conf`. Editing a system host creates an overlay there.
 - Press `i` in the TUI to generate or reuse an SSH key and install the public key on the remote host.
 
 ## Platforms
 
-- macOS: uses Keychain.
-- Linux: uses D-Bus Secret Service. Install/run a provider such as `gnome-keyring` or `kwallet` for credential storage.
-- Windows: requires OpenSSH in `PATH`; credentials use Windows Credential Manager.
+- macOS uses Keychain.
+- Linux uses D-Bus Secret Service. You need a provider such as `gnome-keyring` or `kwallet`.
+- Windows needs OpenSSH on `PATH`. Credentials use Credential Manager.
 
-When keychain storage is unavailable, `vpsm` still works with normal SSH key auth or interactive SSH prompts outside file browser mode.
+If the keychain is unavailable, `vpsm` still works with SSH keys or interactive prompts. File browser mode needs stored credentials or non-interactive key auth.
