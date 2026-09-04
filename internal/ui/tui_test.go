@@ -77,7 +77,7 @@ func TestCompactBrowseViewDefaultsToServers(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
 		},
-		styles: newStyles(true),
+		styles: newStyles(),
 	}
 	m.applyFilter()
 
@@ -99,7 +99,7 @@ func TestCompactBrowseTabSwitchesToDetails(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
 		},
-		styles: newStyles(true),
+		styles: newStyles(),
 	}
 	m.applyFilter()
 
@@ -123,7 +123,7 @@ func TestFooterIncludesFilesHint(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "demo", HostName: "203.0.113.10", User: "root", Port: 22},
 		},
-		styles: newStyles(true),
+		styles: newStyles(),
 	}
 	m.applyFilter()
 
@@ -137,7 +137,7 @@ func TestRenderListPanelShowsAddHintWhenNoHosts(t *testing.T) {
 	t.Parallel()
 
 	m := tuiModel{
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -168,7 +168,7 @@ func TestRenderListItemShowsDisplayNameAsPrimary(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -199,7 +199,7 @@ func TestRenderListItemTruncatesToListContentWidth(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -229,7 +229,7 @@ func TestDetailsPanelShowsSourceRow(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -259,7 +259,7 @@ func searchModel() tuiModel {
 	m := tuiModel{
 		hosts:      testHosts(),
 		searchMode: true,
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		width:      120,
 		height:     24,
 	}
@@ -424,7 +424,7 @@ func TestBrowseInstallKeyEntersConfirmMode(t *testing.T) {
 		hosts: []model.Host{
 			{Alias: "prod/api", HostName: "203.0.113.10", User: "root", Port: 22, Managed: true},
 		},
-		styles:       newStyles(true),
+		styles:       newStyles(),
 		width:        120,
 		height:       24,
 		setupHostKey: func(alias string, stdin io.Reader, stdout, stderr io.Writer) error { return nil },
@@ -460,7 +460,7 @@ func TestFooterHintsEditKeyForAllHosts(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{managedHost, systemHost},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -500,7 +500,7 @@ func TestFooterHintsDeleteForOverlayHost(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{overlayHost},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 24,
 	}
@@ -518,7 +518,7 @@ func TestEditAllowedOnSystemHost(t *testing.T) {
 	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
 	m := tuiModel{
 		hosts:      []model.Host{systemHost},
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		width:      120,
 		height:     24,
 		updateHost: func(input UpdateHostInput) error { return nil },
@@ -543,7 +543,7 @@ func TestDeleteBlockedOnPureSystemHost(t *testing.T) {
 	systemHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, Source: "/tmp/config"}
 	m := tuiModel{
 		hosts:      []model.Host{systemHost},
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		width:      120,
 		height:     24,
 		deleteHost: func(alias string) error { return nil },
@@ -567,7 +567,7 @@ func TestDeleteAllowedOnOverlayHost(t *testing.T) {
 	overlayHost := model.Host{Alias: "external", HostName: "10.0.0.2", Managed: false, HasOverride: true, Source: "/tmp/config"}
 	m := tuiModel{
 		hosts:      []model.Host{overlayHost},
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		width:      120,
 		height:     24,
 		deleteHost: func(alias string) error { return nil },
@@ -597,7 +597,7 @@ func TestDetailsPanelShowsNetworkSection(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 40,
 	}
@@ -630,7 +630,7 @@ func TestDetailsPanelHidesNetworkSectionWhenEmpty(t *testing.T) {
 
 	m := tuiModel{
 		hosts:  []model.Host{host},
-		styles: newStyles(true),
+		styles: newStyles(),
 		width:  120,
 		height: 40,
 	}
@@ -647,7 +647,7 @@ func TestKeySetupConfirmFooterShowsHints(t *testing.T) {
 
 	m := tuiModel{
 		mode:   modeKeySetupConfirm,
-		styles: newStyles(true),
+		styles: newStyles(),
 	}
 
 	footer := m.footerText()
@@ -706,7 +706,7 @@ func TestEditFormSystemHostViewShowsReadOnly(t *testing.T) {
 	}
 	form := newEditForm(systemHost)
 
-	rendered := ansi.Strip(form.view(newStyles(true), 60, 40))
+	rendered := ansi.Strip(form.view(newStyles(), 60, 40))
 	if !strings.Contains(rendered, "read-only") {
 		t.Fatalf("expected 'read-only' label for non-editable fields, got %q", rendered)
 	}

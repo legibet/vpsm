@@ -54,7 +54,7 @@ func TestPaneLoadErrorKeepsCurrentDirectoryUnchanged(t *testing.T) {
 	t.Parallel()
 
 	m := fileBrowserModel{
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		statusType: statusInfo,
 		localPane:  newFilePane(browserSideLocal, "/tmp/project"),
 	}
@@ -88,7 +88,7 @@ func TestPaneLoadErrorWithoutEntriesShowsPaneError(t *testing.T) {
 	t.Parallel()
 
 	m := fileBrowserModel{
-		styles:    newStyles(true),
+		styles:    newStyles(),
 		localPane: newFilePane(browserSideLocal, "/tmp/project"),
 	}
 
@@ -111,7 +111,7 @@ func TestPaneLoadSuccessClearsRefreshStatus(t *testing.T) {
 	t.Parallel()
 
 	m := fileBrowserModel{
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		status:     "Refreshing directories...",
 		statusType: statusInfo,
 		localPane:  newFilePane(browserSideLocal, "/tmp/project"),
@@ -139,7 +139,7 @@ func TestPromptRenameUsesOriginalRemotePath(t *testing.T) {
 
 	remote := &stubFileBrowserRemote{}
 	m := fileBrowserModel{
-		styles: newStyles(true),
+		styles: newStyles(),
 		mode:   fileBrowserModePrompt,
 		remote: remote,
 	}
@@ -183,7 +183,7 @@ func TestPromptRenameUsesOriginalRemotePath(t *testing.T) {
 
 func testFileBrowserModel() fileBrowserModel {
 	m := fileBrowserModel{
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		width:      120,
 		height:     24,
 		active:     browserSideLocal,

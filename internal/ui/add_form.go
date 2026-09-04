@@ -117,6 +117,7 @@ func newTextInput(placeholder string, width int) textinput.Model {
 	input.Placeholder = placeholder
 	input.CharLimit = 256
 	input.SetWidth(width)
+	input.SetStyles(textInputStyles())
 	return input
 }
 

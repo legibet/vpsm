@@ -86,7 +86,6 @@ type tuiModel struct {
 	deleteAlias    string
 	keySetupAlias  string
 	keySetupPlan   sshutil.KeySetupPlan
-	isDark         bool
 	styles         styleSet
 	toggleFavorite func(alias string) error
 	refreshHosts   func() ([]HostItem, string, error)
@@ -102,8 +101,7 @@ func Run(options Options) (string, error) {
 		hosts:          options.Hosts,
 		query:          options.InitialQuery,
 		status:         options.InitialStatus,
-		isDark:         true,
-		styles:         newStyles(true),
+		styles:         newStyles(),
 		toggleFavorite: options.ToggleFavorite,
 		refreshHosts:   options.RefreshHosts,
 		createHost:     options.CreateHost,
@@ -129,15 +127,11 @@ func Run(options Options) (string, error) {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.RequestBackgroundColor
+	return nil
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.BackgroundColorMsg:
-		m.isDark = msg.IsDark()
-		m.styles = newStyles(m.isDark)
-		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height

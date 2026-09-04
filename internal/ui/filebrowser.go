@@ -280,7 +280,6 @@ type fileBrowserModel struct {
 	alias      string
 	width      int
 	height     int
-	isDark     bool
 	styles     styleSet
 	status     string
 	statusType statusKind
@@ -322,8 +321,7 @@ func RunFileBrowser(options FileBrowserOptions) error {
 		mode:       fileBrowserModeBrowse,
 		localPane:  newFilePane(browserSideLocal, localDir),
 		remotePane: newFilePane(browserSideRemote, options.RemoteDir),
-		isDark:     true,
-		styles:     newStyles(true),
+		styles:     newStyles(),
 		remote:     options.Remote,
 	}
 	m.localPane.loading = true
@@ -336,7 +334,6 @@ func RunFileBrowser(options FileBrowserOptions) error {
 
 func (m fileBrowserModel) Init() tea.Cmd {
 	return tea.Batch(
-		tea.RequestBackgroundColor,
 		loadPaneCmd(m.ctx, browserSideLocal, m.localPane.cwd, m.showHidden, m.remote, ""),
 		loadPaneCmd(m.ctx, browserSideRemote, m.remotePane.cwd, m.showHidden, m.remote, ""),
 	)
@@ -344,10 +341,6 @@ func (m fileBrowserModel) Init() tea.Cmd {
 
 func (m fileBrowserModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.BackgroundColorMsg:
-		m.isDark = msg.IsDark()
-		m.styles = newStyles(m.isDark)
-		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height

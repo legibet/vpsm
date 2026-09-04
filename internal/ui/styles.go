@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"image/color"
-
+	textinput "charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 )
 
@@ -40,53 +40,34 @@ type styleSet struct {
 	formSection     lipgloss.Style
 }
 
-func newStyles(isDark bool) styleSet {
-	var accent, warm, success, text, mutedColor, border, errorColor,
-		metaActiveColor, formSectionColor color.Color
-
-	if isDark {
-		accent = lipgloss.Color("75")
-		warm = lipgloss.Color("214")
-		success = lipgloss.Color("114")
-		text = lipgloss.Color("252")
-		mutedColor = lipgloss.Color("244")
-		border = lipgloss.Color("241")
-		errorColor = lipgloss.Color("203")
-		metaActiveColor = lipgloss.Color("248")
-		formSectionColor = lipgloss.Color("248")
-	} else {
-		accent = lipgloss.Color("33")
-		warm = lipgloss.Color("172")
-		success = lipgloss.Color("28")
-		text = lipgloss.Color("236")
-		mutedColor = lipgloss.Color("243")
-		border = lipgloss.Color("250")
-		errorColor = lipgloss.Color("160")
-		metaActiveColor = lipgloss.Color("240")
-		formSectionColor = lipgloss.Color("240")
-	}
+func newStyles() styleSet {
+	accent := lipgloss.Blue
+	warm := lipgloss.Yellow
+	success := lipgloss.Green
+	mutedColor := lipgloss.BrightBlack
+	errorColor := lipgloss.Red
 
 	basePanel := lipgloss.NewStyle().
 		UnsetBackground().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(border).
+		BorderForeground(mutedColor).
 		Padding(1, 1)
 
 	return styleSet{
-		canvas:          lipgloss.NewStyle().UnsetBackground().Foreground(text),
+		canvas:          lipgloss.NewStyle().UnsetBackground(),
 		app:             lipgloss.NewStyle().UnsetBackground().Padding(0, 1),
 		title:           lipgloss.NewStyle().Bold(true).Foreground(accent),
 		panel:           basePanel,
 		panelActive:     basePanel.BorderForeground(accent),
-		sectionTitle:    lipgloss.NewStyle().Bold(true).Foreground(text),
+		sectionTitle:    lipgloss.NewStyle().Bold(true),
 		sectionMeta:     lipgloss.NewStyle().Foreground(mutedColor),
 		listItem:        lipgloss.NewStyle().UnsetBackground(),
-		alias:           lipgloss.NewStyle().Bold(true).Foreground(text),
+		alias:           lipgloss.NewStyle().Bold(true),
 		aliasActive:     lipgloss.NewStyle().Bold(true).Foreground(accent),
 		meta:            lipgloss.NewStyle().Foreground(mutedColor),
-		metaActive:      lipgloss.NewStyle().Foreground(metaActiveColor),
+		metaActive:      lipgloss.NewStyle(),
 		label:           lipgloss.NewStyle().Foreground(mutedColor).Width(14),
-		value:           lipgloss.NewStyle().Foreground(text),
+		value:           lipgloss.NewStyle(),
 		muted:           lipgloss.NewStyle().Foreground(mutedColor),
 		statusBar:       lipgloss.NewStyle().UnsetBackground().Foreground(warm).Padding(0, 1),
 		statusBarError:  lipgloss.NewStyle().UnsetBackground().Foreground(errorColor).Bold(true).Padding(0, 1),
@@ -103,6 +84,30 @@ func newStyles(isDark bool) styleSet {
 		detailName:      lipgloss.NewStyle().Bold(true).Foreground(accent),
 		separator:       lipgloss.NewStyle().Foreground(mutedColor),
 		indicator:       lipgloss.NewStyle().Foreground(accent),
-		formSection:     lipgloss.NewStyle().Bold(true).Foreground(formSectionColor),
+		formSection:     lipgloss.NewStyle().Bold(true),
+	}
+}
+
+func textInputStyles() textinput.Styles {
+	muted := lipgloss.NewStyle().Foreground(lipgloss.BrightBlack)
+	plain := lipgloss.NewStyle()
+	return textinput.Styles{
+		Focused: textinput.StyleState{
+			Placeholder: muted,
+			Suggestion:  muted,
+			Prompt:      plain,
+			Text:        plain,
+		},
+		Blurred: textinput.StyleState{
+			Placeholder: muted,
+			Suggestion:  muted,
+			Prompt:      plain,
+			Text:        plain,
+		},
+		Cursor: textinput.CursorStyle{
+			Color: lipgloss.White,
+			Shape: tea.CursorBlock,
+			Blink: true,
+		},
 	}
 }
